@@ -1,0 +1,110 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-neon-blue: var(--neon-blue);
+  --color-neon-green: var(--neon-green);
+  --color-gold: var(--gold);
+  --color-tier-bronze: var(--tier-bronze);
+  --color-tier-silver: var(--tier-silver);
+  --color-tier-gold: var(--tier-gold);
+  --color-tier-platinum: var(--tier-platinum);
+  --color-tier-diamond: var(--tier-diamond);
+  --color-win: var(--win);
+  --color-loss: var(--loss);
+}
+
+:root {
+  --radius: 0.625rem;
+  /* Dark gaming theme by default */
+  --background: oklch(0.18 0.03 250);
+  --foreground: oklch(0.96 0.01 250);
+  --card: oklch(0.22 0.035 250);
+  --card-foreground: oklch(0.96 0.01 250);
+  --popover: oklch(0.22 0.035 250);
+  --popover-foreground: oklch(0.96 0.01 250);
+  --primary: oklch(0.72 0.18 230);
+  --primary-foreground: oklch(0.12 0.03 250);
+  --secondary: oklch(0.28 0.04 250);
+  --secondary-foreground: oklch(0.96 0.01 250);
+  --muted: oklch(0.26 0.03 250);
+  --muted-foreground: oklch(0.7 0.02 250);
+  --accent: oklch(0.32 0.05 250);
+  --accent-foreground: oklch(0.96 0.01 250);
+  --destructive: oklch(0.62 0.22 25);
+  --destructive-foreground: oklch(0.98 0.01 250);
+  --border: oklch(0.3 0.03 250);
+  --input: oklch(0.26 0.03 250);
+  --ring: oklch(0.72 0.18 230);
+
+  --neon-blue: oklch(0.78 0.18 230);
+  --neon-green: oklch(0.85 0.22 150);
+  --gold: oklch(0.83 0.16 85);
+
+  --tier-bronze: oklch(0.6 0.13 50);
+  --tier-silver: oklch(0.78 0.02 250);
+  --tier-gold: oklch(0.83 0.16 85);
+  --tier-platinum: oklch(0.82 0.12 190);
+  --tier-diamond: oklch(0.78 0.2 280);
+
+  --win: oklch(0.78 0.18 150);
+  --loss: oklch(0.65 0.2 25);
+
+  --gradient-hero: linear-gradient(135deg, oklch(0.78 0.18 230) 0%, oklch(0.78 0.2 280) 100%);
+  --shadow-glow-blue: 0 0 24px oklch(0.78 0.18 230 / 0.35);
+  --shadow-glow-gold: 0 0 24px oklch(0.83 0.16 85 / 0.4);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    background-image:
+      radial-gradient(ellipse at top, oklch(0.25 0.06 260 / 0.5), transparent 60%),
+      radial-gradient(ellipse at bottom, oklch(0.22 0.05 200 / 0.4), transparent 60%);
+    background-attachment: fixed;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+
+  h1, h2, h3, h4 {
+    letter-spacing: -0.02em;
+  }
+}
+
+@utility text-glow-blue {
+  text-shadow: 0 0 12px oklch(0.78 0.18 230 / 0.6);
+}
+
+@utility text-glow-gold {
+  text-shadow: 0 0 12px oklch(0.83 0.16 85 / 0.6);
+}
