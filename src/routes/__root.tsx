@@ -8,6 +8,11 @@ import {
   Scripts,
 } from "@tanstack/react-router";
 import { LeagueStoreProvider } from "../lib/league-store";
+import { useState, useEffect } from "react";
+import { supabase } from "../supabaseClient";
+import { Session } from "@supabase/supabase-js";
+import { Login } from "../components/Login";
+import { GlobalErrorBoundary } from "../components/GlobalErrorBoundary";
 
 import appCss from "../styles.css?url";
 
@@ -154,12 +159,51 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const [supabaseSession, setSupabaseSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(true);
+  const router = useRouter();
+  const isViewRoute = router.state.location.pathname.startsWith("/view/");
+
+  useEffect(() => {
+    if (isViewRoute) {
+      setLoading(false);
+      return;
+    }
+
+    // 1. Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSupabaseSession(session);
+      setLoading(false);
+    });
+
+    // 2. Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSupabaseSession(session);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [isViewRoute]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-3">
+          <div className="size-10 rounded-full border-4 border-muted/30 border-t-neon-blue animate-spin" />
+          <span className="text-xs text-muted-foreground font-black tracking-wider animate-pulse">보안 세션 검증 중...</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <LeagueStoreProvider>
-        <Outlet />
-      </LeagueStoreProvider>
-    </QueryClientProvider>
+    <GlobalErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <LeagueStoreProvider>
+          {isViewRoute || supabaseSession ? <Outlet /> : <Login />}
+        </LeagueStoreProvider>
+      </QueryClientProvider>
+    </GlobalErrorBoundary>
   );
 }

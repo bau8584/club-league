@@ -20,9 +20,11 @@ import {
   Swords,
   Calendar,
   Users,
-  Settings
+  Settings,
+  UserPlus,
+  ArrowLeft
 } from "lucide-react";
-import type { Gender, Student, Match, TierName, TierSettings, DynamicBonuses } from "@/lib/league-types";
+import type { Gender, Student, Match, TierName, TierSettings, DynamicBonuses, DynamicPenalties } from "@/lib/league-types";
 import { useLeagueStore, type ActiveBonuses } from "@/lib/league-store";
 import { getTier, TIER_STYLES, getFullTierLabel } from "@/lib/league-types";
 import { GenderMark } from "./GenderMark";
@@ -107,24 +109,25 @@ function parsePaste(text: string): { rows: Row[]; errors: number } {
   const rows: Row[] = [];
   let errors = 0;
   for (const line of lines) {
-    const parts = line.split(/[\t,\s]+/).filter(Boolean);
-    if (parts.length < 4) { errors++; continue; }
-    const [g, c, n, ...rest] = parts;
-    let gender: Gender | undefined;
-    for (let i = rest.length - 1; i >= 0; i--) {
-      const gd = detectGender(rest[i]);
-      if (gd) {
-        gender = gd;
-        rest.splice(i, 1);
-        break;
+    // Strictly Grade Class Number Name [Gender]
+    // Matches e.g. "5 1 1 홍길동 남", "5학년 1반 1번 홍길동 남", "5-1-1 홍길동 남"
+    const regex = /^(\d+)\s*[학년\s-]*\s*(\d+)\s*[반\s-]*\s*(\d+)\s*[번\s-]*\s*([가-힣a-zA-Z\s]+?)(?:\s+(남|여|남자|여자|M|F|m|f|U|u))?$/;
+    const match = line.match(regex);
+
+    if (match) {
+      const grade = parseInt(match[1], 10);
+      const classNum = parseInt(match[2], 10);
+      const number = parseInt(match[3], 10);
+      const name = match[4].trim();
+      const genderToken = match[5];
+      const gender = genderToken ? (detectGender(genderToken) || "U") : "U";
+
+      if (grade >= 1 && grade <= 6 && classNum >= 1 && number >= 1 && name) {
+        rows.push({ grade, classNum, number, name, gender });
+        continue;
       }
     }
-    const grade = parseInt(g, 10);
-    const classNum = parseInt(c, 10);
-    const number = parseInt(n, 10);
-    const name = rest.join(" ").trim();
-    if (!grade || !classNum || !number || !name || grade < 1 || grade > 6) { errors++; continue; }
-    rows.push({ grade, classNum, number, name, gender });
+    errors++;
   }
   return { rows, errors };
 }
@@ -145,6 +148,7 @@ export function AdminPanel({
   onUpdateSettings,
   onDeleteStudent,
   onUpdateGender,
+  onUpdateStudentInfo,
   onRestoreFromCSV,
   onBulkDecay,
   teacherAccessCode,
@@ -170,9 +174,13 @@ export function AdminPanel({
   onUpdateSettings?: (thresholds: Record<TierName, number>, rpVars: { winDelta: number; loseDelta: number }) => void;
   onDeleteStudent?: (studentId: string) => void;
   onUpdateGender?: (studentId: string, gender: Gender) => void;
+  onUpdateStudentInfo?: (
+    studentId: string,
+    info: { grade: number; classNum: number; number: number; name: string; gender: Gender; rp?: number }
+  ) => Promise<void>;
   onRestoreFromCSV?: (students: Student[], matches: Match[]) => void;
-  onBulkDecay?: (inactiveDays: number, decayAmount: number) => number;
-  teacherAccessCode: string;
+  onBulkDecay?: (inactiveDays: number, decayAmount: number) => Promise<number> | number | any;
+  teacherAccessCode?: string;
   onUpdateMatchScore: (matchId: string, scoreA: number, scoreB: number) => void;
   title?: string;
   activeBonuses?: ActiveBonuses;
@@ -181,11 +189,15 @@ export function AdminPanel({
     bonuses: ActiveBonuses,
     opMode?: "school" | "club",
     tierSettings?: TierSettings,
-    dynamicBonuses?: DynamicBonuses
+    dynamicBonuses?: DynamicBonuses,
+    dynamicPenalties?: DynamicPenalties
   ) => Promise<void>;
   seasonList?: string[];
   onChangeSeason?: (seasonName: string) => Promise<{ success: boolean; message?: string }>;
 }) {
+  // Active Tab for dashboard split layout
+  const [activeTab, setActiveTab] = useState<string>("settings");
+
   // JSON 롤백 복원 상태
   const [restoreDialogOpen, setRestoreDialogOpen] = useState(false);
   const [pendingRestoreData, setPendingRestoreData] = useState<Student[] | null>(null);
@@ -193,7 +205,7 @@ export function AdminPanel({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 이중 보안 상태 및 자동 잠금 훅
-  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [isUnlocked, setIsUnlocked] = useState(true);
   const { 
     session,
     decayEnabled,
@@ -204,6 +216,7 @@ export function AdminPanel({
     checkAndApplyAutomaticDecay,
     tierSettings,
     dynamicBonuses,
+    dynamicPenalties,
     saveLeagueSettings
   } = useLeagueStore();
   const isDemo = session?.loginId === "guest" || session?.schoolName?.includes("꿈나무");
@@ -214,6 +227,11 @@ export function AdminPanel({
   const [isTierSettingsOpen, setIsTierSettingsOpen] = useState(false);
   const [isTierRpOpen, setIsTierRpOpen] = useState(false);
   const [isDynamicBonusesOpen, setIsDynamicBonusesOpen] = useState(false);
+
+  const [isTitleCustomOpen, setIsTitleCustomOpen] = useState(false);
+  const [isTierCustomOpen, setIsTierCustomOpen] = useState(false);
+  const [isBonusCustomOpen, setIsBonusCustomOpen] = useState(false);
+  const [isPenaltyCustomOpen, setIsPenaltyCustomOpen] = useState(false);
 
   // 휴면 유저 관리(Decay) 설정 관련 로컬 상태
   const [localDecayEnabled, setLocalDecayEnabled] = useState(decayEnabled);
@@ -229,6 +247,8 @@ export function AdminPanel({
     Platinum: { winDelta: 25, loseDelta: 20 }
   });
 
+  const [activeTierTab, setActiveTierTab] = useState<TierName>("Bronze");
+
   const [localDynamicBonuses, setLocalDynamicBonuses] = useState<DynamicBonuses>(() => dynamicBonuses || {
     freshnessEnabled: true,
     freshnessGames: 5,
@@ -236,12 +256,63 @@ export function AdminPanel({
     streakEnabled: true,
     streakWins: 3,
     streakRp: 10,
+    firstWinEnabled: true,
+    firstWinRp: 15,
+    revengeEnabled: true,
+    revengeRp: 10,
+    underdogEnabled: true,
+    underdogDiff1Rp: 5,
+    underdogDiff2Rp: 10,
+    underdogDiff3Rp: 15,
+    greatMatchEnabled: true,
+    greatMatchRp: 10,
+    greatMatchWin1Rp: 10,
+    greatMatchLose1Rp: 5,
+    greatMatchWin2Rp: 5,
+    greatMatchLose2Rp: 2,
+    greatMatchWin3Rp: 2,
+    greatMatchLose3Rp: 0,
+    lossComfortEnabled: true,
+    lossComfortRp: 5,
+    lossComfortMaxTier: "Gold",
+    willOfSteelEnabled: true,
+    willOfSteel3Rp: 10,
+    willOfSteel4Rp: 15,
+    willOfSteel5Rp: 20,
     comebackEnabled: true,
     comebackLosses: 3,
     comebackRp: 10,
     marginEnabled: true,
     marginDiff: 10,
     marginRp: 10
+  });
+
+  const [localDynamicPenalties, setLocalDynamicPenalties] = useState<DynamicPenalties>(() => dynamicPenalties || {
+    enabled: true,
+    arrogance: true,
+    crushing: true,
+    revengeFail: true,
+    championWeight: true,
+    lossStreak: true,
+    arroganceGold: 20,
+    arrogancePlatinum: 30,
+    arroganceDiamond: 40,
+    crushingGold: 10,
+    crushingPlatinum: 15,
+    crushingDiamond: 20,
+    revengeAllowedGold: 10,
+    revengeAllowedPlatinum: 15,
+    revengeAllowedDiamond: 20,
+    championGold: 5,
+    championPlatinum: 10,
+    championDiamond: 15,
+    swampGold2: 5,
+    swampGold3: 10,
+    swampPlatinum2: 10,
+    swampPlatinum3: 15,
+    swampDiamond2: 15,
+    swampDiamond3: 25,
+    redCardPenalty: 10
   });
 
   // 백엔드로부터 설정이 주입될 때 로컬 상태 싱크
@@ -272,6 +343,12 @@ export function AdminPanel({
       setLocalDynamicBonuses(dynamicBonuses);
     }
   }, [dynamicBonuses]);
+
+  useEffect(() => {
+    if (dynamicPenalties) {
+      setLocalDynamicPenalties(dynamicPenalties);
+    }
+  }, [dynamicPenalties]);
 
   // 설정 저장 헬퍼
   const handleSaveDecaySettings = (enabled: boolean, daysStr: string, amountStr: string, tiers: TierName[]) => {
@@ -367,7 +444,6 @@ export function AdminPanel({
   const [appliedSearchStudent, setAppliedSearchStudent] = useState("");
   const [appliedSearchDate, setAppliedSearchDate] = useState("");
   const [appliedSearchGradeClass, setAppliedSearchGradeClass] = useState("");
-  const [isMatchListOpen, setIsMatchListOpen] = useState(false);
 
   // 리그 환경 설정 상태
   const [localTitle, setLocalTitle] = useState(title || "");
@@ -604,7 +680,30 @@ export function AdminPanel({
     }
   }, [rpVariables]);
 
-  const handleSaveSettings = async () => {
+  const handleSaveTitle = async () => {
+    if (!localTitle.trim()) {
+      return toast.error("리그 이름을 입력해 주세요.");
+    }
+    const savePromise = (async () => {
+      if (onSaveLeagueSettings) {
+        await onSaveLeagueSettings(
+          localTitle,
+          localBonuses,
+          undefined,
+          localTierSettings,
+          localDynamicBonuses,
+          localDynamicPenalties
+        );
+      }
+    })();
+    toast.promise(savePromise, {
+      loading: "리그 이름 저장 중...",
+      success: "리그 이름이 성공적으로 저장되었습니다!",
+      error: "리그 이름 저장 실패. 다시 시도해 주세요."
+    });
+  };
+
+  const handleSaveTierSettings = async () => {
     const b = parseInt(inputBronze, 10);
     const s = parseInt(inputSilver, 10);
     const g = parseInt(inputGold, 10);
@@ -622,19 +721,81 @@ export function AdminPanel({
       return toast.error("점수 설정은 0점 이상이어야 합니다.");
     }
 
+    const decayDaysNum = parseInt(localDecayDays, 10);
+    const decayAmountNum = parseInt(localDecayAmount, 10);
+    if (isNaN(decayDaysNum) || decayDaysNum <= 0 || isNaN(decayAmountNum) || decayAmountNum <= 0) {
+      return toast.error("휴면 감점 설정값은 1 이상의 정수여야 합니다.");
+    }
+
     const savePromise = (async () => {
+      // 1. Save decay settings
+      await saveDecaySettings(localDecayEnabled, decayDaysNum, decayAmountNum, localDecayTiers);
+
+      // 2. Save thresholds and default RP variables (Diamond RP)
       if (onUpdateSettings) {
         await onUpdateSettings(
           { Bronze: b, Silver: s, Gold: g, Platinum: p, Diamond: d },
           { winDelta: winD, loseDelta: loseD }
         );
       }
+
+      // 3. Save tier-specific RP settings
+      if (onSaveLeagueSettings) {
+        await onSaveLeagueSettings(
+          localTitle,
+          localBonuses,
+          undefined,
+          localTierSettings,
+          localDynamicBonuses,
+          localDynamicPenalties
+        );
+      }
     })();
 
     toast.promise(savePromise, {
-      loading: "리그 설정 동기화 및 학생 데이터 재정렬 중...",
-      success: "티어 기준 및 RP 변동폭 설정이 반영되고 최신 랭킹으로 동기화되었습니다!",
-      error: "리그 설정 동기화 실패. 다시 시도해 주세요."
+      loading: "티어 및 감쇠 설정 저장 중...",
+      success: "티어 및 감쇠 설정이 안전하게 저장되었습니다!",
+      error: "티어 및 감쇠 설정 저장 실패. 다시 시도해 주세요."
+    });
+  };
+
+  const handleSaveBonuses = async () => {
+    const savePromise = (async () => {
+      if (onSaveLeagueSettings) {
+        await onSaveLeagueSettings(
+          localTitle,
+          localBonuses,
+          undefined,
+          localTierSettings,
+          localDynamicBonuses,
+          localDynamicPenalties
+        );
+      }
+    })();
+    toast.promise(savePromise, {
+      loading: "글로벌 보너스 설정 저장 중...",
+      success: "글로벌 보너스 설정이 성공적으로 저장되었습니다!",
+      error: "글로벌 보너스 설정 저장 실패. 다시 시도해 주세요."
+    });
+  };
+
+  const handleSavePenalties = async () => {
+    const savePromise = (async () => {
+      if (onSaveLeagueSettings) {
+        await onSaveLeagueSettings(
+          localTitle,
+          localBonuses,
+          undefined,
+          localTierSettings,
+          localDynamicBonuses,
+          localDynamicPenalties
+        );
+      }
+    })();
+    toast.promise(savePromise, {
+      loading: "패배 패널티 설정 저장 중...",
+      success: "패배 패널티 설정이 성공적으로 저장되었습니다!",
+      error: "패배 패널티 설정 저장 실패. 다시 시도해 주세요."
     });
   };
 
@@ -878,563 +1039,1204 @@ export function AdminPanel({
     }
   };
 
-  // 보안 잠금 가드 렌더링
-  if (!isUnlocked && !isDemo) {
-    return (
-      <SecurityModal
-        correctCode={teacherAccessCode}
-        onSuccess={() => setIsUnlocked(true)}
-      />
-    );
-  }
+  // 보안 잠금 가드 렌더링 (원천 차단 및 무력화)
+  // 이중 보안 잠금 화면 렌더링을 완전히 우회하고 즉시 메인 대시보드를 노출합니다.
 
   return (
-    <div className="space-y-6">
-      
-      {/* 1. League Configuration: Title and Rules Settings (리그 통합 설정) */}
-      <Card className="border border-border/60 bg-card/60 p-6 backdrop-blur shadow-xl relative overflow-hidden">
-        {/* Clickable Header for Collapsible Toggle */}
-        <div 
-          onClick={() => setIsConfigOpen(!isConfigOpen)}
-          className="flex items-center justify-between cursor-pointer select-none group"
-        >
-          <div className="flex-1 pr-4">
-            <div className="flex items-center gap-2 text-neon-blue">
-              <Settings className="size-5" />
-              <h3 className="font-black text-lg">리그 통합 설정 (League Configurations)</h3>
-            </div>
-            <p className="mt-1 text-sm text-muted-foreground">
-              리그의 이름과 경기 진행 시 적용될 8가지 점수 획득 규칙을 통합하여 설정하고 관리합니다.
-            </p>
-          </div>
-          <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-muted/40 border border-border/20 text-xs font-black text-muted-foreground group-hover:text-foreground group-hover:bg-muted/80 group-hover:border-neon-blue/30 transition-all shrink-0">
-            <span>리그 설정 {isConfigOpen ? "닫기" : "열기"}</span>
-            <span className="text-xs transition-transform duration-300">
-              {isConfigOpen ? "▲" : "▼"}
-            </span>
-          </div>
+    <div className="flex flex-col md:flex-row gap-6 min-h-[600px] w-full text-foreground">
+      {/* Left Sidebar Menu */}
+      <div className="w-full md:w-64 shrink-0 flex flex-col gap-2 bg-card/45 border border-border/40 rounded-2xl p-4 backdrop-blur shadow-lg">
+        <div className="px-3 py-2">
+          <h2 className="text-lg font-black text-neon-blue tracking-tight">교사 관리자 패널</h2>
+          <p className="text-[10px] text-muted-foreground mt-0.5">리그 글로벌 설정 및 학생 데이터를 통제합니다.</p>
         </div>
-
-        {/* Smooth transition collapsible content wrapper */}
-        <div className={cn(
-          "grid transition-all duration-300 ease-in-out",
-          isConfigOpen ? "grid-rows-[1fr] opacity-100 mt-5" : "grid-rows-[0fr] opacity-0"
-        )}>
-          <div className="overflow-hidden min-h-0">
-            <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4 pt-2">
-              <span className="text-xs text-muted-foreground">구성을 조정한 뒤 저장을 클릭하세요.</span>
-              <Button
-                onClick={async (e) => {
-                  e.stopPropagation();
-                  if (onSaveLeagueSettings) {
-                    try {
-                      await onSaveLeagueSettings(localTitle, localBonuses, undefined, localTierSettings, localDynamicBonuses);
-                      toast.success("리그 설정이 성공적으로 업데이트되었습니다.");
-                    } catch (e) {
-                      toast.error("설정 저장에 실패했습니다.");
-                    }
-                  }
-                }}
-                className="bg-neon-blue hover:bg-neon-blue/80 text-primary-foreground font-black px-6 h-10 transition-all active:scale-95 rounded-xl shadow-md font-sans text-xs shrink-0 self-end md:self-center"
+        <div className="h-px bg-border/20 my-2" />
+        
+        {/* Menu Buttons */}
+        <div className="flex flex-col gap-1">
+          {[
+            { id: "settings", label: "리그 글로벌 설정", icon: Settings, desc: "리그 이름, 티어, RP 규칙 설정" },
+            { id: "studentRegister", label: "학생 등록", icon: UserPlus, desc: "나이스 명렬표 대량 등록" },
+            { id: "studentManage", label: "개별 학생 관리", icon: User, desc: "학급 명단, RP 수정 및 삭제" },
+            { id: "matchRecords", label: "리그 기록 관리", icon: Swords, desc: "전체 경기 조회, 점수 수정/삭제" },
+            { id: "dataManage", label: "데이터 관리", icon: Database, desc: "JSON 백업 다운로드 및 복원" },
+            { id: "seasonManage", label: "시즌 관리", icon: Calendar, desc: "시즌 초기화 및 신규 시즌 생성" },
+          ].map((item) => {
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setActiveTab(item.id)}
+                className={cn(
+                  "flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all active:scale-95 group",
+                  isActive
+                    ? "bg-neon-blue/15 text-neon-blue font-black border border-neon-blue/30 shadow-[0_0_12px_rgba(0,180,216,0.15)]"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/30 border border-transparent"
+                )}
               >
-                <Save className="size-4 mr-1.5" /> 설정 저장
-              </Button>
-            </div>
-
-            <div className="grid gap-6 md:grid-cols-2">
-              {/* League Title Setting */}
-              <div className="space-y-2 rounded-xl bg-background/30 p-5 border border-border/20 md:col-span-2">
-                <label className="text-xs font-bold text-neon-blue block uppercase tracking-wider">리그 이름 설정</label>
-                <div className="relative">
-                  <Input
-                    type="text"
-                    value={localTitle}
-                    onChange={(e) => setLocalTitle(e.target.value)}
-                    placeholder="예: 2026 초등 리그전"
-                    className="pr-12 h-10 border-border/50 bg-background/40 hover:bg-background/60 focus:bg-background/80 transition-all font-sans text-xs"
-                  />
+                <Icon className={cn("size-5 shrink-0 transition-transform group-hover:scale-110", isActive ? "text-neon-blue" : "text-muted-foreground group-hover:text-foreground")} />
+                <div className="min-w-0">
+                  <div className="text-xs font-bold leading-none">{item.label}</div>
+                  <div className="text-[9px] text-muted-foreground mt-0.5 truncate leading-none">{item.desc}</div>
                 </div>
-                <p className="text-[10px] text-muted-foreground leading-relaxed mt-1">
-                  선수들이 로그인했을 때 화면 상단에 표시되는 공식 리그 명칭입니다.
-                </p>
-              </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
-              {/* Unified 8 Settings */}
-              <div className="space-y-4 rounded-xl bg-background/30 p-5 border border-border/20 md:col-span-2">
-                <span className="text-xs font-bold text-neon-blue block uppercase tracking-wider">획득 점수 규칙 설정 (총 8개 항목)</span>
-                <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
-                  
-                  {/* 1. 오늘의 첫 승 */}
-                  <div className="flex flex-col justify-between p-3.5 rounded-lg border border-border/30 bg-background/25 space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-foreground">🌟 오늘의 첫 승</span>
-                      <button
-                        type="button"
-                        onClick={() => setLocalDynamicBonuses(prev => ({ ...prev, firstWinEnabled: !prev.firstWinEnabled }))}
-                        className={cn(
-                          "w-10 h-6 rounded-full transition-colors relative flex items-center px-0.5 shrink-0",
-                          localDynamicBonuses.firstWinEnabled ? "bg-neon-blue" : "bg-muted"
-                        )}
-                      >
-                        <div className={cn(
-                          "size-5 rounded-full bg-white transition-transform shadow-sm",
-                          localDynamicBonuses.firstWinEnabled ? "translate-x-4" : "translate-x-0"
-                        )} />
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs">
-                      <Input
-                        type="number"
-                        value={localDynamicBonuses.firstWinRp}
-                        disabled={!localDynamicBonuses.firstWinEnabled}
-                        onChange={(e) => {
-                          const val = parseInt(e.target.value, 10);
-                          setLocalDynamicBonuses(prev => ({ ...prev, firstWinRp: isNaN(val) ? 0 : val }));
-                        }}
-                        className="w-20 h-8 text-center font-mono font-bold bg-background/50 border-border/30 text-neon-blue"
-                      />
-                      <span className="text-[11px] text-muted-foreground">RP 추가</span>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground leading-relaxed">
-                      오늘 첫 매치 승리 시 지급되는 점수입니다.
-                    </p>
-                  </div>
-
-                  {/* 2. 복수전 성공 */}
-                  <div className="flex flex-col justify-between p-3.5 rounded-lg border border-border/30 bg-background/25 space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-foreground">😈 복수전 성공</span>
-                      <button
-                        type="button"
-                        onClick={() => setLocalDynamicBonuses(prev => ({ ...prev, revengeEnabled: !prev.revengeEnabled }))}
-                        className={cn(
-                          "w-10 h-6 rounded-full transition-colors relative flex items-center px-0.5 shrink-0",
-                          localDynamicBonuses.revengeEnabled ? "bg-neon-blue" : "bg-muted"
-                        )}
-                      >
-                        <div className={cn(
-                          "size-5 rounded-full bg-white transition-transform shadow-sm",
-                          localDynamicBonuses.revengeEnabled ? "translate-x-4" : "translate-x-0"
-                        )} />
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs">
-                      <Input
-                        type="number"
-                        value={localDynamicBonuses.revengeRp}
-                        disabled={!localDynamicBonuses.revengeEnabled}
-                        onChange={(e) => {
-                          const val = parseInt(e.target.value, 10);
-                          setLocalDynamicBonuses(prev => ({ ...prev, revengeRp: isNaN(val) ? 0 : val }));
-                        }}
-                        className="w-20 h-8 text-center font-mono font-bold bg-background/50 border-border/30 text-neon-blue"
-                      />
-                      <span className="text-[11px] text-muted-foreground">RP 추가</span>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground leading-relaxed">
-                      이전 경기에서 패했던 상대에게 복수 성공 시 지급되는 점수입니다.
-                    </p>
-                  </div>
-
-                  {/* 3. 언더독 격파 */}
-                  <div className="flex flex-col justify-between p-3.5 rounded-lg border border-border/30 bg-background/25 space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-foreground">🛡️ 언더독 격파</span>
-                      <button
-                        type="button"
-                        onClick={() => setLocalDynamicBonuses(prev => ({ ...prev, underdogEnabled: !prev.underdogEnabled }))}
-                        className={cn(
-                          "w-10 h-6 rounded-full transition-colors relative flex items-center px-0.5 shrink-0",
-                          localDynamicBonuses.underdogEnabled ? "bg-neon-blue" : "bg-muted"
-                        )}
-                      >
-                        <div className={cn(
-                          "size-5 rounded-full bg-white transition-transform shadow-sm",
-                          localDynamicBonuses.underdogEnabled ? "translate-x-4" : "translate-x-0"
-                        )} />
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs">
-                      <Input
-                        type="number"
-                        value={localDynamicBonuses.underdogPercent}
-                        disabled={!localDynamicBonuses.underdogEnabled}
-                        onChange={(e) => {
-                          const val = parseInt(e.target.value, 10);
-                          setLocalDynamicBonuses(prev => ({ ...prev, underdogPercent: isNaN(val) ? 0 : val }));
-                        }}
-                        className="w-20 h-8 text-center font-mono font-bold bg-background/50 border-border/30 text-neon-blue"
-                      />
-                      <span className="text-[11px] text-muted-foreground">% 추가 (점수 차이 비례)</span>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground leading-relaxed">
-                      더 높은 티어의 상대를 이겼을 때, 상대와의 점수 차이에 비례해 지급되는 비율입니다.
-                    </p>
-                  </div>
-
-                  {/* 4. 압승 (단식/복식 통합 기준 적용) */}
-                  <div className="flex flex-col justify-between p-3.5 rounded-lg border border-border/30 bg-background/25 space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-foreground">🚀 압승 (단식/복식 통합 기준 적용)</span>
-                      <button
-                        type="button"
-                        onClick={() => setLocalDynamicBonuses(prev => ({ ...prev, marginEnabled: !prev.marginEnabled }))}
-                        className={cn(
-                          "w-10 h-6 rounded-full transition-colors relative flex items-center px-0.5 shrink-0",
-                          localDynamicBonuses.marginEnabled ? "bg-neon-blue" : "bg-muted"
-                        )}
-                      >
-                        <div className={cn(
-                          "size-5 rounded-full bg-white transition-transform shadow-sm",
-                          localDynamicBonuses.marginEnabled ? "translate-x-4" : "translate-x-0"
-                        )} />
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-xs flex-wrap">
-                      <Input
-                        type="number"
-                        value={localDynamicBonuses.marginDiff}
-                        disabled={!localDynamicBonuses.marginEnabled}
-                        onChange={(e) => {
-                          const val = parseInt(e.target.value, 10);
-                          setLocalDynamicBonuses(prev => ({ ...prev, marginDiff: isNaN(val) ? 0 : val }));
-                        }}
-                        className="w-14 h-8 text-center font-mono font-bold bg-background/50 border-border/30"
-                      />
-                      <span className="text-[11px] text-muted-foreground">점 차 이상 승리 시</span>
-                      <Input
-                        type="number"
-                        value={localDynamicBonuses.marginRp}
-                        disabled={!localDynamicBonuses.marginEnabled}
-                        onChange={(e) => {
-                          const val = parseInt(e.target.value, 10);
-                          setLocalDynamicBonuses(prev => ({ ...prev, marginRp: isNaN(val) ? 0 : val }));
-                        }}
-                        className="w-14 h-8 text-center font-mono font-bold bg-background/50 border-border/30 text-neon-blue border-neon-blue/30"
-                      />
-                      <span className="font-bold text-neon-blue text-[11px]">점 추가</span>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground leading-relaxed">
-                      설정한 점수 차 이상으로 대승 시 지급되는 점수입니다. (단식/복식 모두 적용)
-                    </p>
-                  </div>
-
-                  {/* 5. 라이벌 격파 */}
-                  <div className="flex flex-col justify-between p-3.5 rounded-lg border border-border/30 bg-background/25 space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-foreground">⚔️ 라이벌 격파</span>
-                      <button
-                        type="button"
-                        onClick={() => setLocalDynamicBonuses(prev => ({ ...prev, rivalEnabled: !prev.rivalEnabled }))}
-                        className={cn(
-                          "w-10 h-6 rounded-full transition-colors relative flex items-center px-0.5 shrink-0",
-                          localDynamicBonuses.rivalEnabled ? "bg-neon-blue" : "bg-muted"
-                        )}
-                      >
-                        <div className={cn(
-                          "size-5 rounded-full bg-white transition-transform shadow-sm",
-                          localDynamicBonuses.rivalEnabled ? "translate-x-4" : "translate-x-0"
-                        )} />
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs">
-                      <Input
-                        type="number"
-                        value={localDynamicBonuses.rivalRp}
-                        disabled={!localDynamicBonuses.rivalEnabled}
-                        onChange={(e) => {
-                          const val = parseInt(e.target.value, 10);
-                          setLocalDynamicBonuses(prev => ({ ...prev, rivalRp: isNaN(val) ? 0 : val }));
-                        }}
-                        className="w-20 h-8 text-center font-mono font-bold bg-background/50 border-border/30 text-neon-blue"
-                      />
-                      <span className="text-[11px] text-muted-foreground">RP 추가</span>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground leading-relaxed">
-                      자신과 RP 차이가 20 이하인 비슷한 수준의 라이벌을 격파했을 때 지급되는 점수입니다.
-                    </p>
-                  </div>
-
-                  {/* 6. 신선한 매치 (기존 신선도) */}
-                  <div className="flex flex-col justify-between p-3.5 rounded-lg border border-border/30 bg-background/25 space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-foreground">✨ 신선한 매치 (기존 신선도)</span>
-                      <button
-                        type="button"
-                        onClick={() => setLocalDynamicBonuses(prev => ({ ...prev, freshnessEnabled: !prev.freshnessEnabled }))}
-                        className={cn(
-                          "w-10 h-6 rounded-full transition-colors relative flex items-center px-0.5 shrink-0",
-                          localDynamicBonuses.freshnessEnabled ? "bg-neon-blue" : "bg-muted"
-                        )}
-                      >
-                        <div className={cn(
-                          "size-5 rounded-full bg-white transition-transform shadow-sm",
-                          localDynamicBonuses.freshnessEnabled ? "translate-x-4" : "translate-x-0"
-                        )} />
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-xs flex-wrap">
-                      <span className="text-[11px] text-muted-foreground">최근</span>
-                      <Input
-                        type="number"
-                        value={localDynamicBonuses.freshnessGames}
-                        disabled={!localDynamicBonuses.freshnessEnabled}
-                        onChange={(e) => {
-                          const val = parseInt(e.target.value, 10);
-                          setLocalDynamicBonuses(prev => ({ ...prev, freshnessGames: isNaN(val) ? 0 : val }));
-                        }}
-                        className="w-14 h-8 text-center font-mono font-bold bg-background/50 border-border/30"
-                      />
-                      <span className="text-[11px] text-muted-foreground">경기 내 미매칭 상대 승리 시</span>
-                      <Input
-                        type="number"
-                        value={localDynamicBonuses.freshnessRp}
-                        disabled={!localDynamicBonuses.freshnessEnabled}
-                        onChange={(e) => {
-                          const val = parseInt(e.target.value, 10);
-                          setLocalDynamicBonuses(prev => ({ ...prev, freshnessRp: isNaN(val) ? 0 : val }));
-                        }}
-                        className="w-14 h-8 text-center font-mono font-bold bg-background/50 border-border/30 text-neon-blue border-neon-blue/30"
-                      />
-                      <span className="font-bold text-neon-blue text-[11px]">점 추가</span>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground leading-relaxed">
-                      최근 경기 목록에서 매칭된 적 없는 새로운 상대와 경기 시 지급되는 점수입니다.
-                    </p>
-                  </div>
-
-                  {/* 7. 연승 */}
-                  <div className="flex flex-col justify-between p-3.5 rounded-lg border border-border/30 bg-background/25 space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-foreground">🔥 연승</span>
-                      <button
-                        type="button"
-                        onClick={() => setLocalDynamicBonuses(prev => ({ ...prev, streakEnabled: !prev.streakEnabled }))}
-                        className={cn(
-                          "w-10 h-6 rounded-full transition-colors relative flex items-center px-0.5 shrink-0",
-                          localDynamicBonuses.streakEnabled ? "bg-neon-blue" : "bg-muted"
-                        )}
-                      >
-                        <div className={cn(
-                          "size-5 rounded-full bg-white transition-transform shadow-sm",
-                          localDynamicBonuses.streakEnabled ? "translate-x-4" : "translate-x-0"
-                        )} />
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-xs flex-wrap">
-                      <Input
-                        type="number"
-                        value={localDynamicBonuses.streakWins}
-                        disabled={!localDynamicBonuses.streakEnabled}
-                        onChange={(e) => {
-                          const val = parseInt(e.target.value, 10);
-                          setLocalDynamicBonuses(prev => ({ ...prev, streakWins: isNaN(val) ? 0 : val }));
-                        }}
-                        className="w-14 h-8 text-center font-mono font-bold bg-background/50 border-border/30"
-                      />
-                      <span className="text-[11px] text-muted-foreground">연승 이상 달성 시</span>
-                      <Input
-                        type="number"
-                        value={localDynamicBonuses.streakRp}
-                        disabled={!localDynamicBonuses.streakEnabled}
-                        onChange={(e) => {
-                          const val = parseInt(e.target.value, 10);
-                          setLocalDynamicBonuses(prev => ({ ...prev, streakRp: isNaN(val) ? 0 : val }));
-                        }}
-                        className="w-14 h-8 text-center font-mono font-bold bg-background/50 border-border/30 text-neon-blue border-neon-blue/30"
-                      />
-                      <span className="font-bold text-neon-blue text-[11px]">점 추가</span>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground leading-relaxed">
-                      연승 흐름을 유지하며 승리를 거두었을 때 지급되는 점수입니다.
-                    </p>
-                  </div>
-
-                  {/* 8. 연패 탈출 (기존 연패 컴백) */}
-                  <div className="flex flex-col justify-between p-3.5 rounded-lg border border-border/30 bg-background/25 space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-foreground">🔥 연패 탈출 (기존 연패 컴백)</span>
-                      <button
-                        type="button"
-                        onClick={() => setLocalDynamicBonuses(prev => ({ ...prev, comebackEnabled: !prev.comebackEnabled }))}
-                        className={cn(
-                          "w-10 h-6 rounded-full transition-colors relative flex items-center px-0.5 shrink-0",
-                          localDynamicBonuses.comebackEnabled ? "bg-neon-blue" : "bg-muted"
-                        )}
-                      >
-                        <div className={cn(
-                          "size-5 rounded-full bg-white transition-transform shadow-sm",
-                          localDynamicBonuses.comebackEnabled ? "translate-x-4" : "translate-x-0"
-                        )} />
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-xs flex-wrap">
-                      <Input
-                        type="number"
-                        value={localDynamicBonuses.comebackLosses}
-                        disabled={!localDynamicBonuses.comebackEnabled}
-                        onChange={(e) => {
-                          const val = parseInt(e.target.value, 10);
-                          setLocalDynamicBonuses(prev => ({ ...prev, comebackLosses: isNaN(val) ? 0 : val }));
-                        }}
-                        className="w-14 h-8 text-center font-mono font-bold bg-background/50 border-border/30"
-                      />
-                      <span className="text-[11px] text-muted-foreground">연패 이상 탈출 시</span>
-                      <Input
-                        type="number"
-                        value={localDynamicBonuses.comebackRp}
-                        disabled={!localDynamicBonuses.comebackEnabled}
-                        onChange={(e) => {
-                          const val = parseInt(e.target.value, 10);
-                          setLocalDynamicBonuses(prev => ({ ...prev, comebackRp: isNaN(val) ? 0 : val }));
-                        }}
-                        className="w-14 h-8 text-center font-mono font-bold bg-background/50 border-border/30 text-neon-blue border-neon-blue/30"
-                      />
-                      <span className="font-bold text-neon-blue text-[11px]">점 추가</span>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground leading-relaxed">
-                      연패 탈출 끝에 승리를 장려하기 위해 지급되는 점수입니다.
-                    </p>
-                  </div>
-
+      {/* Right Content Panel */}
+      <div className="flex-1 min-w-0 flex flex-col gap-6">
+        {activeTab === "settings" && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          {/* 1. League Title Card */}
+          <Card className="border border-border/60 bg-card/60 p-6 backdrop-blur shadow-xl">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-neon-blue uppercase tracking-wider block">1단계: 리그 이름 설정</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-muted-foreground font-bold">사용자 설정 활성화</span>
+                  <button
+                    type="button"
+                    onClick={() => setIsTitleCustomOpen(!isTitleCustomOpen)}
+                    className={cn(
+                      "w-8 h-5 rounded-full transition-colors relative flex items-center px-0.5 shrink-0",
+                      isTitleCustomOpen ? "bg-neon-blue" : "bg-muted"
+                    )}
+                  >
+                    <div className={cn(
+                      "size-4 rounded-full bg-white transition-transform shadow-sm",
+                      isTitleCustomOpen ? "translate-x-3" : "translate-x-0"
+                    )} />
+                  </button>
                 </div>
               </div>
+              
+              {isTitleCustomOpen && (
+                <div className="space-y-3 pt-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                  <div className="space-y-2">
+                    <Input
+                      type="text"
+                      value={localTitle}
+                      onChange={(e) => setLocalTitle(e.target.value)}
+                      placeholder="예: 2026 초등 리그전"
+                      className="h-10 border-border/50 bg-background/40 hover:bg-background/60 focus:bg-background/80 transition-all font-sans text-xs text-foreground"
+                    />
+                  </div>
+                  <div className="flex justify-end pt-1">
+                    <Button
+                      onClick={handleSaveTitle}
+                      className="bg-neon-blue hover:bg-neon-blue/80 text-primary-foreground font-black px-4 h-8 transition-all active:scale-95 rounded-xl shadow-md font-sans text-[11px]"
+                    >
+                      <Save className="size-3.5 mr-1" /> 저장
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
-        </div>
-      </Card>
+          </Card>
 
-      {/* 1.1. Tier-specific RP settings (티어별 RP 설정) */}
-      <Card className="border border-border/60 bg-card/60 p-6 backdrop-blur shadow-xl relative overflow-hidden">
-        <div 
-          onClick={() => setIsTierRpOpen(!isTierRpOpen)}
-          className="flex items-center justify-between cursor-pointer select-none group"
-        >
-          <div className="flex-1 pr-4">
-            <div className="flex items-center gap-2 text-neon-blue">
-              <Settings className="size-5" />
-              <h3 className="font-black text-lg">티어별 RP 설정 (Tier-specific RP Settings)</h3>
-            </div>
-            <p className="mt-1 text-sm text-muted-foreground">
-              브론즈, 실버, 골드, 플래티넘 각 티어별 승리 시 획득하는 RP 점수와 패배 시 차감되는 RP 점수를 설정합니다.
-            </p>
-          </div>
-          <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-muted/40 border border-border/20 text-xs font-black text-muted-foreground group-hover:text-foreground group-hover:bg-muted/80 group-hover:border-neon-blue/30 transition-all shrink-0">
-            <span>티어 설정 {isTierRpOpen ? "닫기" : "열기"}</span>
-            <span className="text-xs transition-transform duration-300">
-              {isTierRpOpen ? "▲" : "▼"}
-            </span>
-          </div>
-        </div>
+          {/* 2. Tier-specific Settings Card */}
+          <Card className="border border-border/60 bg-card/60 p-6 backdrop-blur shadow-xl">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-neon-blue uppercase tracking-wider block">2단계: 티어별 세부 설정 (기준점/RP/감쇠)</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-muted-foreground font-bold">사용자 설정 활성화</span>
+                  <button
+                    type="button"
+                    onClick={() => setIsTierCustomOpen(!isTierCustomOpen)}
+                    className={cn(
+                      "w-8 h-5 rounded-full transition-colors relative flex items-center px-0.5 shrink-0",
+                      isTierCustomOpen ? "bg-neon-blue" : "bg-muted"
+                    )}
+                  >
+                    <div className={cn(
+                      "size-4 rounded-full bg-white transition-transform shadow-sm",
+                      isTierCustomOpen ? "translate-x-3" : "translate-x-0"
+                    )} />
+                  </button>
+                </div>
+              </div>
 
-        <div className={cn(
-          "grid transition-all duration-300 ease-in-out",
-          isTierRpOpen ? "grid-rows-[1fr] opacity-100 mt-5" : "grid-rows-[0fr] opacity-0"
-        )}>
-          <div className="overflow-hidden min-h-0">
-            <div className="space-y-4 pt-2">
-              <div className="overflow-x-auto rounded-xl border border-border/20 bg-background/30">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead>
-                    <tr className="border-b border-border/30 bg-muted/30">
-                      <th className="p-3 font-bold text-muted-foreground">티어</th>
-                      <th className="p-3 font-bold text-neon-blue">승리 시 획득 RP (+RP)</th>
-                      <th className="p-3 font-bold text-loss">패배 시 차감 RP (-RP)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(["Bronze", "Silver", "Gold", "Platinum"] as const).map((tier) => {
-                      const style = TIER_STYLES[tier];
-                      const labels: Record<string, string> = {
-                        Bronze: "브론즈",
-                        Silver: "실버",
-                        Gold: "골드",
-                        Platinum: "플래티넘"
+              {isTierCustomOpen && (
+                <div className="space-y-4 pt-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                  {/* Tab headers */}
+                  <div className="flex border-b border-border/30 pb-2 overflow-x-auto gap-1.5 scrollbar-thin">
+                    {(["Bronze", "Silver", "Gold", "Platinum", "Diamond"] as const).map((t) => {
+                      const labelMap: Record<string, string> = {
+                        Bronze: "브론즈", Silver: "실버", Gold: "골드", Platinum: "플래티넘", Diamond: "다이아몬드"
                       };
+                      const colorClassMap: Record<string, string> = {
+                        Bronze: "text-tier-bronze", Silver: "text-tier-silver", Gold: "text-tier-gold", Platinum: "text-tier-platinum", Diamond: "text-tier-diamond"
+                      };
+                      const isSelected = activeTierTab === t;
                       return (
-                        <tr key={tier} className="border-b border-border/10 hover:bg-background/20">
-                          <td className="p-3 font-black">
-                            <span className={cn("px-2.5 py-1 rounded-lg text-[10px] font-bold tracking-wider", style.bg, style.text)}>
-                              {labels[tier]}
-                            </span>
-                          </td>
-                          <td className="p-3">
-                            <Input
-                              type="number"
-                              value={localTierSettings[tier]?.winDelta ?? 25}
-                              onChange={(e) => {
-                                const val = parseInt(e.target.value, 10);
-                                setLocalTierSettings(prev => ({
-                                  ...prev,
-                                  [tier]: {
-                                    ...prev[tier],
-                                    winDelta: isNaN(val) ? 0 : val
-                                  }
-                                }));
-                              }}
-                              className="w-32 h-9 font-mono font-bold bg-background/50 border-border/40 focus:border-neon-blue focus-visible:ring-neon-blue"
-                            />
-                          </td>
-                          <td className="p-3">
-                            <Input
-                              type="number"
-                              value={localTierSettings[tier]?.loseDelta ?? 20}
-                              onChange={(e) => {
-                                const val = parseInt(e.target.value, 10);
-                                setLocalTierSettings(prev => ({
-                                  ...prev,
-                                  [tier]: {
-                                    ...prev[tier],
-                                    loseDelta: isNaN(val) ? 0 : val
-                                  }
-                                }));
-                              }}
-                              className="w-32 h-9 font-mono font-bold bg-background/50 border-border/40 focus:border-loss focus-visible:ring-loss"
-                            />
-                          </td>
-                        </tr>
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => setActiveTierTab(t)}
+                          className={cn(
+                            "px-3 py-1.5 rounded-lg border text-xs font-black transition-all",
+                            isSelected 
+                              ? "bg-muted border-border/50 text-foreground shadow" 
+                              : "border-transparent text-muted-foreground hover:text-foreground"
+                          )}
+                        >
+                          <span className={colorClassMap[t]}>{labelMap[t]}</span>
+                        </button>
                       );
                     })}
-                  </tbody>
-                </table>
+                  </div>
+
+                  {/* Tab Content */}
+                  <div className="space-y-4 pt-1">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Tier threshold */}
+                      <div className="space-y-1 bg-background/20 rounded-lg p-3 border border-border/20">
+                        <label className="text-[11px] font-bold text-muted-foreground block mb-1">티어 기준점 (RP)</label>
+                        <Input
+                          type="number"
+                          value={
+                            activeTierTab === "Bronze" ? inputBronze :
+                            activeTierTab === "Silver" ? inputSilver :
+                            activeTierTab === "Gold" ? inputGold :
+                            activeTierTab === "Platinum" ? inputPlatinum :
+                            inputDiamond
+                          }
+                          onChange={(e) => {
+                            setPreset("custom");
+                            const val = e.target.value;
+                            if (activeTierTab === "Bronze") setInputBronze(val);
+                            else if (activeTierTab === "Silver") setInputSilver(val);
+                            else if (activeTierTab === "Gold") setInputGold(val);
+                            else if (activeTierTab === "Platinum") setInputPlatinum(val);
+                            else setInputDiamond(val);
+                          }}
+                          disabled={activeTierTab === "Bronze"}
+                          className="h-8 font-mono text-center font-bold bg-background/40 border-border/30 text-foreground"
+                        />
+                      </div>
+
+                      {/* Preset Selector */}
+                      <div className="space-y-1 bg-background/20 rounded-lg p-3 border border-border/20">
+                        <label className="text-[11px] font-bold text-muted-foreground block mb-1">기준 밸런싱 프리셋</label>
+                        <select
+                          value={preset}
+                          onChange={(e) => {
+                            const nextPreset = e.target.value as PresetType;
+                            setPreset(nextPreset);
+                            if (nextPreset !== "custom") {
+                              const val = PRESETS[nextPreset];
+                              setInputBronze(val.Bronze.toString());
+                              setInputSilver(val.Silver.toString());
+                              setInputGold(val.Gold.toString());
+                              setInputPlatinum(val.Platinum.toString());
+                              setInputDiamond(val.Diamond.toString());
+                              setInputWinDelta(val.winDelta.toString());
+                              setInputLoseDelta(val.loseDelta.toString());
+                            }
+                          }}
+                          className="w-full h-8 px-2 rounded bg-background/40 border border-border/30 text-xs text-foreground focus:ring-1 focus:ring-neon-blue focus:outline-none"
+                        >
+                          <option value="standard" className="bg-card">⚖️ 스탠다드</option>
+                          <option value="speedup" className="bg-card">⚡ 스피드업</option>
+                          <option value="hardcore" className="bg-card">💀 하드코어</option>
+                          <option value="underdog" className="bg-card">🦊 언더독</option>
+                          <option value="custom" className="bg-card">🛠️ 사용자 설정</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Win/Loss RP */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-1 bg-background/20 rounded-lg p-3 border border-border/20">
+                        <label className="text-[11px] font-bold text-muted-foreground block mb-1">승리 시 획득 RP</label>
+                        <Input
+                          type="number"
+                          value={
+                            activeTierTab === "Diamond"
+                              ? inputWinDelta
+                              : localTierSettings[activeTierTab]?.winDelta.toString() ?? "15"
+                          }
+                          onChange={(e) => {
+                            setPreset("custom");
+                            const val = parseInt(e.target.value, 10);
+                            if (isNaN(val)) return;
+                            if (activeTierTab === "Diamond") {
+                              setInputWinDelta(val.toString());
+                            } else {
+                              setLocalTierSettings(prev => ({
+                                ...prev,
+                                [activeTierTab]: { ...prev[activeTierTab], winDelta: val }
+                              }));
+                            }
+                          }}
+                          className="h-8 font-mono text-center font-bold text-emerald-500 bg-background/40 border-border/30"
+                        />
+                      </div>
+                      <div className="space-y-1 bg-background/20 rounded-lg p-3 border border-border/20">
+                        <label className="text-[11px] font-bold text-muted-foreground block mb-1">패배 시 차감 RP</label>
+                        <Input
+                          type="number"
+                          value={
+                            activeTierTab === "Diamond"
+                              ? inputLoseDelta
+                              : localTierSettings[activeTierTab]?.loseDelta.toString() ?? "10"
+                          }
+                          onChange={(e) => {
+                            setPreset("custom");
+                            const val = parseInt(e.target.value, 10);
+                            if (isNaN(val)) return;
+                            if (activeTierTab === "Diamond") {
+                              setInputLoseDelta(val.toString());
+                            } else {
+                              setLocalTierSettings(prev => ({
+                                ...prev,
+                                [activeTierTab]: { ...prev[activeTierTab], loseDelta: val }
+                              }));
+                            }
+                          }}
+                          className="h-8 font-mono text-center font-bold text-rose-500 bg-background/40 border-border/30"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Decay settings for this tier */}
+                    <div className="mt-2 pt-3 border-t border-border/20 space-y-3">
+                      <div className="flex items-center justify-between p-3 rounded-lg bg-background/20 border border-border/25">
+                        <div>
+                          <span className="text-[11px] font-bold text-foreground block">휴면 감점 시스템 활성화 (전체)</span>
+                          <span className="text-[9px] text-muted-foreground">전체 리그에서 미활동 유저에 대한 일일 RP 감점 처리 여부</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleToggleDecay}
+                          className={cn(
+                            "w-10 h-6 rounded-full transition-colors relative flex items-center px-0.5 shrink-0",
+                            localDecayEnabled ? "bg-amber-500" : "bg-muted"
+                          )}
+                        >
+                          <div className={cn(
+                            "size-5 rounded-full bg-white transition-transform shadow-sm",
+                            localDecayEnabled ? "translate-x-4" : "translate-x-0"
+                          )} />
+                        </button>
+                      </div>
+
+                      <div className="flex justify-between items-center p-3 rounded-lg bg-background/20 border border-border/20">
+                        <div>
+                          <span className="text-[11px] font-bold text-foreground block">이 티어에서 감점 적용</span>
+                          <span className="text-[9px] text-muted-foreground">이 티어에 해당하는 학생들에게 휴면 유저 감점을 개별 적용합니다.</span>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={!localDecayEnabled}
+                          onClick={() => {
+                            if (!localDecayEnabled) return;
+                            const checked = localDecayTiers.includes(activeTierTab);
+                            const nextTiers = checked
+                              ? localDecayTiers.filter(t => t !== activeTierTab)
+                              : [...localDecayTiers, activeTierTab];
+                            setLocalDecayTiers(nextTiers);
+                          }}
+                          className={cn(
+                            "w-8 h-5 rounded-full transition-colors relative flex items-center px-0.5 shrink-0",
+                            localDecayTiers.includes(activeTierTab) && localDecayEnabled ? "bg-amber-500" : "bg-muted",
+                            !localDecayEnabled && "opacity-50 cursor-not-allowed"
+                          )}
+                        >
+                          <div className={cn(
+                            "size-4 rounded-full bg-white transition-transform shadow-sm",
+                            localDecayTiers.includes(activeTierTab) && localDecayEnabled ? "translate-x-3" : "translate-x-0"
+                          )} />
+                        </button>
+                      </div>
+
+                      {localDecayTiers.includes(activeTierTab) && localDecayEnabled && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-background/30 p-3 rounded-lg border border-border/20">
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-muted-foreground">기준 미활동 일수</label>
+                            <div className="relative">
+                              <Input
+                                type="number"
+                                min={1}
+                                value={localDecayDays}
+                                onChange={(e) => setLocalDecayDays(e.target.value)}
+                                className="h-8 border-border/30 bg-background/40 focus:border-amber-500 font-sans text-xs pr-12"
+                              />
+                              <span className="absolute right-2 top-1.5 text-[10px] text-muted-foreground font-bold">일 이상</span>
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-muted-foreground">차감할 RP</label>
+                            <div className="relative">
+                              <Input
+                                type="number"
+                                min={1}
+                                value={localDecayAmount}
+                                onChange={(e) => setLocalDecayAmount(e.target.value)}
+                                className="h-8 border-border/30 bg-background/40 focus:border-amber-500 font-sans text-xs text-rose-500 pr-12"
+                              />
+                              <span className="absolute right-2 top-1.5 text-[10px] text-rose-500 font-bold">RP 감점</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {/* Save button at the bottom of Step 2 card */}
+                  <div className="flex justify-end pt-2 border-t border-border/10">
+                    <Button
+                      onClick={handleSaveTierSettings}
+                      className="bg-neon-blue hover:bg-neon-blue/80 text-primary-foreground font-black px-4 h-8 transition-all active:scale-95 rounded-xl shadow-md font-sans text-[11px]"
+                    >
+                      <Save className="size-3.5 mr-1" /> 저장
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </Card>
+
+          {/* 3. Global Bonus Card */}
+          <Card className="border border-border/60 bg-card/60 p-6 backdrop-blur shadow-xl">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-neon-blue uppercase tracking-wider block">3단계: 점수 획득 규칙 (글로벌 보너스)</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-muted-foreground font-bold">사용자 설정 활성화</span>
+                  <button
+                    type="button"
+                    onClick={() => setIsBonusCustomOpen(!isBonusCustomOpen)}
+                    className={cn(
+                      "w-8 h-5 rounded-full transition-colors relative flex items-center px-0.5 shrink-0",
+                      isBonusCustomOpen ? "bg-neon-blue" : "bg-muted"
+                    )}
+                  >
+                    <div className={cn(
+                      "size-4 rounded-full bg-white transition-transform shadow-sm",
+                      isBonusCustomOpen ? "translate-x-3" : "translate-x-0"
+                    )} />
+                  </button>
+                </div>
+              </div>
+
+              {isBonusCustomOpen && (
+                <div className="space-y-4 pt-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                  <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
+                    
+                    {/* 1. firstWin */}
+                    <div className="flex flex-col justify-between p-3 rounded-lg border border-border/20 bg-background/20 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-foreground">🌟 오늘의 첫 승</span>
+                        <button
+                          type="button"
+                          onClick={() => setLocalDynamicBonuses(prev => ({ ...prev, firstWinEnabled: !prev.firstWinEnabled }))}
+                          className={cn("w-8 h-5 rounded-full transition-colors relative flex items-center px-0.5", localDynamicBonuses.firstWinEnabled ? "bg-neon-blue" : "bg-muted")}
+                        >
+                          <div className={cn("size-4 rounded-full bg-white transition-transform shadow-sm", localDynamicBonuses.firstWinEnabled ? "translate-x-3" : "translate-x-0")} />
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs">
+                        <Input
+                          type="number"
+                          value={localDynamicBonuses.firstWinRp}
+                          disabled={!localDynamicBonuses.firstWinEnabled}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            setLocalDynamicBonuses(prev => ({ ...prev, firstWinRp: isNaN(val) ? 0 : val }));
+                          }}
+                          className="w-16 h-7 text-center font-mono font-bold bg-background/50 border-border/30 text-neon-blue p-0"
+                        />
+                        <span className="text-[10px] text-muted-foreground">RP 추가</span>
+                      </div>
+                    </div>
+
+                    {/* 2. revenge */}
+                    <div className="flex flex-col justify-between p-3 rounded-lg border border-border/20 bg-background/20 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-foreground">😈 복수전 성공</span>
+                        <button
+                          type="button"
+                          onClick={() => setLocalDynamicBonuses(prev => ({ ...prev, revengeEnabled: !prev.revengeEnabled }))}
+                          className={cn("w-8 h-5 rounded-full transition-colors relative flex items-center px-0.5", localDynamicBonuses.revengeEnabled ? "bg-neon-blue" : "bg-muted")}
+                        >
+                          <div className={cn("size-4 rounded-full bg-white transition-transform shadow-sm", localDynamicBonuses.revengeEnabled ? "translate-x-3" : "translate-x-0")} />
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs">
+                        <Input
+                          type="number"
+                          value={localDynamicBonuses.revengeRp}
+                          disabled={!localDynamicBonuses.revengeEnabled}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            setLocalDynamicBonuses(prev => ({ ...prev, revengeRp: isNaN(val) ? 0 : val }));
+                          }}
+                          className="w-16 h-7 text-center font-mono font-bold bg-background/50 border-border/30 text-neon-blue p-0"
+                        />
+                        <span className="text-[10px] text-muted-foreground">RP 추가</span>
+                      </div>
+                    </div>
+
+                    {/* 3. underdog */}
+                    <div className="flex flex-col justify-between p-3 rounded-lg border border-border/20 bg-background/20 space-y-2 md:col-span-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-foreground">🛡️ 언더독 격파</span>
+                        <button
+                          type="button"
+                          onClick={() => setLocalDynamicBonuses(prev => ({ ...prev, underdogEnabled: !prev.underdogEnabled }))}
+                          className={cn("w-8 h-5 rounded-full transition-colors relative flex items-center px-0.5", localDynamicBonuses.underdogEnabled ? "bg-neon-blue" : "bg-muted")}
+                        >
+                          <div className={cn("size-4 rounded-full bg-white transition-transform shadow-sm", localDynamicBonuses.underdogEnabled ? "translate-x-3" : "translate-x-0")} />
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <label className="text-[9px] text-muted-foreground font-bold block">1티어 차이</label>
+                          <div className="flex items-center gap-1">
+                            <Input
+                              type="number"
+                              value={localDynamicBonuses.underdogDiff1Rp ?? 5}
+                              disabled={!localDynamicBonuses.underdogEnabled}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value, 10);
+                                setLocalDynamicBonuses(prev => ({ ...prev, underdogDiff1Rp: isNaN(val) ? 0 : val }));
+                              }}
+                              className="w-10 h-7 text-center font-mono bg-background/50 border-border/30 p-0 text-neon-blue"
+                            />
+                            <span className="text-[9px] text-muted-foreground">RP</span>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-[9px] text-muted-foreground font-bold block">2티어 차이</label>
+                          <div className="flex items-center gap-1">
+                            <Input
+                              type="number"
+                              value={localDynamicBonuses.underdogDiff2Rp ?? 10}
+                              disabled={!localDynamicBonuses.underdogEnabled}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value, 10);
+                                setLocalDynamicBonuses(prev => ({ ...prev, underdogDiff2Rp: isNaN(val) ? 0 : val }));
+                              }}
+                              className="w-10 h-7 text-center font-mono bg-background/50 border-border/30 p-0 text-neon-blue"
+                            />
+                            <span className="text-[9px] text-muted-foreground">RP</span>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-[9px] text-muted-foreground font-bold block">3티어+ 차이</label>
+                          <div className="flex items-center gap-1">
+                            <Input
+                              type="number"
+                              value={localDynamicBonuses.underdogDiff3Rp ?? 15}
+                              disabled={!localDynamicBonuses.underdogEnabled}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value, 10);
+                                setLocalDynamicBonuses(prev => ({ ...prev, underdogDiff3Rp: isNaN(val) ? 0 : val }));
+                              }}
+                              className="w-10 h-7 text-center font-mono bg-background/50 border-border/30 p-0 text-neon-blue"
+                            />
+                            <span className="text-[9px] text-muted-foreground">RP</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 4. freshness */}
+                    <div className="flex flex-col justify-between p-3 rounded-lg border border-border/20 bg-background/20 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-foreground">✨ 신선한 매치</span>
+                        <button
+                          type="button"
+                          onClick={() => setLocalDynamicBonuses(prev => ({ ...prev, freshnessEnabled: !prev.freshnessEnabled }))}
+                          className={cn("w-8 h-5 rounded-full transition-colors relative flex items-center px-0.5", localDynamicBonuses.freshnessEnabled ? "bg-neon-blue" : "bg-muted")}
+                        >
+                          <div className={cn("size-4 rounded-full bg-white transition-transform shadow-sm", localDynamicBonuses.freshnessEnabled ? "translate-x-3" : "translate-x-0")} />
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-1 text-[10px] flex-wrap">
+                        <span>최근</span>
+                        <Input
+                          type="number"
+                          value={localDynamicBonuses.freshnessGames}
+                          disabled={!localDynamicBonuses.freshnessEnabled}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            setLocalDynamicBonuses(prev => ({ ...prev, freshnessGames: isNaN(val) ? 0 : val }));
+                          }}
+                          className="w-8 h-7 text-center font-mono bg-background/50 border-border/30 p-0"
+                        />
+                        <span>대결無</span>
+                        <Input
+                          type="number"
+                          value={localDynamicBonuses.freshnessRp}
+                          disabled={!localDynamicBonuses.freshnessEnabled}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            setLocalDynamicBonuses(prev => ({ ...prev, freshnessRp: isNaN(val) ? 0 : val }));
+                          }}
+                          className="w-8 h-7 text-center font-mono bg-background/50 border-border/30 p-0 text-neon-blue"
+                        />
+                        <span>RP 추가</span>
+                      </div>
+                    </div>
+
+                    {/* 5. streak */}
+                    <div className="flex flex-col justify-between p-3 rounded-lg border border-border/20 bg-background/20 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-foreground">🔥 연승</span>
+                        <button
+                          type="button"
+                          onClick={() => setLocalDynamicBonuses(prev => ({ ...prev, streakEnabled: !prev.streakEnabled }))}
+                          className={cn("w-8 h-5 rounded-full transition-colors relative flex items-center px-0.5", localDynamicBonuses.streakEnabled ? "bg-neon-blue" : "bg-muted")}
+                        >
+                          <div className={cn("size-4 rounded-full bg-white transition-transform shadow-sm", localDynamicBonuses.streakEnabled ? "translate-x-3" : "translate-x-0")} />
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-1 text-[10px] flex-wrap">
+                        <Input
+                          type="number"
+                          value={localDynamicBonuses.streakWins}
+                          disabled={!localDynamicBonuses.streakEnabled}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            setLocalDynamicBonuses(prev => ({ ...prev, streakWins: isNaN(val) ? 0 : val }));
+                          }}
+                          className="w-8 h-7 text-center font-mono bg-background/50 border-border/30 p-0"
+                        />
+                        <span>연승 시</span>
+                        <Input
+                          type="number"
+                          value={localDynamicBonuses.streakRp}
+                          disabled={!localDynamicBonuses.streakEnabled}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            setLocalDynamicBonuses(prev => ({ ...prev, streakRp: isNaN(val) ? 0 : val }));
+                          }}
+                          className="w-8 h-7 text-center font-mono bg-background/50 border-border/30 p-0 text-neon-blue"
+                        />
+                        <span>RP 추가 (플래티넘↑ 제외)</span>
+                      </div>
+                    </div>
+
+                    {/* 6. greatMatch */}
+                    <div className="flex flex-col justify-between p-3 rounded-lg border border-border/20 bg-background/20 space-y-2 md:col-span-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-foreground">⚔️ 명승부 보너스</span>
+                        <button
+                          type="button"
+                          onClick={() => setLocalDynamicBonuses(prev => ({ ...prev, greatMatchEnabled: !prev.greatMatchEnabled }))}
+                          className={cn("w-8 h-5 rounded-full transition-colors relative flex items-center px-0.5", localDynamicBonuses.greatMatchEnabled ? "bg-neon-blue" : "bg-muted")}
+                        >
+                          <div className={cn("size-4 rounded-full bg-white transition-transform shadow-sm", localDynamicBonuses.greatMatchEnabled ? "translate-x-3" : "translate-x-0")} />
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="bg-background/20 p-2 rounded text-[10px] text-center space-y-1">
+                          <span>1점차 (승/패)</span>
+                          <div className="flex justify-center gap-1 mt-0.5">
+                            <Input
+                              type="number"
+                              value={localDynamicBonuses.greatMatchWin1Rp}
+                              disabled={!localDynamicBonuses.greatMatchEnabled}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value, 10);
+                                setLocalDynamicBonuses(prev => ({ ...prev, greatMatchWin1Rp: isNaN(val) ? 0 : val }));
+                              }}
+                              className="w-8 h-6 text-center font-mono p-0 bg-background/50 border-border/30 text-neon-blue"
+                            />
+                            <Input
+                              type="number"
+                              value={localDynamicBonuses.greatMatchLose1Rp}
+                              disabled={!localDynamicBonuses.greatMatchEnabled}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value, 10);
+                                setLocalDynamicBonuses(prev => ({ ...prev, greatMatchLose1Rp: isNaN(val) ? 0 : val }));
+                              }}
+                              className="w-8 h-6 text-center font-mono p-0 bg-background/50 border-border/30 text-neon-blue"
+                            />
+                          </div>
+                        </div>
+                        <div className="bg-background/20 p-2 rounded text-[10px] text-center space-y-1">
+                          <span>2점차 (승/패)</span>
+                          <div className="flex justify-center gap-1 mt-0.5">
+                            <Input
+                              type="number"
+                              value={localDynamicBonuses.greatMatchWin2Rp}
+                              disabled={!localDynamicBonuses.greatMatchEnabled}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value, 10);
+                                setLocalDynamicBonuses(prev => ({ ...prev, greatMatchWin2Rp: isNaN(val) ? 0 : val }));
+                              }}
+                              className="w-8 h-6 text-center font-mono p-0 bg-background/50 border-border/30 text-neon-blue"
+                            />
+                            <Input
+                              type="number"
+                              value={localDynamicBonuses.greatMatchLose2Rp}
+                              disabled={!localDynamicBonuses.greatMatchEnabled}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value, 10);
+                                setLocalDynamicBonuses(prev => ({ ...prev, greatMatchLose2Rp: isNaN(val) ? 0 : val }));
+                              }}
+                              className="w-8 h-6 text-center font-mono p-0 bg-background/50 border-border/30 text-neon-blue"
+                            />
+                          </div>
+                        </div>
+                        <div className="bg-background/20 p-2 rounded text-[10px] text-center space-y-1">
+                          <span>3점차 (승/패)</span>
+                          <div className="flex justify-center gap-1 mt-0.5">
+                            <Input
+                              type="number"
+                              value={localDynamicBonuses.greatMatchWin3Rp}
+                              disabled={!localDynamicBonuses.greatMatchEnabled}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value, 10);
+                                setLocalDynamicBonuses(prev => ({ ...prev, greatMatchWin3Rp: isNaN(val) ? 0 : val }));
+                              }}
+                              className="w-8 h-6 text-center font-mono p-0 bg-background/50 border-border/30 text-neon-blue"
+                            />
+                            <Input
+                              type="number"
+                              value={localDynamicBonuses.greatMatchLose3Rp}
+                              disabled={!localDynamicBonuses.greatMatchEnabled}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value, 10);
+                                setLocalDynamicBonuses(prev => ({ ...prev, greatMatchLose3Rp: isNaN(val) ? 0 : val }));
+                              }}
+                              className="w-8 h-6 text-center font-mono p-0 bg-background/50 border-border/30 text-neon-blue"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 7. lossComfort */}
+                    <div className="flex flex-col justify-between p-3 rounded-lg border border-border/20 bg-background/20 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-foreground">🩹 꺾이지 않는 마음</span>
+                        <button
+                          type="button"
+                          onClick={() => setLocalDynamicBonuses(prev => ({ ...prev, lossComfortEnabled: !prev.lossComfortEnabled }))}
+                          className={cn("w-8 h-5 rounded-full transition-colors relative flex items-center px-0.5", localDynamicBonuses.lossComfortEnabled ? "bg-neon-blue" : "bg-muted")}
+                        >
+                          <div className={cn("size-4 rounded-full bg-white transition-transform shadow-sm", localDynamicBonuses.lossComfortEnabled ? "translate-x-3" : "translate-x-0")} />
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-[10px]">
+                        <div>
+                          <span>상한선 티어</span>
+                          <select
+                            value={localDynamicBonuses.lossComfortMaxTier ?? "Gold"}
+                            disabled={!localDynamicBonuses.lossComfortEnabled}
+                            onChange={(e) => {
+                              const val = e.target.value as TierName;
+                              setLocalDynamicBonuses(prev => ({ ...prev, lossComfortMaxTier: val }));
+                            }}
+                            className="w-full h-7 mt-0.5 px-1.5 rounded bg-background/40 border border-border/30 text-[10px] text-foreground focus:outline-none"
+                          >
+                            <option value="Bronze" className="bg-card">브론즈 이하</option>
+                            <option value="Silver" className="bg-card">실버 이하</option>
+                            <option value="Gold" className="bg-card">골드 이하</option>
+                            <option value="Platinum" className="bg-card">플래티넘 이하</option>
+                            <option value="Diamond" className="bg-card">모든 티어</option>
+                          </select>
+                        </div>
+                        <div>
+                          <span>위로 RP</span>
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <Input
+                              type="number"
+                              value={localDynamicBonuses.lossComfortRp}
+                              disabled={!localDynamicBonuses.lossComfortEnabled}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value, 10);
+                                setLocalDynamicBonuses(prev => ({ ...prev, lossComfortRp: isNaN(val) ? 0 : val }));
+                              }}
+                              className="w-12 h-7 text-center font-mono font-bold bg-background/50 border-border/30 text-neon-blue p-0"
+                            />
+                            <span>RP</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 8. willOfSteel */}
+                    <div className="flex flex-col justify-between p-3 rounded-lg border border-border/20 bg-background/20 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-foreground">🔥 불굴의 의지</span>
+                        <button
+                          type="button"
+                          onClick={() => setLocalDynamicBonuses(prev => ({ ...prev, willOfSteelEnabled: !prev.willOfSteelEnabled }))}
+                          className={cn("w-8 h-5 rounded-full transition-colors relative flex items-center px-0.5", localDynamicBonuses.willOfSteelEnabled ? "bg-neon-blue" : "bg-muted")}
+                        >
+                          <div className={cn("size-4 rounded-full bg-white transition-transform shadow-sm", localDynamicBonuses.willOfSteelEnabled ? "translate-x-3" : "translate-x-0")} />
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1 text-[9px] text-center">
+                        <div>
+                          <span>3연패 탈출</span>
+                          <Input
+                            type="number"
+                            value={localDynamicBonuses.willOfSteel3Rp ?? 10}
+                            disabled={!localDynamicBonuses.willOfSteelEnabled}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value, 10);
+                              setLocalDynamicBonuses(prev => ({ ...prev, willOfSteel3Rp: isNaN(val) ? 0 : val }));
+                            }}
+                            className="w-10 h-7 text-center mt-0.5 font-mono p-0 bg-background/50 border-border/30 text-neon-blue mx-auto"
+                          />
+                        </div>
+                        <div>
+                          <span>4연패 탈출</span>
+                          <Input
+                            type="number"
+                            value={localDynamicBonuses.willOfSteel4Rp ?? 15}
+                            disabled={!localDynamicBonuses.willOfSteelEnabled}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value, 10);
+                              setLocalDynamicBonuses(prev => ({ ...prev, willOfSteel4Rp: isNaN(val) ? 0 : val }));
+                            }}
+                            className="w-10 h-7 text-center mt-0.5 font-mono p-0 bg-background/50 border-border/30 text-neon-blue mx-auto"
+                          />
+                        </div>
+                        <div>
+                          <span>5연패+ 탈출</span>
+                          <Input
+                            type="number"
+                            value={localDynamicBonuses.willOfSteel5Rp ?? 20}
+                            disabled={!localDynamicBonuses.willOfSteelEnabled}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value, 10);
+                              setLocalDynamicBonuses(prev => ({ ...prev, willOfSteel5Rp: isNaN(val) ? 0 : val }));
+                            }}
+                            className="w-10 h-7 text-center mt-0.5 font-mono p-0 bg-background/50 border-border/30 text-neon-blue mx-auto"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
+                  
+                  {/* Save button at the bottom of Step 3 card */}
+                  <div className="flex justify-end pt-2 border-t border-border/10">
+                    <Button
+                      onClick={handleSaveBonuses}
+                      className="bg-neon-blue hover:bg-neon-blue/80 text-primary-foreground font-black px-4 h-8 transition-all active:scale-95 rounded-xl shadow-md font-sans text-[11px]"
+                    >
+                      <Save className="size-3.5 mr-1" /> 저장
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </Card>
+
+          {/* 4. Global Penalty Card */}
+          <Card className="border border-border/60 bg-card/60 p-6 backdrop-blur shadow-xl">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-neon-blue uppercase tracking-wider block">4단계: 상위 티어 패배 패널티 설정</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-muted-foreground font-bold">사용자 설정 활성화</span>
+                  <button
+                    type="button"
+                    onClick={() => setIsPenaltyCustomOpen(!isPenaltyCustomOpen)}
+                    className={cn(
+                      "w-8 h-5 rounded-full transition-colors relative flex items-center px-0.5 shrink-0",
+                      isPenaltyCustomOpen ? "bg-neon-blue" : "bg-muted"
+                    )}
+                  >
+                    <div className={cn(
+                      "size-4 rounded-full bg-white transition-transform shadow-sm",
+                      isPenaltyCustomOpen ? "translate-x-3" : "translate-x-0"
+                    )} />
+                  </button>
+                </div>
+              </div>
+
+              {isPenaltyCustomOpen && (
+                <div className="space-y-4 pt-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                  <div className="flex items-center justify-between border-b border-border/30 pb-2">
+                    <span className="text-[11px] font-bold text-foreground">패배 패널티 기능 전체 활성화</span>
+                    <button
+                      type="button"
+                      onClick={() => setLocalDynamicPenalties(prev => ({ ...prev, enabled: !prev.enabled }))}
+                      className={cn("w-8 h-5 rounded-full transition-colors relative flex items-center px-0.5", localDynamicPenalties.enabled ? "bg-rose-500" : "bg-muted")}
+                    >
+                      <div className={cn("size-4 rounded-full bg-white transition-transform shadow-sm", localDynamicPenalties.enabled ? "translate-x-3" : "translate-x-0")} />
+                    </button>
+                  </div>
+
+                  {localDynamicPenalties.enabled && (
+                <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
+                  
+                  {/* arrogance */}
+                  <div className="space-y-2 p-3 rounded-lg border border-border/20 bg-background/20">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-foreground">👤 오만함의 대가 (2단계 아래에 패배)</span>
+                      <button
+                        type="button"
+                        onClick={() => setLocalDynamicPenalties(prev => ({ ...prev, arrogance: !prev.arrogance }))}
+                        className={cn("w-8 h-5 rounded-full transition-colors relative flex items-center px-0.5", localDynamicPenalties.arrogance ? "bg-rose-500" : "bg-muted")}
+                      >
+                        <div className={cn("size-4 rounded-full bg-white transition-transform shadow-sm", localDynamicPenalties.arrogance ? "translate-x-3" : "translate-x-0")} />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="text-[9px] text-tier-gold block">골드</label>
+                        <Input
+                          type="number"
+                          disabled={!localDynamicPenalties.arrogance}
+                          value={localDynamicPenalties.arroganceGold}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            setLocalDynamicPenalties(prev => ({ ...prev, arroganceGold: isNaN(val) ? 0 : val }));
+                          }}
+                          className="h-7 text-center font-mono mt-0.5 p-0 bg-background/50 border-border/30 text-foreground"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[9px] text-tier-platinum block">플래티넘</label>
+                        <Input
+                          type="number"
+                          disabled={!localDynamicPenalties.arrogance}
+                          value={localDynamicPenalties.arrogancePlatinum}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            setLocalDynamicPenalties(prev => ({ ...prev, arrogancePlatinum: isNaN(val) ? 0 : val }));
+                          }}
+                          className="h-7 text-center font-mono mt-0.5 p-0 bg-background/50 border-border/30 text-foreground"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[9px] text-tier-diamond block">다이아</label>
+                        <Input
+                          type="number"
+                          disabled={!localDynamicPenalties.arrogance}
+                          value={localDynamicPenalties.arroganceDiamond}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            setLocalDynamicPenalties(prev => ({ ...prev, arroganceDiamond: isNaN(val) ? 0 : val }));
+                          }}
+                          className="h-7 text-center font-mono mt-0.5 p-0 bg-background/50 border-border/30 text-foreground"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* crushing */}
+                  <div className="space-y-2 p-3 rounded-lg border border-border/20 bg-background/20">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-foreground">💥 굴욕적 완패 (5점 차 이상 완패)</span>
+                      <button
+                        type="button"
+                        onClick={() => setLocalDynamicPenalties(prev => ({ ...prev, crushing: !prev.crushing }))}
+                        className={cn("w-8 h-5 rounded-full transition-colors relative flex items-center px-0.5", localDynamicPenalties.crushing ? "bg-rose-500" : "bg-muted")}
+                      >
+                        <div className={cn("size-4 rounded-full bg-white transition-transform shadow-sm", localDynamicPenalties.crushing ? "translate-x-3" : "translate-x-0")} />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="text-[9px] text-tier-gold block">골드</label>
+                        <Input
+                          type="number"
+                          disabled={!localDynamicPenalties.crushing}
+                          value={localDynamicPenalties.crushingGold}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            setLocalDynamicPenalties(prev => ({ ...prev, crushingGold: isNaN(val) ? 0 : val }));
+                          }}
+                          className="h-7 text-center font-mono mt-0.5 p-0 bg-background/50 border-border/30 text-foreground"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[9px] text-tier-platinum block">플래티넘</label>
+                        <Input
+                          type="number"
+                          disabled={!localDynamicPenalties.crushing}
+                          value={localDynamicPenalties.crushingPlatinum}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            setLocalDynamicPenalties(prev => ({ ...prev, crushingPlatinum: isNaN(val) ? 0 : val }));
+                          }}
+                          className="h-7 text-center font-mono mt-0.5 p-0 bg-background/50 border-border/30 text-foreground"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[9px] text-tier-diamond block">다이아</label>
+                        <Input
+                          type="number"
+                          disabled={!localDynamicPenalties.crushing}
+                          value={localDynamicPenalties.crushingDiamond}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            setLocalDynamicPenalties(prev => ({ ...prev, crushingDiamond: isNaN(val) ? 0 : val }));
+                          }}
+                          className="h-7 text-center font-mono mt-0.5 p-0 bg-background/50 border-border/30 text-foreground"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* revengeFail */}
+                  <div className="space-y-2 p-3 rounded-lg border border-border/20 bg-background/20">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-foreground">😈 복수 허용 (상대 복수전 성공)</span>
+                      <button
+                        type="button"
+                        onClick={() => setLocalDynamicPenalties(prev => ({ ...prev, revengeFail: !prev.revengeFail }))}
+                        className={cn("w-8 h-5 rounded-full transition-colors relative flex items-center px-0.5", localDynamicPenalties.revengeFail ? "bg-rose-500" : "bg-muted")}
+                      >
+                        <div className={cn("size-4 rounded-full bg-white transition-transform shadow-sm", localDynamicPenalties.revengeFail ? "translate-x-3" : "translate-x-0")} />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="text-[9px] text-tier-gold block">골드</label>
+                        <Input
+                          type="number"
+                          disabled={!localDynamicPenalties.revengeFail}
+                          value={localDynamicPenalties.revengeAllowedGold}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            setLocalDynamicPenalties(prev => ({ ...prev, revengeAllowedGold: isNaN(val) ? 0 : val }));
+                          }}
+                          className="h-7 text-center font-mono mt-0.5 p-0 bg-background/50 border-border/30 text-foreground"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[9px] text-tier-platinum block">플래티넘</label>
+                        <Input
+                          type="number"
+                          disabled={!localDynamicPenalties.revengeFail}
+                          value={localDynamicPenalties.revengeAllowedPlatinum}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            setLocalDynamicPenalties(prev => ({ ...prev, revengeAllowedPlatinum: isNaN(val) ? 0 : val }));
+                          }}
+                          className="h-7 text-center font-mono mt-0.5 p-0 bg-background/50 border-border/30 text-foreground"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[9px] text-tier-diamond block">다이아</label>
+                        <Input
+                          type="number"
+                          disabled={!localDynamicPenalties.revengeFail}
+                          value={localDynamicPenalties.revengeAllowedDiamond}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            setLocalDynamicPenalties(prev => ({ ...prev, revengeAllowedDiamond: isNaN(val) ? 0 : val }));
+                          }}
+                          className="h-7 text-center font-mono mt-0.5 p-0 bg-background/50 border-border/30 text-foreground"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* championWeight */}
+                  <div className="space-y-2 p-3 rounded-lg border border-border/20 bg-background/20">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-foreground">👑 챔피언의 무게 (패배 가중치)</span>
+                      <button
+                        type="button"
+                        onClick={() => setLocalDynamicPenalties(prev => ({ ...prev, championWeight: !prev.championWeight }))}
+                        className={cn("w-8 h-5 rounded-full transition-colors relative flex items-center px-0.5", localDynamicPenalties.championWeight ? "bg-rose-500" : "bg-muted")}
+                      >
+                        <div className={cn("size-4 rounded-full bg-white transition-transform shadow-sm", localDynamicPenalties.championWeight ? "translate-x-3" : "translate-x-0")} />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="text-[9px] text-tier-gold block">골드</label>
+                        <Input
+                          type="number"
+                          disabled={!localDynamicPenalties.championWeight}
+                          value={localDynamicPenalties.championGold}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            setLocalDynamicPenalties(prev => ({ ...prev, championGold: isNaN(val) ? 0 : val }));
+                          }}
+                          className="h-7 text-center font-mono mt-0.5 p-0 bg-background/50 border-border/30 text-foreground"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[9px] text-tier-platinum block">플래티넘</label>
+                        <Input
+                          type="number"
+                          disabled={!localDynamicPenalties.championWeight}
+                          value={localDynamicPenalties.championPlatinum}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            setLocalDynamicPenalties(prev => ({ ...prev, championPlatinum: isNaN(val) ? 0 : val }));
+                          }}
+                          className="h-7 text-center font-mono mt-0.5 p-0 bg-background/50 border-border/30 text-foreground"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[9px] text-tier-diamond block">다이아</label>
+                        <Input
+                          type="number"
+                          disabled={!localDynamicPenalties.championWeight}
+                          value={localDynamicPenalties.championDiamond}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            setLocalDynamicPenalties(prev => ({ ...prev, championDiamond: isNaN(val) ? 0 : val }));
+                          }}
+                          className="h-7 text-center font-mono mt-0.5 p-0 bg-background/50 border-border/30 text-foreground"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* lossStreak / swamp */}
+                  <div className="space-y-2 p-3 rounded-lg border border-border/20 bg-background/20 md:col-span-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-foreground">🐊 연패의 늪 (2연패 / 3연패↑ 추가 감점)</span>
+                      <button
+                        type="button"
+                        onClick={() => setLocalDynamicPenalties(prev => ({ ...prev, lossStreak: !prev.lossStreak }))}
+                        className={cn("w-8 h-5 rounded-full transition-colors relative flex items-center px-0.5", localDynamicPenalties.lossStreak ? "bg-rose-500" : "bg-muted")}
+                      >
+                        <div className={cn("size-4 rounded-full bg-white transition-transform shadow-sm", localDynamicPenalties.lossStreak ? "translate-x-3" : "translate-x-0")} />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-[9px]">
+                      <div>
+                        <span>골드 (2/3+연패)</span>
+                        <div className="flex gap-1 mt-0.5">
+                          <Input
+                            type="number"
+                            disabled={!localDynamicPenalties.lossStreak}
+                            value={localDynamicPenalties.swampGold2}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value, 10);
+                              setLocalDynamicPenalties(prev => ({ ...prev, swampGold2: isNaN(val) ? 0 : val }));
+                            }}
+                            className="h-7 text-center font-mono p-0 bg-background/50 border-border/30 text-foreground w-8"
+                          />
+                          <Input
+                            type="number"
+                            disabled={!localDynamicPenalties.lossStreak}
+                            value={localDynamicPenalties.swampGold3}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value, 10);
+                              setLocalDynamicPenalties(prev => ({ ...prev, swampGold3: isNaN(val) ? 0 : val }));
+                            }}
+                            className="h-7 text-center font-mono p-0 bg-background/50 border-border/30 text-foreground w-8"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <span>플래 (2/3+연패)</span>
+                        <div className="flex gap-1 mt-0.5">
+                          <Input
+                            type="number"
+                            disabled={!localDynamicPenalties.lossStreak}
+                            value={localDynamicPenalties.swampPlatinum2}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value, 10);
+                              setLocalDynamicPenalties(prev => ({ ...prev, swampPlatinum2: isNaN(val) ? 0 : val }));
+                            }}
+                            className="h-7 text-center font-mono p-0 bg-background/50 border-border/30 text-foreground w-8"
+                          />
+                          <Input
+                            type="number"
+                            disabled={!localDynamicPenalties.lossStreak}
+                            value={localDynamicPenalties.swampPlatinum3}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value, 10);
+                              setLocalDynamicPenalties(prev => ({ ...prev, swampPlatinum3: isNaN(val) ? 0 : val }));
+                            }}
+                            className="h-7 text-center font-mono p-0 bg-background/50 border-border/30 text-foreground w-8"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <span>다이아 (2/3+연패)</span>
+                        <div className="flex gap-1 mt-0.5">
+                          <Input
+                            type="number"
+                            disabled={!localDynamicPenalties.lossStreak}
+                            value={localDynamicPenalties.swampDiamond2}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value, 10);
+                              setLocalDynamicPenalties(prev => ({ ...prev, swampDiamond2: isNaN(val) ? 0 : val }));
+                            }}
+                            className="h-7 text-center font-mono p-0 bg-background/50 border-border/30 text-foreground w-8"
+                          />
+                          <Input
+                            type="number"
+                            disabled={!localDynamicPenalties.lossStreak}
+                            value={localDynamicPenalties.swampDiamond3}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value, 10);
+                              setLocalDynamicPenalties(prev => ({ ...prev, swampDiamond3: isNaN(val) ? 0 : val }));
+                            }}
+                            className="h-7 text-center font-mono p-0 bg-background/50 border-border/30 text-foreground w-8"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* redCardPenalty */}
+                  <div className="flex justify-between items-center p-3 rounded-lg border border-border/20 bg-background/20 md:col-span-2">
+                    <div>
+                      <span className="text-xs font-bold text-foreground text-[11px]">🚨 스포츠맨십 위반 (레드카드 감점)</span>
+                      <span className="text-[9px] text-muted-foreground block">행동 징계 시 차감할 벌점선</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Input
+                        type="number"
+                        value={localDynamicPenalties.redCardPenalty}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value, 10);
+                          setLocalDynamicPenalties(prev => ({ ...prev, redCardPenalty: isNaN(val) ? 0 : val }));
+                        }}
+                        className="w-16 h-7 text-center font-mono font-bold bg-background/50 border-border/30 text-rose-500 p-0"
+                      />
+                      <span className="text-[9px] text-rose-500 font-bold">RP</span>
+                    </div>
+                  </div>
+
+                </div>
+              )}
+
+              {/* Save button at the bottom of Step 4 card */}
+              <div className="flex justify-end pt-2 border-t border-border/10">
+                <Button
+                  onClick={handleSavePenalties}
+                  className="bg-neon-blue hover:bg-neon-blue/80 text-primary-foreground font-black px-4 h-8 transition-all active:scale-95 rounded-xl shadow-md font-sans text-[11px]"
+                >
+                  <Save className="size-3.5 mr-1" /> 저장
+                </Button>
               </div>
             </div>
-          </div>
+          )}
         </div>
       </Card>
-
-
+        </div>
+      )}
 
       {/* 3.9. All Match Records Integrated Management Section (전체 경기 기록 통합 관리) */}
+      {activeTab === "matchRecords" && (
       <Card className="border border-border/60 bg-card/60 p-6 backdrop-blur shadow-xl relative overflow-hidden">
-        {/* Clickable Header for Collapsible Toggle */}
-        <div 
-          onClick={() => setIsMatchListOpen(!isMatchListOpen)}
-          className="flex items-center justify-between cursor-pointer select-none group"
-        >
-          <div className="flex-1 pr-4">
-            <div className="flex items-center gap-2 text-neon-blue group-hover:text-neon-blue/80 transition-colors">
-              <Swords className="size-5 animate-pulse" />
-              <h3 className="font-black text-lg">전체 경기 기록 통합 관리</h3>
-            </div>
-            <p className="mt-1 text-sm text-muted-foreground group-hover:text-muted-foreground/80 transition-colors">
-              리그에 기록된 모든 매치 데이터를 조회하고, 경기 점수를 소급 수정하거나 완전 삭제하여 RP 및 전적을 안전하게 롤백 복원합니다. (태블릿 환경 최적화)
-            </p>
+        <div className="mb-6">
+          <div className="flex items-center gap-2 text-neon-blue">
+            <Swords className="size-5 animate-pulse" />
+            <h3 className="font-black text-lg">리그 기록 관리</h3>
           </div>
-          <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-muted/40 border border-border/20 text-xs font-black text-muted-foreground group-hover:text-foreground group-hover:bg-muted/80 group-hover:border-neon-blue/30 transition-all shrink-0">
-            <span>전체 경기 기록 {isMatchListOpen ? "닫기" : "열기"}</span>
-            <span className="text-xs transition-transform duration-300">
-              {isMatchListOpen ? "▲" : "▼"}
-            </span>
-          </div>
+          <p className="mt-1 text-sm text-muted-foreground text-muted-foreground/85">
+            리그에 기록된 모든 매치 데이터를 조회하고, 경기 점수를 소급 수정하거나 완전 삭제하여 RP 및 전적을 안전하게 롤백 복원합니다. (태블릿 환경 최적화)
+          </p>
         </div>
-
-        {/* Smooth transition collapsible content wrapper */}
-        <div className={cn(
-          "grid transition-all duration-300 ease-in-out",
-          isMatchListOpen ? "grid-rows-[1fr] opacity-100 mt-5" : "grid-rows-[0fr] opacity-0"
-        )}>
-          <div className="overflow-hidden min-h-0">
             {/* Category Selector Tabs & Inputs for Dynamic Loading/Filtering */}
         <div className="mb-5 space-y-3">
           <div className="p-1 bg-muted/40 border border-border/20 rounded-xl flex flex-wrap gap-1.5 w-full md:w-max">
@@ -1899,11 +2701,11 @@ export function AdminPanel({
             </tbody>
           </table>
         </div>
-          </div>
-        </div>
       </Card>
+      )}
 
       {/* 1. Class Control: Lock Switch */}
+      {activeTab === "settings" && (
       <Card className={cn(
         "border transition-all duration-300 p-5 backdrop-blur shadow-lg relative overflow-hidden",
         isLocked 
@@ -1952,41 +2754,26 @@ export function AdminPanel({
           </div>
         </div>
       </Card>
+      )}
 
       {/* 2. Individual Student Management Dashboard */}
+      {activeTab === "studentManage" && (
       <Card className="border-border/60 bg-card/60 p-6 backdrop-blur shadow-xl">
-        {/* Clickable Header for Collapsible Toggle */}
-        <div 
-          onClick={() => setIsStudentDashboardOpen(!isStudentDashboardOpen)}
-          className="flex items-center justify-between cursor-pointer select-none group"
-        >
-          <div className="flex-1 pr-4">
-            <div className="flex items-center gap-2 text-neon-blue">
-              <User className="size-5" />
-              <h3 className="font-black text-lg">개별 학생 관리 대시보드</h3>
-            </div>
-            <p className="mt-1 text-sm text-muted-foreground">
-              학생 이름을 검색하여 개별 프로필을 조회하고, RP 점수를 임의 수정하거나 과거 경기 내역을 추적하여 양방향 롤백(삭제)을 관리할 수 있습니다.
-            </p>
+        <div className="mb-6">
+          <div className="flex items-center gap-2 text-neon-blue">
+            <User className="size-5" />
+            <h3 className="font-black text-lg">개별 학생 관리 대시보드</h3>
           </div>
-          <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-muted/40 border border-border/20 text-xs font-black text-muted-foreground group-hover:text-foreground group-hover:bg-muted/80 group-hover:border-neon-blue/30 transition-all shrink-0">
-            <span>대시보드 {isStudentDashboardOpen ? "닫기" : "열기"}</span>
-            <span className="text-xs transition-transform duration-300">
-              {isStudentDashboardOpen ? "▲" : "▼"}
-            </span>
-          </div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            학생 이름을 검색하여 개별 프로필을 조회하고, RP 점수를 임의 수정하거나 과거 경기 내역을 추적하여 양방향 롤백(삭제)을 관리할 수 있습니다.
+          </p>
         </div>
 
-        {/* Smooth transition collapsible content wrapper */}
-        <div className={cn(
-          "grid transition-all duration-300 ease-in-out",
-          isStudentDashboardOpen ? "grid-rows-[1fr] opacity-100 mt-5" : "grid-rows-[0fr] opacity-0"
-        )}>
-          <div className="overflow-hidden min-h-0">
-
-        {/* Student Search Box */}
-        <div className="relative mb-4">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        {!selectedStudent && (
+          <>
+            {/* Student Search Box */}
+            <div className="relative mb-5">
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -1996,7 +2783,7 @@ export function AdminPanel({
           
           {/* Autocomplete Search Dropdown */}
           {searchQuery.trim() !== "" && (
-            <Card className="absolute left-0 right-0 top-[44px] z-50 max-h-[220px] overflow-y-auto border-border/80 bg-popover p-2 shadow-2xl backdrop-blur-xl">
+            <Card className="absolute left-0 right-0 top-[44px] z-50 max-h-[220px] overflow-y-auto border border-border/80 bg-popover p-2 shadow-2xl backdrop-blur-xl">
               {searchFilteredStudents.length > 0 ? (
                 <div className="space-y-1">
                   {searchFilteredStudents.map((s) => (
@@ -2007,7 +2794,7 @@ export function AdminPanel({
                     >
                       <div className="flex items-center gap-2">
                         <GenderMark gender={s.gender} />
-                        <span className="font-bold">{s.name}</span>
+                        <span className="font-bold text-foreground">{s.name}</span>
                         <span className="text-xs text-muted-foreground">({s.grade}학년 {s.classNum}반 {s.number}번)</span>
                       </div>
                       <div className="flex items-center gap-2">
@@ -2023,6 +2810,8 @@ export function AdminPanel({
             </Card>
           )}
         </div>
+
+
 
         {/* Grade/Class Selector */}
         <div className="rounded-xl border border-border/40 bg-muted/10 p-5 mt-4 space-y-4">
@@ -2163,10 +2952,24 @@ export function AdminPanel({
             </div>
           </div>
         )}
+          </>
+        )}
 
         {/* Student Detail Panel */}
         {selectedStudent ? (
-          <div className="grid gap-6 md:grid-cols-5 mt-6 pt-6 border-t border-border/40">
+          <div className="space-y-4 animate-in fade-in duration-200">
+            {/* 목록으로 돌아가기 버튼 배치 */}
+            <div className="flex justify-between items-center pb-2 border-b border-border/25">
+              <Button
+                variant="ghost"
+                onClick={() => setSelectedStudentId(null)}
+                className="h-9 px-3 rounded-lg text-xs font-bold text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-all flex items-center gap-1.5"
+              >
+                <ArrowLeft className="size-4" /> 다른 학생 선택 (목록으로)
+              </Button>
+            </div>
+            
+            <div className="grid gap-6 md:grid-cols-5">
             
             {/* Profile Info & RP Adjuster (Left Side) */}
             <div className="md:col-span-2 space-y-4">
@@ -2362,18 +3165,19 @@ export function AdminPanel({
             </div>
 
           </div>
+        </div>
         ) : (
           <div className="flex flex-col items-center justify-center py-10 border border-dashed border-border/40 rounded-xl bg-muted/5">
             <User className="size-10 text-muted-foreground/60 mb-2" />
             <div className="text-xs text-muted-foreground">조회하고 싶은 학생을 검색창에 입력하여 선택해 주세요.</div>
           </div>
         )}
-          </div>
-        </div>
       </Card>
+      )}
 
       {/* 3. JSON Backup Download & Collapsible NEIS Paste */}
-      <div className="grid gap-6 md:grid-cols-3">
+      {activeTab === "dataManage" && (
+      <div className="grid gap-6 md:grid-cols-2">
         
         {/* JSON Backup Card */}
         <Card className="border-border/60 bg-card/60 p-5 backdrop-blur shadow-lg flex flex-col justify-between">
@@ -2425,41 +3229,24 @@ export function AdminPanel({
           </div>
         </Card>
 
-        {/* Bulk upload toggler */}
-        <Card className="border-border/60 bg-card/60 p-5 backdrop-blur shadow-lg flex flex-col justify-between">
-          <div>
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Database className="size-5" />
-              <h3 className="font-bold text-foreground">나이스(NEIS) 명렬표 일괄 등록</h3>
-            </div>
-            <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
-              체육 수업을 시작하거나 새 학기에 여러 반 학생 정보를 동시에 간편히 대량 업로드하여 등록할 때 사용할 수 있습니다. 기존 전적 정보는 완벽하게 보호됩니다.
-            </p>
-          </div>
-          <Button
-            onClick={() => setShowBulkUpload(!showBulkUpload)}
-            variant="outline"
-            size="lg"
-            className="mt-5 w-full border-border/80 text-foreground font-bold hover:bg-accent/40 active:scale-95 transition-all"
-          >
-            <Database className="mr-2 size-4" /> 일괄 등록/갱신 패널 {showBulkUpload ? "닫기" : "열기"}
-          </Button>
-        </Card>
       </div>
+      )}
 
       {/* Bulk Upload panel (Conditional) */}
-      {showBulkUpload && (
+      {activeTab === "studentRegister" && (
         <Card className="border-border/60 bg-card/60 p-5 backdrop-blur shadow-lg animate-in fade-in slide-in-from-bottom-2 duration-300">
           <div className="mb-3">
-            <h3 className="font-bold text-sm">나이스(NEIS) 명렬표 일괄 복사/붙여넣기</h3>
-            <p className="mt-1 text-xs text-muted-foreground">
-              엑셀에서 <span className="font-mono text-foreground bg-muted px-1 rounded">학년 / 반 / 번호 / 이름 / (성별)</span> 순으로 정렬된 셀을 복사 후 붙여넣으세요. 성별(남/여)은 없어도 되며 누락 시 미지정 처리됩니다. 이미 등록된 학생의 전적은 철저히 유지됩니다.
+            <h3 className="font-bold text-sm">학생 등록</h3>
+            <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+              엑셀이나 나이스(NEIS)의 명렬표에서 복사한 목록을 아래에 붙여넣으세요.<br />
+              형식: <code className="text-foreground bg-muted px-1 rounded">학년 반 번호 이름 (성별)</code> (예: 5 1 1 홍길동 남)<br />
+              성별은 생략 가능하며, 생략 시 미지정(U) 처리됩니다.
             </p>
           </div>
           <Textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder={`5\t1\t1\t홍길동\t남\n5\t1\t2\t김민지\t여\n6\t2\t3\t이영희\t여\n6\t2\t4\t박민수\t남`}
+            placeholder={`5\t1\t1\t홍길동\t남\n5\t1\t2\t김민지\t여`}
             className="min-h-[160px] resize-y border-border/60 bg-background/60 font-mono text-xs"
           />
           <div className="mt-3 flex flex-wrap items-center gap-3 text-[11px]">
@@ -2467,11 +3254,11 @@ export function AdminPanel({
               현재 등록 인원: <span className="font-bold text-foreground">{count}명</span>
             </span>
             <span className="rounded bg-neon-blue/15 px-2 py-0.5 text-neon-blue">
-              인식된 행: <span className="font-bold">{parsed.rows.length}</span>
+              인식된 행: <span className="font-bold">{parsed.rows.length}명</span>
             </span>
             {parsed.errors > 0 && (
               <span className="flex items-center gap-1 rounded bg-destructive/15 px-2 py-0.5 text-destructive">
-                <AlertCircle className="size-3" /> 무시된 줄: {parsed.errors}
+                <AlertCircle className="size-3" /> 형식 불일치 (무시됨): {parsed.errors}줄
               </span>
             )}
           </div>
@@ -2519,385 +3306,7 @@ export function AdminPanel({
         </Card>
       )}
 
-      {/* 3.5. League Settings Calibration: Custom Tier Thresholds & RP Deltas */}
-      <Card className="border-border/60 bg-card/60 p-6 backdrop-blur shadow-xl">
-        {/* Clickable Header for Collapsible Toggle */}
-        <div 
-          onClick={() => setIsTierSettingsOpen(!isTierSettingsOpen)}
-          className="flex items-center justify-between cursor-pointer select-none group"
-        >
-          <div className="flex-1 pr-4">
-            <div className="flex items-center gap-2 text-neon-blue">
-              <Save className="size-5" />
-              <h3 className="font-black text-lg">티어 및 RP 설정 (League Settings Calibration)</h3>
-            </div>
-            <p className="mt-1 text-sm text-muted-foreground">
-              티어 등급별 최소 진입 RP 커트라인 기준점과 경기 승/패 시 가감되는 기본 변동 RP 점수를 자유롭게 미세 조율하여 리그 밸런스를 커스텀 설정합니다.
-            </p>
-          </div>
-          <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-muted/40 border border-border/20 text-xs font-black text-muted-foreground group-hover:text-foreground group-hover:bg-muted/80 group-hover:border-neon-blue/30 transition-all shrink-0">
-            <span>티어 설정 {isTierSettingsOpen ? "닫기" : "열기"}</span>
-            <span className="text-xs transition-transform duration-300">
-              {isTierSettingsOpen ? "▲" : "▼"}
-            </span>
-          </div>
-        </div>
 
-        {/* Smooth transition collapsible content wrapper */}
-        <div className={cn(
-          "grid transition-all duration-300 ease-in-out",
-          isTierSettingsOpen ? "grid-rows-[1fr] opacity-100 mt-5" : "grid-rows-[0fr] opacity-0"
-        )}>
-          <div className="overflow-hidden min-h-0">
-            <div className="space-y-6 pt-2">
-
-              {/* Preset Selection Dropdown */}
-              <div className="p-4 rounded-2xl bg-muted/30 border border-border/20 space-y-2">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="space-y-0.5">
-                    <span className="text-xs text-neon-blue font-bold uppercase tracking-wider block">설정 프리셋 선택 (Configuration Presets)</span>
-                    <span className="text-[10px] text-muted-foreground block">원하는 리그 방식의 프리셋을 선택하거나 세부 수치를 직접 조정할 수 있습니다.</span>
-                  </div>
-                  <div className="w-full sm:w-64">
-                    <select
-                      value={preset}
-                      onChange={(e) => {
-                        const nextPreset = e.target.value as PresetType;
-                        setPreset(nextPreset);
-                        if (nextPreset !== "custom") {
-                          const val = PRESETS[nextPreset];
-                          setInputBronze(val.Bronze.toString());
-                          setInputSilver(val.Silver.toString());
-                          setInputGold(val.Gold.toString());
-                          setInputPlatinum(val.Platinum.toString());
-                          setInputDiamond(val.Diamond.toString());
-                          setInputWinDelta(val.winDelta.toString());
-                          setInputLoseDelta(val.loseDelta.toString());
-                        }
-                      }}
-                      className="w-full h-10 border border-border/50 bg-background/60 rounded-xl px-3 text-xs font-semibold focus-visible:ring-neon-blue transition-all"
-                    >
-                      <option value="standard">⚖️ 스탠다드 (기본 리그 방식)</option>
-                      <option value="speedup">⚡ 스피드업 (빠른 티어 등반/강등)</option>
-                      <option value="hardcore">💀 하드코어 (상승은 좁고 하락은 깊게)</option>
-                      <option value="underdog">🦊 언더독 (패배 부담 경감/이변 장려)</option>
-                      <option value="custom">🛠️ 사용자 설정 (Custom)</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              {/* Tier Thresholds Inputs Group with Sliders */}
-              <div>
-                <span className="text-xs text-neon-blue font-bold uppercase tracking-wider block mb-3">티어별 최저 RP 기준점 (Tier Cutoffs Inputs & Sliders)</span>
-                <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-5 bg-card/40 p-5 rounded-2xl border border-border/30">
-                  
-                  {/* Bronze */}
-                  <div className="space-y-2 rounded-xl bg-background/30 p-3 border border-border/20">
-                    <div className="flex justify-between items-center gap-2">
-                      <label className="text-xs font-bold text-tier-bronze shrink-0">브론즈</label>
-                      <Input
-                        type="number"
-                        value={inputBronze}
-                        onChange={(e) => {
-                          setPreset("custom");
-                          setInputBronze(e.target.value);
-                        }}
-                        className="h-7 w-20 text-right font-mono text-xs font-bold text-tier-bronze bg-tier-bronze/5 border-tier-bronze/20 focus-visible:ring-tier-bronze py-0.5 px-2"
-                      />
-                    </div>
-                    <Slider
-                      value={[Math.max(0, Math.min(1000, parseInt(inputBronze, 10) || 0))]}
-                      onValueChange={(val) => {
-                        setPreset("custom");
-                        setInputBronze(val[0].toString());
-                      }}
-                      min={0}
-                      max={1000}
-                      step={10}
-                      className="py-2"
-                    />
-                  </div>
-
-                  {/* Silver */}
-                  <div className="space-y-2 rounded-xl bg-background/30 p-3 border border-border/20">
-                    <div className="flex justify-between items-center gap-2">
-                      <label className="text-xs font-bold text-tier-silver shrink-0">실버</label>
-                      <Input
-                        type="number"
-                        value={inputSilver}
-                        onChange={(e) => {
-                          setPreset("custom");
-                          setInputSilver(e.target.value);
-                        }}
-                        className="h-7 w-20 text-right font-mono text-xs font-bold text-tier-silver bg-tier-silver/5 border-tier-silver/20 focus-visible:ring-tier-silver py-0.5 px-2"
-                      />
-                    </div>
-                    <Slider
-                      value={[Math.max(500, Math.min(2000, parseInt(inputSilver, 10) || 0))]}
-                      onValueChange={(val) => {
-                        setPreset("custom");
-                        setInputSilver(val[0].toString());
-                      }}
-                      min={500}
-                      max={2000}
-                      step={10}
-                      className="py-2"
-                    />
-                  </div>
-
-                  {/* Gold */}
-                  <div className="space-y-2 rounded-xl bg-background/30 p-3 border border-border/20">
-                    <div className="flex justify-between items-center gap-2">
-                      <label className="text-xs font-bold text-tier-gold shrink-0">골드</label>
-                      <Input
-                        type="number"
-                        value={inputGold}
-                        onChange={(e) => {
-                          setPreset("custom");
-                          setInputGold(e.target.value);
-                        }}
-                        className="h-7 w-20 text-right font-mono text-xs font-bold text-tier-gold bg-tier-gold/5 border-tier-gold/20 focus-visible:ring-tier-gold py-0.5 px-2"
-                      />
-                    </div>
-                    <Slider
-                      value={[Math.max(800, Math.min(2500, parseInt(inputGold, 10) || 0))]}
-                      onValueChange={(val) => {
-                        setPreset("custom");
-                        setInputGold(val[0].toString());
-                      }}
-                      min={800}
-                      max={2500}
-                      step={10}
-                      className="py-2"
-                    />
-                  </div>
-
-                  {/* Platinum */}
-                  <div className="space-y-2 rounded-xl bg-background/30 p-3 border border-border/20">
-                    <div className="flex justify-between items-center gap-2">
-                      <label className="text-xs font-bold text-tier-platinum shrink-0">플래티넘</label>
-                      <Input
-                        type="number"
-                        value={inputPlatinum}
-                        onChange={(e) => {
-                          setPreset("custom");
-                          setInputPlatinum(e.target.value);
-                        }}
-                        className="h-7 w-20 text-right font-mono text-xs font-bold text-tier-platinum bg-tier-platinum/5 border-tier-platinum/20 focus-visible:ring-tier-platinum py-0.5 px-2"
-                      />
-                    </div>
-                    <Slider
-                      value={[Math.max(1000, Math.min(3000, parseInt(inputPlatinum, 10) || 0))]}
-                      onValueChange={(val) => {
-                        setPreset("custom");
-                        setInputPlatinum(val[0].toString());
-                      }}
-                      min={1000}
-                      max={3000}
-                      step={10}
-                      className="py-2"
-                    />
-                  </div>
-
-                  {/* Diamond */}
-                  <div className="space-y-2 rounded-xl bg-background/30 p-3 border border-border/20">
-                    <div className="flex justify-between items-center gap-2">
-                      <label className="text-xs font-bold text-tier-diamond shrink-0">다이아몬드</label>
-                      <Input
-                        type="number"
-                        value={inputDiamond}
-                        onChange={(e) => {
-                          setPreset("custom");
-                          setInputDiamond(e.target.value);
-                        }}
-                        className="h-7 w-20 text-right font-mono text-xs font-bold text-tier-diamond bg-tier-diamond/5 border-tier-diamond/20 focus-visible:ring-tier-diamond py-0.5 px-2"
-                      />
-                    </div>
-                    <Slider
-                      value={[Math.max(1200, Math.min(3500, parseInt(inputDiamond, 10) || 0))]}
-                      onValueChange={(val) => {
-                        setPreset("custom");
-                        setInputDiamond(val[0].toString());
-                      }}
-                      min={1200}
-                      max={3500}
-                      step={10}
-                      className="py-2"
-                    />
-                  </div>
-
-                </div>
-              </div>
-
-              {/* RP Deltas Inputs Group */}
-              <div className="border-t border-border/30 pt-4">
-                <span className="text-xs text-neon-green font-bold uppercase tracking-wider block mb-3">승/패 RP 변동폭 설정 (Delta Variables)</span>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  {/* Win Delta */}
-                  <div className="space-y-1.5">
-                    <div className="flex justify-between items-center">
-                      <label className="text-xs font-bold text-win">경기 이겼을 때 상승 RP</label>
-                      <span className="text-[10px] text-muted-foreground font-mono">(기본값: +25)</span>
-                    </div>
-                    <Input
-                      type="number"
-                      value={inputWinDelta}
-                      onChange={(e) => {
-                        setPreset("custom");
-                        setInputWinDelta(e.target.value);
-                      }}
-                      className="font-mono font-bold bg-background/60 border-win/30 text-win focus-visible:ring-win"
-                      placeholder="예: 25"
-                    />
-                  </div>
-
-                  {/* Lose Delta */}
-                  <div className="space-y-1.5">
-                    <div className="flex justify-between items-center">
-                      <label className="text-xs font-bold text-loss">경기 졌을 때 하락 RP</label>
-                      <span className="text-[10px] text-muted-foreground font-mono">(기본값: -20)</span>
-                    </div>
-                    <Input
-                      type="number"
-                      value={inputLoseDelta}
-                      onChange={(e) => {
-                        setPreset("custom");
-                        setInputLoseDelta(e.target.value);
-                      }}
-                      className="font-mono font-bold bg-background/60 border-loss/30 text-loss focus-visible:ring-loss"
-                      placeholder="예: 20"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Save Button */}
-              <div className="pt-2">
-                <Button
-                  onClick={handleSaveSettings}
-                  className="w-full bg-gradient-to-r from-neon-blue to-neon-green text-primary-foreground font-black tracking-wide h-12 shadow-lg active:scale-95 transition-all"
-                >
-                  <Save className="size-4.5 mr-2" /> 캘리브레이션 리그 설정 저장 및 반영
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </Card>
-
-      {/* 3.8. Inactivity RP Decay (Dormant User Control) */}
-      <Card className="border border-amber-500/30 bg-amber-500/5 p-6 backdrop-blur shadow-xl relative overflow-hidden">
-        <div className="absolute right-0 top-0 opacity-5 pointer-events-none">
-          <ShieldAlert className="size-48 text-amber-500" />
-        </div>
-        
-        <div className="mb-4">
-          <div className="flex items-center gap-2 text-amber-500">
-            <ShieldAlert className="size-5" />
-            <h3 className="font-black text-lg">고급 휴면 감점 설정 (Advanced Inactivity Decay Settings)</h3>
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            정기적인 활동이 없는 학생의 RP를 감점하여 리그의 활성도를 관리합니다. (매일 1회 자동 계산 및 적용)
-          </p>
-        </div>
-
-        <div className="space-y-4">
-          {/* Toggle Switch */}
-          <div className="flex items-center justify-between p-3.5 rounded-xl border border-border/30 bg-background/25 max-w-md">
-            <div className="flex flex-col">
-              <span className="text-xs font-bold text-foreground">휴면 감점 시스템 활성화</span>
-              <span className="text-[9px] text-muted-foreground mt-0.5">활성화 시 하루 1회 조건 만족 학생의 RP 감점 자동 실행</span>
-            </div>
-            <button
-              type="button"
-              onClick={handleToggleDecay}
-              className={cn(
-                "w-10 h-6 rounded-full transition-colors relative flex items-center px-0.5",
-                localDecayEnabled ? "bg-amber-500" : "bg-muted"
-              )}
-            >
-              <div className={cn(
-                "size-5 rounded-full bg-white transition-transform shadow-sm",
-                localDecayEnabled ? "translate-x-4" : "translate-x-0"
-              )} />
-            </button>
-          </div>
-
-          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 bg-background/30 p-4 rounded-xl border border-border/30">
-            {/* Days Criteria */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-foreground">기준 미활동 일수</label>
-              <div className="relative">
-                <Input
-                  type="number"
-                  min={1}
-                  value={localDecayDays}
-                  onChange={(e) => setLocalDecayDays(e.target.value)}
-                  onBlur={handleDaysBlur}
-                  className="h-10 border-border/60 bg-background/50 focus:border-amber-500 font-sans"
-                  disabled={!localDecayEnabled}
-                />
-                <span className="absolute right-3 top-2 text-xs text-muted-foreground font-bold">일 이상</span>
-              </div>
-            </div>
-
-            {/* RP Decay Amount */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-foreground">차감할 RP</label>
-              <div className="relative">
-                <Input
-                  type="number"
-                  min={1}
-                  value={localDecayAmount}
-                  onChange={(e) => setLocalDecayAmount(e.target.value)}
-                  onBlur={handleAmountBlur}
-                  className="h-10 border-border/60 bg-background/50 focus:border-amber-500 font-sans text-destructive"
-                  disabled={!localDecayEnabled}
-                />
-                <span className="absolute right-3 top-2 text-xs text-destructive font-bold">RP 감점</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Tier Checkboxes */}
-          <div className="bg-background/30 p-4 rounded-xl border border-border/30">
-            <span className="text-xs font-bold text-foreground block mb-2.5">감점을 적용할 대상 티어 설정</span>
-            <div className="flex flex-wrap gap-3">
-              {(["Bronze", "Silver", "Gold", "Platinum", "Diamond"] as TierName[]).map((tier) => {
-                const checked = localDecayTiers.includes(tier);
-                let label = "";
-                let colorClass = "";
-                if (tier === "Bronze") { label = "브론즈"; colorClass = "text-tier-bronze border-tier-bronze/30"; }
-                if (tier === "Silver") { label = "실버"; colorClass = "text-tier-silver border-tier-silver/30"; }
-                if (tier === "Gold") { label = "골드"; colorClass = "text-tier-gold border-tier-gold/30"; }
-                if (tier === "Platinum") { label = "플래티넘"; colorClass = "text-tier-platinum border-tier-platinum/30"; }
-                if (tier === "Diamond") { label = "다이아몬드"; colorClass = "text-tier-diamond border-tier-diamond/30"; }
-
-                return (
-                  <label 
-                    key={tier} 
-                    className={cn(
-                      "flex items-center gap-2 px-3 py-1.5 rounded-lg border bg-background/40 text-xs font-semibold cursor-pointer select-none transition-all hover:bg-background/80",
-                      checked ? `bg-amber-500/10 border-amber-500 text-amber-500` : "border-border/40 text-muted-foreground",
-                      !localDecayEnabled && "opacity-50 cursor-not-allowed"
-                    )}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => localDecayEnabled && handleTierCheckboxChange(tier)}
-                      className="rounded border-border bg-background text-amber-500 focus:ring-amber-500 size-3.5"
-                      disabled={!localDecayEnabled}
-                    />
-                    <span className={colorClass}>{label}</span>
-                  </label>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      </Card>
 
       {/* 전체 경기 기록 통합 관리 섹션이 최상단으로 이동되었습니다. */}
       {/* Inline Score Edit Modal Overlaid (Radix Dialog style custom state overlay) */}
@@ -2961,6 +3370,7 @@ export function AdminPanel({
       )}
 
       {/* 4. Danger Zone: Global Reset with Password Verification */}
+      {activeTab === "seasonManage" && (
       <Card className="border border-destructive/40 bg-destructive/5 p-5 backdrop-blur shadow-lg space-y-6">
         <div className="flex items-center gap-2 text-destructive">
           <ShieldAlert className="size-5" />
@@ -2987,8 +3397,7 @@ export function AdminPanel({
           </div>
         </div>
       </Card>
-
-      {/* Season Change Modal Overlaid */}
+      )}
       {isSeasonChangeModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
           <Card className="max-w-md w-full border border-destructive/30 bg-background p-6 shadow-2xl rounded-2xl relative z-50 animate-in zoom-in-95 duration-200">
@@ -3091,6 +3500,7 @@ export function AdminPanel({
         </AlertDialogContent>
       </AlertDialog>
 
+      </div>
     </div>
   );
 }

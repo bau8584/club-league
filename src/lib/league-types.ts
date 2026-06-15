@@ -1,39 +1,55 @@
-export type Gender = "M" | "F" | "U"; // 남, 여, 미지정
+export type Gender = "M" | "F" | "U"; // M: 남, F: 여, U: 미지정
 
+/**
+ * Student 인터페이스 - Supabase 'students' 테이블 스키마와 대응
+ */
 export type Student = {
-  id: string;
-  grade: number; // 1-6
-  classNum: number; // 1-10
-  number: number; // 출석번호
-  name: string;
-  gender: Gender;
-  rp: number;
-  recent: ("W" | "L")[]; // most recent first, max 5
-  wins: number;
-  losses: number;
+  // --- Supabase DB 테이블 스키마 속성 ---
+  id: string; // UUID (Primary Key)
+  rp: number; // 랭킹 포인트
+  
+  // --- 프론트엔드 전용 확장 / 직렬화 분해 속성 ---
+  // student_name (포맷: [grade]-[classNum]-[number]-[name]-[gender]) 컬럼에서 파싱됨
+  grade: number; // 학년 (1-6)
+  classNum: number; // 반 (1-10)
+  number: number; // 번호 (출석 번호)
+  name: string; // 학생 이름
+  gender: Gender; // 성별
+  
+  // 경기 전적(matches) 데이터를 기반으로 실시간 계산되는 속성들
+  recent: ("W" | "L")[]; // 최근 5경기 결과 (가장 최근이 첫 요소)
+  wins: number; // 승리 횟수
+  losses: number; // 패배 횟수
   demotionShields?: number; // 횟수제 강등 보호막 (기본값 0)
-  lastMatchDate?: string;   // 마지막으로 경기를 치른 날짜 (ISO 8601 형식)
-  lastWinDate?: string;     // 마지막으로 승리한 날짜 (YYYY-MM-DD 형식)
-  totalMatches?: number;
-  currentStreak?: number;
-  achievements?: any[];
+  lastMatchDate?: string; // 마지막 경기 일시 (ISO 8601)
+  lastWinDate?: string; // 마지막 승리 일시 (YYYY-MM-DD)
+  totalMatches?: number; // 총 경기수
+  currentStreak?: number; // 현재 연승/연패 기록 (연승은 양수, 연패는 음수)
+  achievements?: any[]; // 획득한 업적 목록
 };
 
+/**
+ * Match 인터페이스 - Supabase 'matches' 테이블 스키마와 대응
+ */
 export type Match = {
-  id: string;
-  playerAId: string;
-  playerBId: string;
-  playerA2Id?: string; // 복식 파트너 A2
-  playerB2Id?: string; // 복식 파트너 B2
-  scoreA: number;
-  scoreB: number;
-  date: string;
-  matchType?: "single" | "double"; // 경기 방식 (단식/복식)
-  rpDeltaA?: number;
-  rpDeltaB?: number;
-  rpDeltaA2?: number; // 복식 파트너 A2 RP 변동
-  rpDeltaB2?: number; // 복식 파트너 B2 RP 변동
-  // 각 경기 시점 지급된 보너스 개별 감사 내역
+  // --- Supabase DB 테이블 스키마 속성 ---
+  id: string; // UUID (Primary Key)
+  playerAId: string; // 승리자 ID (DB: winner_id)
+  playerBId: string; // 패배자 ID (DB: loser_id)
+  date: string; // 경기 일시 (DB: created_at)
+  
+  // --- 프론트엔드 전용 확장 속성 ---
+  playerA2Id?: string; // 복식 파트너 A2 (복식 경기 확장 시 사용)
+  playerB2Id?: string; // 복식 파트너 B2 (복식 경기 확장 시 사용)
+  scoreA: number; // 승리자 점수 (기본값 21)
+  scoreB: number; // 패배자 점수 (기본값 19)
+  matchType?: "single" | "double"; // 경기 구분 (단식/복식)
+  rpDeltaA?: number; // 승리자 RP 변동량
+  rpDeltaB?: number; // 패배자 RP 변동량
+  rpDeltaA2?: number; // 복식 파트너 A2 RP 변동량
+  rpDeltaB2?: number; // 복식 파트너 B2 RP 변동량
+  
+  // 경기 시점에 지급된 보너스 개별 지급 기록 (프론트엔드 세부 분석용)
   underdogBonusA?: number;
   underdogBonusB?: number;
   underdogBonusA2?: number;
@@ -74,9 +90,81 @@ export type Match = {
   mentoringBonusB?: number;
   mentoringBonusA2?: number;
   mentoringBonusB2?: number;
+  
+  // New bonus and penalty fields
+  greatMatchBonusA?: number;
+  greatMatchBonusB?: number;
+  greatMatchBonusA2?: number;
+  greatMatchBonusB2?: number;
+  lossComfortBonusA?: number;
+  lossComfortBonusB?: number;
+  lossComfortBonusA2?: number;
+  lossComfortBonusB2?: number;
+  arrogancePenaltyA?: number;
+  arrogancePenaltyB?: number;
+  arrogancePenaltyA2?: number;
+  arrogancePenaltyB2?: number;
+  crushingPenaltyA?: number;
+  crushingPenaltyB?: number;
+  crushingPenaltyA2?: number;
+  crushingPenaltyB2?: number;
+  revengeAllowedPenaltyA?: number;
+  revengeAllowedPenaltyB?: number;
+  revengeAllowedPenaltyA2?: number;
+  revengeAllowedPenaltyB2?: number;
+  championPenaltyA?: number;
+  championPenaltyB?: number;
+  championPenaltyA2?: number;
+  championPenaltyB2?: number;
+  swampPenaltyA?: number;
+  swampPenaltyB?: number;
+  swampPenaltyA2?: number;
+  swampPenaltyB2?: number;
+  willOfSteelBonusA?: number;
+  willOfSteelBonusB?: number;
+  willOfSteelBonusA2?: number;
+  willOfSteelBonusB2?: number;
+};
+
+/**
+ * Class 인터페이스 - Supabase 'classes' 테이블 스키마와 1:1 매핑
+ */
+export type Class = {
+  id: string; // UUID (Primary Key)
+  season_id?: string | null; // 시즌 외래키
+  owner_uid: string; // 방장 교사 UID
+  co_admin_uids: string[] | null; // 공동 관리 교사 UID 목록
+  scorekeeper_uids: string[] | null; // 기록원(학생 등) UID 목록
+  class_name: string; // 학급/리그명
+  settings: {
+    season?: string; // 시즌 텍스트 정보 (예: "2026-1")
+    tierThresholds?: Record<TierName, number>; // 티어 기준선 설정
+    rpVariables?: { winDelta: number; loseDelta: number }; // 기본 승패 획득/차감 점수
+    decayEnabled?: boolean; // 휴면 감쇠 여부
+    decayDays?: number; // 휴면 기준 일수
+    decayAmount?: number; // 감쇠 점수
+    decayTiers?: TierName[]; // 감쇠 적용 티어 목록
+    lastDecayDate?: string; // 최근 감쇠 적용일 (ISO)
+    tierSettings?: TierSettings; // 티어별 커스텀 획득 점수
+    dynamicBonuses?: DynamicBonuses; // 동적 보너스 세부 설정
+    dynamicPenalties?: DynamicPenalties; // 상위 티어 패배 패널티 설정
+    activeBonuses?: ActiveBonuses; // 활성화된 보너스 룰셋
+    opMode?: "school" | "club"; // 운영 모드 (학급/동아리)
+    [key: string]: any;
+  } | null;
+  is_deleted?: boolean; // 소프트 딜리트 여부
+  created_at: string; // 생성 일시
 };
 
 export type TierName = "Bronze" | "Silver" | "Gold" | "Platinum" | "Diamond";
+
+export type ActiveBonuses = {
+  firstWin: boolean;
+  revenge: boolean;
+  underdog: boolean;
+  scoreDiff: boolean;
+  rival: boolean;
+};
 
 export function getTier(rp: number, thresholds?: Record<TierName, number>): TierName {
   const t = thresholds || { Bronze: 0, Silver: 1000, Gold: 1200, Platinum: 1400, Diamond: 1600 };
@@ -152,7 +240,23 @@ export function studentKey(s: { grade: number; classNum: number; number: number;
 export type TierSettings = Record<"Bronze" | "Silver" | "Gold" | "Platinum", {
   winDelta: number;
   loseDelta: number;
-}>;
+ }>;
+
+export type TierConfig = {
+  threshold: number;
+  winRp: number;
+  loseRp: number;
+};
+
+export type TiersRecord = Record<'bronze'|'silver'|'gold'|'platinum'|'diamond', TierConfig>;
+
+export type DecayTierConfig = {
+  enabled: boolean;
+  inactiveDays: number;
+  decayRp: number;
+};
+
+export type DecaySettingsRecord = Record<'bronze'|'silver'|'gold'|'platinum'|'diamond', DecayTierConfig>;
 
 export type DynamicBonuses = {
   freshnessEnabled: boolean;
@@ -161,18 +265,72 @@ export type DynamicBonuses = {
   streakEnabled: boolean;
   streakWins: number;
   streakRp: number;
-  comebackEnabled: boolean;
-  comebackLosses: number;
-  comebackRp: number;
-  marginEnabled: boolean;
-  marginDiff: number;
-  marginRp: number;
   firstWinEnabled: boolean;
   firstWinRp: number;
   revengeEnabled: boolean;
   revengeRp: number;
   underdogEnabled: boolean;
-  underdogPercent: number;
-  rivalEnabled: boolean;
-  rivalRp: number;
+  underdogPercent?: number;
+  underdogDiff1Rp?: number;
+  underdogDiff2Rp?: number;
+  underdogDiff3Rp?: number;
+  greatMatchEnabled: boolean;
+  greatMatchRp: number;
+  greatMatchWin1Rp?: number;
+  greatMatchLose1Rp?: number;
+  greatMatchWin2Rp?: number;
+  greatMatchLose2Rp?: number;
+  greatMatchWin3Rp?: number;
+  greatMatchLose3Rp?: number;
+  lossComfortEnabled: boolean;
+  lossComfortRp: number;
+  lossComfortMaxTier?: TierName;
+  willOfSteelEnabled?: boolean;
+  willOfSteel3Rp?: number;
+  willOfSteel4Rp?: number;
+  willOfSteel5Rp?: number;
+  mentoring?: {
+    enabled: boolean;
+    mentorRp: number;
+    menteeRp: number;
+    minTierGap: number;
+  };
+  
+  // Deprecated fields as optional for compatibility
+  comebackEnabled?: boolean;
+  comebackLosses?: number;
+  comebackRp?: number;
+  marginEnabled?: boolean;
+  marginDiff?: number;
+  marginRp?: number;
+  rivalEnabled?: boolean;
+  rivalRp?: number;
+};
+
+export type DynamicPenalties = {
+  enabled: boolean;
+  arrogance: boolean;
+  crushing: boolean;
+  revengeFail: boolean;
+  championWeight: boolean;
+  lossStreak: boolean;
+  arroganceGold: number;
+  arrogancePlatinum: number;
+  arroganceDiamond: number;
+  crushingGold: number;
+  crushingPlatinum: number;
+  crushingDiamond: number;
+  revengeAllowedGold: number;
+  revengeAllowedPlatinum: number;
+  revengeAllowedDiamond: number;
+  championGold: number;
+  championPlatinum: number;
+  championDiamond: number;
+  swampGold2: number;
+  swampGold3: number;
+  swampPlatinum2: number;
+  swampPlatinum3: number;
+  swampDiamond2: number;
+  swampDiamond3: number;
+  redCardPenalty: number;
 };

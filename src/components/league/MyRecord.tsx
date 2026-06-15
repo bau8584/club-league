@@ -32,7 +32,7 @@ interface MyRecordProps {
     role: "MASTER" | "TEACHER" | "STUDENT";
     schoolName: string;
     userName: string;
-    scriptUrl: string;
+    scriptUrl?: string;
     studentId?: string;
   } | null;
   students: Student[];

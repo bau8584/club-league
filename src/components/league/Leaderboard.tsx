@@ -1,5 +1,4 @@
 import { useMemo, useState, useEffect } from "react";
-import { SecurityModal } from "./SecurityModal";
 import { useLeagueStore } from "@/lib/league-store";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -24,12 +23,10 @@ function getWinStreak(recent: ("W" | "L")[]): number {
 
 export function Leaderboard({ 
   students, 
-  thresholds, 
-  teacherAccessCode 
+  thresholds 
 }: { 
   students: Student[]; 
   thresholds?: Record<TierName, number>;
-  teacherAccessCode: string;
 }) {
   const [grade, setGrade] = useState<number | "all">("all");
   const [classNum, setClassNum] = useState<number | "all">("all");
@@ -68,16 +65,6 @@ export function Leaderboard({
       .filter((s) => (q ? s.name.toLowerCase().includes(q) : true))
       .sort((a, b) => b.rp - a.rp);
   }, [students, grade, classNum, tier, gender, query, thresholds]);
-
-  // 보안 잠금 가드 렌더링
-  if (!isUnlocked && !isDemo) {
-    return (
-      <SecurityModal
-        correctCode={teacherAccessCode}
-        onSuccess={() => setIsUnlocked(true)}
-      />
-    );
-  }
 
   return (
     <div className="space-y-5">
@@ -148,14 +135,14 @@ export function Leaderboard({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border/60 bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
-                <th className="px-4 py-3 text-left">순위</th>
-                <th className="px-4 py-3 text-left">학년/반</th>
-                <th className="px-2 py-3 text-left">번호</th>
+                <th className="px-4 py-3 text-left w-12 sm:w-16">순위</th>
+                <th className="px-3 py-3 text-left hidden sm:table-cell">학년/반</th>
+                <th className="px-2 py-3 text-left hidden xs:table-cell">번호</th>
                 <th className="px-4 py-3 text-left">이름</th>
                 <th className="px-4 py-3 text-left">티어</th>
                 <th className="px-4 py-3 text-right">RP</th>
-                <th className="px-4 py-3 text-center">최근 5경기</th>
-                <th className="px-4 py-3 text-right">승률</th>
+                <th className="px-4 py-3 text-center hidden md:table-cell">최근 5경기</th>
+                <th className="px-4 py-3 text-right hidden sm:table-cell">승률</th>
               </tr>
             </thead>
             <tbody>
@@ -164,15 +151,20 @@ export function Leaderboard({
                 const winRate = total === 0 ? 0 : Math.round((s.wins / total) * 100);
                 return (
                   <tr key={s.id} className="border-b border-border/30 transition-colors hover:bg-accent/40">
-                    <td className="px-4 py-3 font-bold tabular-nums">
+                    <td className="px-4 py-3 font-bold tabular-nums w-12 sm:w-16">
                       <RankBadge rank={i + 1} />
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground">{s.grade}-{s.classNum}</td>
-                    <td className="px-2 py-3 tabular-nums text-muted-foreground">{s.number}</td>
+                    <td className="px-3 py-3 text-muted-foreground hidden sm:table-cell">{s.grade}-{s.classNum}</td>
+                    <td className="px-2 py-3 tabular-nums text-muted-foreground hidden xs:table-cell">{s.number}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2 font-semibold">
                         <GenderMark gender={s.gender} />
-                        <span>{s.name}</span>
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2">
+                          <span>{s.name}</span>
+                          <span className="text-[10px] text-muted-foreground sm:hidden">
+                            ({s.grade}-{s.classNum} · {s.number}번)
+                          </span>
+                        </div>
                         {getWinStreak(s.recent) >= 3 && (
                           <span
                             className="inline-flex items-center gap-0.5 rounded-full bg-orange-500/15 px-2 py-0.5 text-[10px] font-black text-orange-500 ring-1 ring-orange-500/30 animate-pulse shadow-[0_0_12px_rgba(249,115,22,0.2)]"
@@ -185,7 +177,7 @@ export function Leaderboard({
                     </td>
                     <td className="px-4 py-3"><TierBadge rp={s.rp} thresholds={thresholds} /></td>
                     <td className="px-4 py-3 text-right font-mono font-bold text-neon-blue text-glow-blue">{s.rp}</td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 hidden md:table-cell">
                       <div className="flex items-center justify-center gap-1">
                         {Array.from({ length: 5 }).map((_, idx) => {
                           const r = s.recent[idx];
@@ -205,7 +197,7 @@ export function Leaderboard({
                         })}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-right tabular-nums">
+                    <td className="px-4 py-3 text-right tabular-nums hidden sm:table-cell">
                       <span className="font-semibold">{winRate}%</span>
                       <span className="ml-1 text-xs text-muted-foreground">({s.wins}W {s.losses}L)</span>
                     </td>
@@ -213,7 +205,7 @@ export function Leaderboard({
                 );
               })}
               {filtered.length === 0 && (
-                <tr><td colSpan={8} className="px-4 py-10 text-center text-muted-foreground">조건에 맞는 선수가 없습니다.</td></tr>
+                <tr><td colSpan={8} className="px-4 py-10 text-center text-muted-foreground animate-pulse">조건에 맞는 선수가 없습니다.</td></tr>
               )}
             </tbody>
           </table>
