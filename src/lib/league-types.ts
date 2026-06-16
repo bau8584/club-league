@@ -138,6 +138,9 @@ export type Class = {
   class_name: string; // 학급/리그명
   settings: {
     season?: string; // 시즌 텍스트 정보 (예: "2026-1")
+    schoolName?: string;
+    sport?: string;
+    adminCode?: string;
     tierThresholds?: Record<TierName, number>; // 티어 기준선 설정
     rpVariables?: { winDelta: number; loseDelta: number }; // 기본 승패 획득/차감 점수
     decayEnabled?: boolean; // 휴면 감쇠 여부

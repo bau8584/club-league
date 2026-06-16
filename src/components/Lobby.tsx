@@ -42,10 +42,35 @@ export function Lobby() {
   
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [newSchoolName, setNewSchoolName] = useState("");
+  const [newSport, setNewSport] = useState("");
   const [newLeagueName, setNewLeagueName] = useState("");
-  const [newSeason, setNewSeason] = useState("2026-1");
+  const [newSeason, setNewSeason] = useState("");
+  const [adminCode, setAdminCode] = useState("");
+  const [confirmAdminCode, setConfirmAdminCode] = useState("");
   const [creating, setCreating] = useState(false);
   const [modalTab, setModalTab] = useState<"info" | "settings">("info");
+
+  const getDynamicSeasonPlaceholder = () => {
+    const now = new Date();
+    const yy = now.getFullYear() % 100;
+    const month = now.getMonth() + 1;
+    let displayYear = yy;
+    let semester = 1;
+    if (month >= 3 && month <= 8) {
+      semester = 1;
+      displayYear = yy;
+    } else {
+      semester = 2;
+      if (month === 1 || month === 2) {
+        displayYear = (yy - 1 + 100) % 100;
+      } else {
+        displayYear = yy;
+      }
+    }
+    const sportPart = newSport.trim() ? `${newSport.trim()} ` : "";
+    return `${displayYear}년 ${semester}학기 ${sportPart}리그`;
+  };
 
   // Edit League states
   const [editingLeague, setEditingLeague] = useState<Class | null>(null);
@@ -144,6 +169,14 @@ export function Lobby() {
 
   const handleCreateLeague = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!newSchoolName.trim()) {
+      setModalTab("info");
+      return toast.error("학교 이름을 입력해 주세요.");
+    }
+    if (!newSport.trim()) {
+      setModalTab("info");
+      return toast.error("종목을 입력해 주세요.");
+    }
     if (!newLeagueName.trim()) {
       setModalTab("info");
       return toast.error("리그 이름을 입력해 주세요.");
@@ -152,6 +185,14 @@ export function Lobby() {
       setModalTab("info");
       return toast.error("시즌 정보를 입력해 주세요.");
     }
+    if (!/^\d{4}$/.test(adminCode)) {
+      setModalTab("info");
+      return toast.error("관리자 코드는 4자리 숫자여야 합니다.");
+    }
+    if (adminCode !== confirmAdminCode) {
+      setModalTab("info");
+      return toast.error("관리자 코드가 일치하지 않습니다.");
+    }
 
     setCreating(true);
     try {
@@ -159,7 +200,12 @@ export function Lobby() {
         .from("classes")
         .insert({
           class_name: newLeagueName.trim(),
-          settings: { season: newSeason.trim() },
+          settings: {
+            season: newSeason.trim(),
+            schoolName: newSchoolName.trim(),
+            sport: newSport.trim(),
+            adminCode: adminCode
+          },
           owner_uid: userId,
           scorekeeper_uids: [],
           co_admin_uids: []
@@ -169,8 +215,12 @@ export function Lobby() {
 
       toast.success("새로운 리그가 개설되었습니다!");
       setIsModalOpen(false);
+      setNewSchoolName("");
+      setNewSport("");
       setNewLeagueName("");
-      setNewSeason("2026-1");
+      setNewSeason("");
+      setAdminCode("");
+      setConfirmAdminCode("");
       setModalTab("info");
       await loadLeagues(userId);
     } catch (err: any) {
@@ -481,6 +531,28 @@ export function Lobby() {
               {modalTab === "info" ? (
                 <>
                   <div className="space-y-1.5 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                    <Label className="text-xs font-bold text-foreground">학교 이름</Label>
+                    <Input
+                      required
+                      value={newSchoolName}
+                      onChange={(e) => setNewSchoolName(e.target.value)}
+                      placeholder="예: 서울초등학교"
+                      className="h-10 border-border/60 bg-background/40 focus:border-neon-blue transition-all"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                    <Label className="text-xs font-bold text-foreground">종목</Label>
+                    <Input
+                      required
+                      value={newSport}
+                      onChange={(e) => setNewSport(e.target.value)}
+                      placeholder="예: 배드민턴, 테니스"
+                      className="h-10 border-border/60 bg-background/40 focus:border-neon-blue transition-all"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5 animate-in fade-in slide-in-from-bottom-2 duration-200">
                     <Label className="text-xs font-bold text-foreground">리그 이름</Label>
                     <Input
                       required
@@ -497,7 +569,34 @@ export function Lobby() {
                       required
                       value={newSeason}
                       onChange={(e) => setNewSeason(e.target.value)}
-                      placeholder="예: 2026-1"
+                      placeholder={getDynamicSeasonPlaceholder()}
+                      className="h-10 border-border/60 bg-background/40 focus:border-neon-blue transition-all"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                    <Label className="text-xs font-bold text-foreground">관리자 코드</Label>
+                    <Input
+                      type="password"
+                      required
+                      maxLength={4}
+                      value={adminCode}
+                      onChange={(e) => setAdminCode(e.target.value.replace(/\D/g, ""))}
+                      placeholder="4자리 숫자 입력"
+                      className="h-10 border-border/60 bg-background/40 focus:border-neon-blue transition-all"
+                    />
+                    <p className="text-[10px] text-muted-foreground mt-0.5">교사 관리자 및 티어 순위표 접근용 비밀번호</p>
+                  </div>
+
+                  <div className="space-y-1.5 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                    <Label className="text-xs font-bold text-foreground">관리자 코드 확인</Label>
+                    <Input
+                      type="password"
+                      required
+                      maxLength={4}
+                      value={confirmAdminCode}
+                      onChange={(e) => setConfirmAdminCode(e.target.value.replace(/\D/g, ""))}
+                      placeholder="4자리 숫자 재입력"
                       className="h-10 border-border/60 bg-background/40 focus:border-neon-blue transition-all"
                     />
                   </div>
