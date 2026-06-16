@@ -292,13 +292,7 @@ export function AdminSettings({
     willOfSteelEnabled: true,
     willOfSteel3Rp: 10,
     willOfSteel4Rp: 15,
-    willOfSteel5Rp: 20,
-    comebackEnabled: true,
-    comebackLosses: 3,
-    comebackRp: 10,
-    marginEnabled: true,
-    marginDiff: 10,
-    marginRp: 10
+    willOfSteel5Rp: 20
   });
 
   const [localDynamicPenalties, setLocalDynamicPenalties] = useState<DynamicPenalties>(() => dynamicPenalties || {

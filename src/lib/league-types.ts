@@ -294,16 +294,6 @@ export type DynamicBonuses = {
     menteeRp: number;
     minTierGap: number;
   };
-  
-  // Deprecated fields as optional for compatibility
-  comebackEnabled?: boolean;
-  comebackLosses?: number;
-  comebackRp?: number;
-  marginEnabled?: boolean;
-  marginDiff?: number;
-  marginRp?: number;
-  rivalEnabled?: boolean;
-  rivalRp?: number;
 };
 
 export type DynamicPenalties = {
@@ -332,4 +322,14 @@ export type DynamicPenalties = {
   swampDiamond2: number;
   swampDiamond3: number;
   redCardPenalty: number;
+};
+
+export type Achievement = {
+  id: string;
+  name: string;
+  description: string;
+  tier: "Common" | "Rare" | "Epic" | "Legendary";
+  currentValue: number;
+  targetValue: number;
+  isUnlocked: boolean;
 };

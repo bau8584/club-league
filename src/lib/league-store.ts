@@ -1,19 +1,43 @@
 import React, { useEffect, useState, useCallback, useRef, createContext, useContext } from "react";
-import type { Student, Match, Gender, TierName, TierSettings, DynamicBonuses, DynamicPenalties, TiersRecord, DecaySettingsRecord } from "./league-types";
+import type { Student, Match, Gender, TierName, TierSettings, DynamicBonuses, DynamicPenalties, TiersRecord, DecaySettingsRecord, Achievement } from "./league-types";
 import { studentKey, getTier, getTierSubdivision, getFullTierLabel, TIER_ORDER } from "./league-types";
 import { toast } from "sonner";
 import { supabase } from "../supabaseClient";
 import { calculateMatchResult } from "./match-calculator";
-
-export type Achievement = {
-  id: string;
-  name: string;
-  description: string;
-  tier: "Common" | "Rare" | "Epic" | "Legendary";
-  currentValue: number;
-  targetValue: number;
-  isUnlocked: boolean;
-};
+import {
+  apiGetUser,
+  apiSignOut,
+  apiFetchClass,
+  apiFetchClassSettings,
+  apiUpdateClassSettings,
+  apiUpdateClassSettingsAndName,
+  apiFetchMatches,
+  apiInsertMatch,
+  apiDeleteMatch,
+  apiDeleteStudentMatches,
+  apiDeleteClassMatches,
+  apiInsertMatchesBulk,
+  apiUpdateMatchWinnerLoser,
+  apiFetchStudents,
+  apiUpdateStudentRp,
+  apiResetStudentRp,
+  apiResetAllClassStudentsRp,
+  apiUpdateStudentName,
+  apiInsertStudent,
+  apiSoftDeleteStudent,
+  apiUpdateStudentInfo,
+  apiDeleteClassStudents,
+  apiInsertStudentsBulk,
+  apiRecordMatchTransaction
+} from "./league-api";
+import {
+  DEFAULT_TIERS,
+  DEFAULT_DECAY_SETTINGS,
+  DEFAULT_DYNAMIC_PENALTIES,
+  DEFAULT_DYNAMIC_BONUSES,
+  migrateSettings
+} from "./settings-migration";
+import { calculateAchievements as calculateAchievementsPure } from "./achievement-calculator";
 
 export type ActiveBonuses = {
   firstWin: boolean;
@@ -37,230 +61,7 @@ function uid() {
   return crypto.randomUUID();
 }
 
-const DEFAULT_TIERS: TiersRecord = {
-  bronze: { threshold: 0, winRp: 20, loseRp: 0 },
-  silver: { threshold: 1000, winRp: 15, loseRp: 5 },
-  gold: { threshold: 1200, winRp: 15, loseRp: 10 },
-  platinum: { threshold: 1400, winRp: 10, loseRp: 15 },
-  diamond: { threshold: 1600, winRp: 10, loseRp: 20 }
-};
 
-const DEFAULT_DECAY_SETTINGS: DecaySettingsRecord = {
-  bronze: { enabled: false, inactiveDays: 14, decayRp: 10 },
-  silver: { enabled: false, inactiveDays: 14, decayRp: 10 },
-  gold: { enabled: true, inactiveDays: 14, decayRp: 10 },
-  platinum: { enabled: true, inactiveDays: 14, decayRp: 10 },
-  diamond: { enabled: true, inactiveDays: 14, decayRp: 15 }
-};
-
-const DEFAULT_DYNAMIC_PENALTIES: DynamicPenalties = {
-  enabled: true,
-  arrogance: true,
-  crushing: true,
-  revengeFail: true,
-  championWeight: true,
-  lossStreak: true,
-  arroganceGold: 20,
-  arrogancePlatinum: 30,
-  arroganceDiamond: 40,
-  crushingGold: 10,
-  crushingPlatinum: 15,
-  crushingDiamond: 20,
-  revengeAllowedGold: 10,
-  revengeAllowedPlatinum: 15,
-  revengeAllowedDiamond: 20,
-  championGold: 5,
-  championPlatinum: 10,
-  championDiamond: 15,
-  swampGold2: 5,
-  swampGold3: 10,
-  swampPlatinum2: 10,
-  swampPlatinum3: 15,
-  swampDiamond2: 15,
-  swampDiamond3: 25,
-  redCardPenalty: 10
-};
-
-const DEFAULT_DYNAMIC_BONUSES: DynamicBonuses = {
-  freshnessEnabled: true,
-  freshnessGames: 5,
-  freshnessRp: 5,
-  streakEnabled: true,
-  streakWins: 3,
-  streakRp: 10,
-  firstWinEnabled: true,
-  firstWinRp: 15,
-  revengeEnabled: true,
-  revengeRp: 10,
-  underdogEnabled: true,
-  underdogDiff1Rp: 5,
-  underdogDiff2Rp: 10,
-  underdogDiff3Rp: 15,
-  greatMatchEnabled: true,
-  greatMatchRp: 10,
-  greatMatchWin1Rp: 10,
-  greatMatchLose1Rp: 5,
-  greatMatchWin2Rp: 5,
-  greatMatchLose2Rp: 2,
-  greatMatchWin3Rp: 2,
-  greatMatchLose3Rp: 0,
-  lossComfortEnabled: true,
-  lossComfortRp: 5,
-  lossComfortMaxTier: "Gold",
-  willOfSteelEnabled: true,
-  willOfSteel3Rp: 10,
-  willOfSteel4Rp: 15,
-  willOfSteel5Rp: 20,
-  mentoring: {
-    enabled: false,
-    mentorRp: 10,
-    menteeRp: 15,
-    minTierGap: 1
-  }
-};
-
-function migrateSettings(rawSettings: any): any {
-  if (!rawSettings) return null;
-
-  const migrated = { ...rawSettings };
-
-  // 1. Migrate "tiers" (RP & thresholds)
-  if (!migrated.tiers) {
-    const th = migrated.tierThresholds || { Bronze: 0, Silver: 1000, Gold: 1200, Platinum: 1400, Diamond: 1600 };
-    const ts = migrated.tierSettings || {
-      Bronze: { winDelta: 20, loseDelta: 0 },
-      Silver: { winDelta: 15, loseDelta: 5 },
-      Gold: { winDelta: 15, loseDelta: 10 },
-      Platinum: { winDelta: 10, loseDelta: 15 }
-    };
-    const rpv = migrated.rpVariables || { winDelta: 10, loseDelta: 20 };
-
-    migrated.tiers = {
-      bronze: {
-        threshold: th.Bronze !== undefined ? Number(th.Bronze) : 0,
-        winRp: ts.Bronze?.winDelta !== undefined ? Number(ts.Bronze.winDelta) : 20,
-        loseRp: ts.Bronze?.loseDelta !== undefined ? Number(ts.Bronze.loseDelta) : 0
-      },
-      silver: {
-        threshold: th.Silver !== undefined ? Number(th.Silver) : 1000,
-        winRp: ts.Silver?.winDelta !== undefined ? Number(ts.Silver.winDelta) : 15,
-        loseRp: ts.Silver?.loseDelta !== undefined ? Number(ts.Silver.loseDelta) : 5
-      },
-      gold: {
-        threshold: th.Gold !== undefined ? Number(th.Gold) : 1200,
-        winRp: ts.Gold?.winDelta !== undefined ? Number(ts.Gold.winDelta) : 15,
-        loseRp: ts.Gold?.loseDelta !== undefined ? Number(ts.Gold.loseDelta) : 10
-      },
-      platinum: {
-        threshold: th.Platinum !== undefined ? Number(th.Platinum) : 1400,
-        winRp: ts.Platinum?.winDelta !== undefined ? Number(ts.Platinum.winDelta) : 10,
-        loseRp: ts.Platinum?.loseDelta !== undefined ? Number(ts.Platinum.loseDelta) : 15
-      },
-      diamond: {
-        threshold: th.Diamond !== undefined ? Number(th.Diamond) : 1600,
-        winRp: rpv.winDelta !== undefined ? Number(rpv.winDelta) : 10,
-        loseRp: rpv.loseDelta !== undefined ? Number(rpv.loseDelta) : 20
-      }
-    };
-  } else {
-    migrated.tiers = {
-      bronze: { ...DEFAULT_TIERS.bronze, ...migrated.tiers.bronze },
-      silver: { ...DEFAULT_TIERS.silver, ...migrated.tiers.silver },
-      gold: { ...DEFAULT_TIERS.gold, ...migrated.tiers.gold },
-      platinum: { ...DEFAULT_TIERS.platinum, ...migrated.tiers.platinum },
-      diamond: { ...DEFAULT_TIERS.diamond, ...migrated.tiers.diamond }
-    };
-  }
-
-  // 2. Migrate "decaySettings"
-  if (!migrated.decaySettings) {
-    const enabled = migrated.decayEnabled !== undefined ? migrated.decayEnabled : false;
-    const days = migrated.decayDays !== undefined ? Number(migrated.decayDays) : 14;
-    const amount = migrated.decayAmount !== undefined ? Number(migrated.decayAmount) : 10;
-    const tiersList = migrated.decayTiers || ["Bronze", "Silver", "Gold", "Platinum"];
-
-    migrated.decaySettings = {
-      bronze: { enabled: enabled && tiersList.includes("Bronze"), inactiveDays: days, decayRp: amount },
-      silver: { enabled: enabled && tiersList.includes("Silver"), inactiveDays: days, decayRp: amount },
-      gold: { enabled: enabled && tiersList.includes("Gold"), inactiveDays: days, decayRp: amount },
-      platinum: { enabled: enabled && tiersList.includes("Platinum"), inactiveDays: days, decayRp: amount },
-      diamond: { enabled: enabled && tiersList.includes("Diamond"), inactiveDays: days, decayRp: amount }
-    };
-  } else {
-    migrated.decaySettings = {
-      bronze: { ...DEFAULT_DECAY_SETTINGS.bronze, ...migrated.decaySettings.bronze },
-      silver: { ...DEFAULT_DECAY_SETTINGS.silver, ...migrated.decaySettings.silver },
-      gold: { ...DEFAULT_DECAY_SETTINGS.gold, ...migrated.decaySettings.gold },
-      platinum: { ...DEFAULT_DECAY_SETTINGS.platinum, ...migrated.decaySettings.platinum },
-      diamond: { ...DEFAULT_DECAY_SETTINGS.diamond, ...migrated.decaySettings.diamond }
-    };
-  }
-
-  // 3. Migrate "dynamicPenalties"
-  if (migrated.dynamicPenalties) {
-    const defaultEnabledVal = migrated.dynamicPenalties.enabled !== undefined ? !!migrated.dynamicPenalties.enabled : true;
-    migrated.dynamicPenalties = {
-      ...DEFAULT_DYNAMIC_PENALTIES,
-      arrogance: migrated.dynamicPenalties.arrogance !== undefined ? !!migrated.dynamicPenalties.arrogance : defaultEnabledVal,
-      crushing: migrated.dynamicPenalties.crushing !== undefined ? !!migrated.dynamicPenalties.crushing : defaultEnabledVal,
-      revengeFail: migrated.dynamicPenalties.revengeFail !== undefined ? !!migrated.dynamicPenalties.revengeFail : defaultEnabledVal,
-      championWeight: migrated.dynamicPenalties.championWeight !== undefined ? !!migrated.dynamicPenalties.championWeight : defaultEnabledVal,
-      lossStreak: migrated.dynamicPenalties.lossStreak !== undefined ? !!migrated.dynamicPenalties.lossStreak : defaultEnabledVal,
-      ...migrated.dynamicPenalties
-    };
-  } else {
-    migrated.dynamicPenalties = { ...DEFAULT_DYNAMIC_PENALTIES };
-  }
-
-  // 4. Migrate "dynamicBonuses"
-  if (migrated.dynamicBonuses) {
-    migrated.dynamicBonuses = {
-      ...DEFAULT_DYNAMIC_BONUSES,
-      ...migrated.dynamicBonuses,
-      mentoring: {
-        ...DEFAULT_DYNAMIC_BONUSES.mentoring,
-        ...(migrated.dynamicBonuses.mentoring || {})
-      }
-    };
-  } else {
-    migrated.dynamicBonuses = { ...DEFAULT_DYNAMIC_BONUSES };
-  }
-
-  // Project back for UI compatibility
-  migrated.tierThresholds = {
-    Bronze: Number(migrated.tiers.bronze.threshold),
-    Silver: Number(migrated.tiers.silver.threshold),
-    Gold: Number(migrated.tiers.gold.threshold),
-    Platinum: Number(migrated.tiers.platinum.threshold),
-    Diamond: Number(migrated.tiers.diamond.threshold)
-  };
-
-  migrated.rpVariables = {
-    winDelta: Number(migrated.tiers.diamond.winRp),
-    loseDelta: Number(migrated.tiers.diamond.loseRp)
-  };
-
-  migrated.tierSettings = {
-    Bronze: { winDelta: Number(migrated.tiers.bronze.winRp), loseDelta: Number(migrated.tiers.bronze.loseRp) },
-    Silver: { winDelta: Number(migrated.tiers.silver.winRp), loseDelta: Number(migrated.tiers.silver.loseRp) },
-    Gold: { winDelta: Number(migrated.tiers.gold.winRp), loseDelta: Number(migrated.tiers.gold.loseRp) },
-    Platinum: { winDelta: Number(migrated.tiers.platinum.winRp), loseDelta: Number(migrated.tiers.platinum.loseRp) }
-  };
-
-  const isAnyDecayEnabled = Object.values(migrated.decaySettings).some((d: any) => d.enabled);
-  migrated.decayEnabled = isAnyDecayEnabled;
-  migrated.decayDays = Number(migrated.decaySettings.platinum.inactiveDays);
-  migrated.decayAmount = Number(migrated.decaySettings.platinum.decayRp);
-  const decayTiersArr: string[] = [];
-  if (migrated.decaySettings.bronze.enabled) decayTiersArr.push("Bronze");
-  if (migrated.decaySettings.silver.enabled) decayTiersArr.push("Silver");
-  if (migrated.decaySettings.gold.enabled) decayTiersArr.push("Gold");
-  if (migrated.decaySettings.platinum.enabled) decayTiersArr.push("Platinum");
-  if (migrated.decaySettings.diamond.enabled) decayTiersArr.push("Diamond");
-  migrated.decayTiers = decayTiersArr;
-
-  return migrated;
-}
 
 type UserSession = {
   loginId: string;
@@ -311,17 +112,13 @@ function useLeagueStoreInternal() {
     if (!isBackground) setIsSyncing(true);
     try {
       // 1. Fetch class details
-      const { data: classData, error: classErr } = await supabase
-        .from("classes")
-        .select("*")
-        .eq("id", classId)
-        .single();
+      const { data: classData, error: classErr } = await apiFetchClass(classId);
       if (classErr) throw classErr;
 
       // Check ownership
       let isOwner = false;
       try {
-        const { data: { user } } = await supabase.auth.getUser();
+        const { data: { user } } = await apiGetUser();
         if (user && classData && classData.owner_uid === user.id) {
           isOwner = true;
         }
@@ -355,11 +152,7 @@ function useLeagueStoreInternal() {
       }
 
       // 2. Fetch matches for this class
-      const { data: dbMatches, error: matchesErr } = await supabase
-        .from("matches")
-        .select("*")
-        .eq("class_id", classId)
-        .order("created_at", { ascending: true });
+      const { data: dbMatches, error: matchesErr } = await apiFetchMatches(classId);
       if (matchesErr) throw matchesErr;
 
       // Map Supabase matches to frontend Match structure
@@ -374,11 +167,7 @@ function useLeagueStoreInternal() {
       }));
 
       // 3. Fetch students for this class (excluding soft-deleted)
-      const { data: dbStudents, error: studentsErr } = await supabase
-        .from("students")
-        .select("*")
-        .eq("class_id", classId)
-        .neq("is_deleted", true);
+      const { data: dbStudents, error: studentsErr } = await apiFetchStudents(classId);
       if (studentsErr) throw studentsErr;
 
       // Map Supabase students to frontend Student structure, computing stats on-the-fly
@@ -536,7 +325,7 @@ function useLeagueStoreInternal() {
     setSession(null);
     setStudents([]);
     setMatches([]);
-    supabase.auth.signOut().then(() => {
+    apiSignOut().then(() => {
       window.location.href = "/";
     });
   }, []);
@@ -545,7 +334,7 @@ function useLeagueStoreInternal() {
   useEffect(() => {
     const initData = async () => {
       try {
-        const { data: { user: supabaseUser } } = await supabase.auth.getUser();
+        const { data: { user: supabaseUser } } = await apiGetUser();
         if (supabaseUser) {
           setSession({
             loginId: supabaseUser.id,
@@ -677,21 +466,19 @@ function useLeagueStoreInternal() {
     if (currentClassId) {
       const runSupabaseRecord = async () => {
         try {
-          // Insert match
-          const { error: matchErr } = await supabase.from("matches").insert({
-            class_id: currentClassId,
-            winner_id: aWon ? playerAId : playerBId,
-            loser_id: aWon ? playerBId : playerAId
-          });
-          if (matchErr) throw matchErr;
+          const winnerId = aWon ? playerAId : playerBId;
+          const loserId = aWon ? playerBId : playerAId;
+          const playerUpdates = nextStudents
+            .filter(s => s.id === playerAId || s.id === playerBId || s.id === playerA2Id || s.id === playerB2Id)
+            .map(s => ({ id: s.id, rp: s.rp }));
 
-          // Update students' RP
-          for (const s of nextStudents) {
-            const isParticipant = s.id === playerAId || s.id === playerBId;
-            if (isParticipant) {
-              await supabase.from("students").update({ rp: s.rp }).eq("id", s.id);
-            }
-          }
+          await apiRecordMatchTransaction({
+            classId: currentClassId,
+            matchId,
+            winnerId,
+            loserId,
+            playerUpdates
+          });
           toast.success("경기가 등록되었습니다!");
         } catch (err: any) {
           console.error("Failed to record match in Supabase:", err.message);
@@ -795,16 +582,13 @@ function useLeagueStoreInternal() {
     if (currentClassId) {
       try {
         // Delete match from Supabase
-        const { error: deleteErr } = await supabase
-          .from("matches")
-          .delete()
-          .eq("id", matchId);
+        const { error: deleteErr } = await apiDeleteMatch(matchId);
         if (deleteErr) throw deleteErr;
 
         // Update affected students' RP in Supabase
         for (const s of nextStudents) {
           if (activePlayerIds.includes(s.id)) {
-            await supabase.from("students").update({ rp: s.rp }).eq("id", s.id);
+            await apiUpdateStudentRp(s.id, s.rp);
           }
         }
         toast.success("경기가 삭제되었습니다!");
@@ -901,18 +685,15 @@ function useLeagueStoreInternal() {
     if (currentClassId) {
       try {
         // Reset player RP to 1000 in Supabase
-        await supabase.from("students").update({ rp: 1000 }).eq("id", studentId);
+        await apiResetStudentRp(studentId);
         
         // Delete player's matches from matches table
-        await supabase
-          .from("matches")
-          .delete()
-          .or(`winner_id.eq.${studentId},loser_id.eq.${studentId}`);
+        await apiDeleteStudentMatches(studentId);
 
         // Update affected opponents' RP in Supabase
         for (const s of nextStudents) {
           if (playedOpponents.has(s.id)) {
-            await supabase.from("students").update({ rp: s.rp }).eq("id", s.id);
+            await apiUpdateStudentRp(s.id, s.rp);
           }
         }
         toast.success("선수의 전적이 초기화되었습니다!");
@@ -965,9 +746,9 @@ function useLeagueStoreInternal() {
     if (currentClassId) {
       try {
         // Delete all matches of this class
-        await supabase.from("matches").delete().eq("class_id", currentClassId);
+        await apiDeleteClassMatches(currentClassId);
         // Reset all students' RP to 1000
-        await supabase.from("students").update({ rp: 1000 }).eq("class_id", currentClassId);
+        await apiResetAllClassStudentsRp(currentClassId);
         toast.success("전체 데이터가 초기화되었습니다!");
       } catch (err: any) {
         console.error("Failed to reset all data in Supabase:", err.message);
@@ -1014,7 +795,7 @@ function useLeagueStoreInternal() {
 
     if (currentClassId) {
       try {
-        await supabase.from("students").update({ rp: Math.max(0, nextRp) }).eq("id", studentId);
+        await apiUpdateStudentRp(studentId, Math.max(0, nextRp));
         toast.success("RP가 수정되었습니다.");
       } catch (err: any) {
         console.error("Failed to update student RP in Supabase:", err.message);
@@ -1094,19 +875,9 @@ function useLeagueStoreInternal() {
             const key = studentKey(r);
             const exists = byKey.get(key);
             if (exists) {
-              await supabase.from("students").update({
-                student_name: studentName
-              }).eq("id", exists.id);
+              await apiUpdateStudentName(exists.id, studentName);
             } else {
-              const { data: insertedData, error: insertErr } = await supabase
-                .from("students")
-                .insert({
-                  class_id: currentClassId,
-                  rp: 1000,
-                  student_name: studentName
-                })
-                .select("id")
-                .single();
+              const { data: insertedData, error: insertErr } = await apiInsertStudent(currentClassId, studentName);
               
               if (insertErr) throw insertErr;
               if (insertedData) {
@@ -1191,11 +962,7 @@ function useLeagueStoreInternal() {
 
     if (currentClassId) {
       try {
-        const { data: currentClass } = await supabase
-          .from("classes")
-          .select("settings")
-          .eq("id", currentClassId)
-          .single();
+        const { data: currentClass } = await apiFetchClassSettings(currentClassId);
         
         const newSettings = {
           ...(currentClass?.settings || {}),
@@ -1204,10 +971,7 @@ function useLeagueStoreInternal() {
           tiers: nextTiers
         };
 
-        await supabase
-          .from("classes")
-          .update({ settings: newSettings })
-          .eq("id", currentClassId);
+        await apiUpdateClassSettings(currentClassId, newSettings);
         
         toast.success("리그 설정이 저장되었습니다!");
       } catch (err: any) {
@@ -1252,7 +1016,7 @@ function useLeagueStoreInternal() {
         const student = students.find(s => s.id === studentId);
         if (student) {
           const studentName = `${student.grade}-${student.classNum}-${student.number}-${student.name}-${gender}`;
-          await supabase.from("students").update({ student_name: studentName }).eq("id", studentId);
+          await apiUpdateStudentName(studentId, studentName);
           toast.success("성별이 변경되었습니다.");
         }
       } catch (err: any) {
@@ -1368,9 +1132,9 @@ function useLeagueStoreInternal() {
     if (currentClassId) {
       try {
         // Soft Delete student in Supabase
-        await supabase.from("students").update({ is_deleted: true }).eq("id", studentId);
+        await apiSoftDeleteStudent(studentId);
         // Delete student's matches
-        await supabase.from("matches").delete().or(`winner_id.eq.${studentId},loser_id.eq.${studentId}`);
+        await apiDeleteStudentMatches(studentId);
 
         // Update affected partners/opponents RP in Supabase
         for (const s of nextStudents) {
@@ -1378,7 +1142,7 @@ function useLeagueStoreInternal() {
             m.playerAId === s.id || m.playerBId === s.id || m.playerA2Id === s.id || m.playerB2Id === s.id
           );
           if (isAffected) {
-            await supabase.from("students").update({ rp: s.rp }).eq("id", s.id);
+            await apiUpdateStudentRp(s.id, s.rp);
           }
         }
         toast.success("선수가 삭제되었습니다!");
@@ -1441,10 +1205,7 @@ function useLeagueStoreInternal() {
         if (info.rp !== undefined) {
           updatePayload.rp = info.rp;
         }
-        const { error } = await supabase
-          .from("students")
-          .update(updatePayload)
-          .eq("id", studentId);
+        const { error } = await apiUpdateStudentInfo(studentId, updatePayload);
         if (error) throw error;
         toast.success("학생 정보가 수정되었습니다.");
       } catch (err: any) {
@@ -1486,8 +1247,8 @@ function useLeagueStoreInternal() {
     if (currentClassId) {
       try {
         // 1. Delete all existing matches and students for this class
-        await supabase.from("matches").delete().eq("class_id", currentClassId);
-        await supabase.from("students").delete().eq("class_id", currentClassId);
+        await apiDeleteClassMatches(currentClassId);
+        await apiDeleteClassStudents(currentClassId);
 
         // 2. Insert students
         const studentsToInsert = restoredStudents.map((s) => {
@@ -1501,7 +1262,7 @@ function useLeagueStoreInternal() {
           };
         });
         if (studentsToInsert.length > 0) {
-          const { error: insStudentsErr } = await supabase.from("students").insert(studentsToInsert);
+          const { error: insStudentsErr } = await apiInsertStudentsBulk(studentsToInsert);
           if (insStudentsErr) throw insStudentsErr;
         }
 
@@ -1516,7 +1277,7 @@ function useLeagueStoreInternal() {
           };
         });
         if (matchesToInsert.length > 0) {
-          const { error: insMatchesErr } = await supabase.from("matches").insert(matchesToInsert);
+          const { error: insMatchesErr } = await apiInsertMatchesBulk(matchesToInsert);
           if (insMatchesErr) throw insMatchesErr;
         }
 
@@ -1590,7 +1351,7 @@ function useLeagueStoreInternal() {
           for (const s of nextStudents) {
             const prev = previousStudents.find((ps) => ps.id === s.id);
             if (prev && prev.rp !== s.rp) {
-              await supabase.from("students").update({ rp: s.rp }).eq("id", s.id);
+              await apiUpdateStudentRp(s.id, s.rp);
             }
           }
           toast.success(`휴면 강등 완료: ${affectedCount}명의 RP가 차감되었습니다.`);
@@ -2213,21 +1974,12 @@ function useLeagueStoreInternal() {
         const winnerId = nextAWon ? playerAId : playerBId;
         const loserId = nextAWon ? playerBId : playerAId;
 
-        const { error: updateErr } = await supabase
-          .from("matches")
-          .update({
-            winner_id: winnerId,
-            loser_id: loserId
-          })
-          .eq("id", matchId);
+        const { error: updateErr } = await apiUpdateMatchWinnerLoser(matchId, winnerId, loserId);
         if (updateErr) throw updateErr;
 
         for (const s of nextStudentsList) {
           if (activePlayerIds.includes(s.id)) {
-            const { error: studErr } = await supabase
-              .from("students")
-              .update({ rp: s.rp })
-              .eq("id", s.id);
+            const { error: studErr } = await apiUpdateStudentRp(s.id, s.rp);
             if (studErr) throw studErr;
           }
         }
@@ -2341,11 +2093,7 @@ function useLeagueStoreInternal() {
 
     if (currentClassId) {
       try {
-        const { data: currentClass } = await supabase
-          .from("classes")
-          .select("settings")
-          .eq("id", currentClassId)
-          .single();
+        const { data: currentClass } = await apiFetchClassSettings(currentClassId);
         
         const newSettings = {
           ...(currentClass?.settings || {}),
@@ -2357,13 +2105,11 @@ function useLeagueStoreInternal() {
           decaySettings: nextDecaySettings
         };
 
-        const { error: updateErr } = await supabase
-          .from("classes")
-          .update({
-            class_name: newTitle,
-            settings: newSettings
-          })
-          .eq("id", currentClassId);
+        const { error: updateErr } = await apiUpdateClassSettingsAndName(
+          currentClassId,
+          newTitle,
+          newSettings
+        );
         
         if (updateErr) throw updateErr;
         toast.success("설정이 성공적으로 저장되었습니다!");
@@ -2413,11 +2159,7 @@ function useLeagueStoreInternal() {
 
     if (currentClassId) {
       try {
-        const { data: currentClass } = await supabase
-          .from("classes")
-          .select("settings")
-          .eq("id", currentClassId)
-          .single();
+        const { data: currentClass } = await apiFetchClassSettings(currentClassId);
         
         const newSettings = {
           ...(currentClass?.settings || {}),
@@ -2428,10 +2170,7 @@ function useLeagueStoreInternal() {
           decaySettings: nextDecaySettings
         };
 
-        const { error: updateErr } = await supabase
-          .from("classes")
-          .update({ settings: newSettings })
-          .eq("id", currentClassId);
+        const { error: updateErr } = await apiUpdateClassSettings(currentClassId, newSettings);
         
         if (updateErr) throw updateErr;
         toast.success("휴면 강등 설정이 저장되었습니다.");
@@ -2492,21 +2231,14 @@ function useLeagueStoreInternal() {
       // Cooldown prevention: save lastDecayDate even if no targets found
       setLastDecayDate(todayStr);
       try {
-        const { data: currentClass } = await supabase
-          .from("classes")
-          .select("settings")
-          .eq("id", currentClassId)
-          .single();
+        const { data: currentClass } = await apiFetchClassSettings(currentClassId);
 
         const newSettings = {
           ...(currentClass?.settings || {}),
           lastDecayDate: todayStr
         };
 
-        await supabase
-          .from("classes")
-          .update({ settings: newSettings })
-          .eq("id", currentClassId);
+        await apiUpdateClassSettings(currentClassId, newSettings);
       } catch (e) {
         console.warn("Failed to save lastDecayDate to Supabase:", e);
       }
@@ -2521,26 +2253,19 @@ function useLeagueStoreInternal() {
         if (s) {
           const amount = decayDeltas[id] || 10;
           const nextRp = Math.max(0, s.rp - amount);
-          await supabase.from("students").update({ rp: nextRp }).eq("id", id);
+          await apiUpdateStudentRp(id, nextRp);
         }
       }
 
       // Update class settings lastDecayDate
-      const { data: currentClass } = await supabase
-        .from("classes")
-        .select("settings")
-        .eq("id", currentClassId)
-        .single();
+      const { data: currentClass } = await apiFetchClassSettings(currentClassId);
 
       const newSettings = {
         ...(currentClass?.settings || {}),
         lastDecayDate: todayStr
       };
 
-      await supabase
-        .from("classes")
-        .update({ settings: newSettings })
-        .eq("id", currentClassId);
+      await apiUpdateClassSettings(currentClassId, newSettings);
 
       setLastDecayDate(todayStr);
       
@@ -2554,235 +2279,7 @@ function useLeagueStoreInternal() {
 
   // 학생용 '나의 업적' 자동 연산 함수 (Derived State)
   const calculateAchievements = useCallback((studentId: string): Achievement[] => {
-    const student = students.find((s) => s.id === studentId);
-    if (!student) return [];
-
-    // 해당 학생이 참여한 모든 경기 필터링 (단식 및 복식 파트너 참여분 포함)
-    const studentMatches = matches.filter(
-      (m) => m.playerAId === studentId || m.playerBId === studentId || m.playerA2Id === studentId || m.playerB2Id === studentId
-    );
-
-    // 경기 기록 시간순 정렬 (과거에서 최신순)
-    const chronologicalMatches = [...studentMatches].sort(
-      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
-    );
-
-    const totalGames = studentMatches.length;
-    const totalLosses = chronologicalMatches.filter((m) => {
-      const isPlayerA = m.playerAId === studentId || m.playerA2Id === studentId;
-      const aWon = m.scoreA > m.scoreB;
-      const won = isPlayerA ? aWon : !aWon;
-      return !won;
-    }).length;
-
-    // 연승, 연패, 스냅 연산
-    let maxWinStreak = 0;
-    let currentWinStreak = 0;
-    let maxLossStreak = 0;
-    let currentLossStreak = 0;
-    let brokeLossStreakOf4Plus = false;
-
-    chronologicalMatches.forEach((m) => {
-      const isPlayerA = m.playerAId === studentId || m.playerA2Id === studentId;
-      const aWon = m.scoreA > m.scoreB;
-      const won = isPlayerA ? aWon : !aWon;
-
-      if (won) {
-        currentWinStreak++;
-        if (currentLossStreak >= 4) {
-          brokeLossStreakOf4Plus = true;
-        }
-        currentLossStreak = 0;
-        if (currentWinStreak > maxWinStreak) {
-          maxWinStreak = currentWinStreak;
-        }
-      } else {
-        currentLossStreak++;
-        currentWinStreak = 0;
-        if (currentLossStreak > maxLossStreak) {
-          maxLossStreak = currentLossStreak;
-        }
-      }
-    });
-
-    // 자신보다 높은 티어와 대결한 횟수 (승패 무관)
-    let higherTierCount = 0;
-    chronologicalMatches.forEach((m) => {
-      const isOnTeamA = m.playerAId === studentId || m.playerA2Id === studentId;
-      const oppIds = isOnTeamA 
-        ? [m.playerBId, m.playerB2Id].filter(Boolean) as string[] 
-        : [m.playerAId, m.playerA2Id].filter(Boolean) as string[];
-      
-      const hasHigherTierOpponent = oppIds.some((id) => {
-        const opponent = students.find((s) => s.id === id);
-        if (opponent) {
-          const playerTier = getTier(student.rp, tierThresholds);
-          const oppTier = getTier(opponent.rp, tierThresholds);
-          const playerTierRank = TIER_RANKING[playerTier] ?? 1;
-          const oppTierRank = TIER_RANKING[oppTier] ?? 1;
-          return oppTierRank > playerTierRank;
-        }
-        return false;
-      });
-      
-      if (hasHigherTierOpponent) {
-        higherTierCount++;
-      }
-    });
-
-    // 동일 날짜에 5경기 이상 참여 확인
-    const dateCounts: Record<string, number> = {};
-    studentMatches.forEach((m) => {
-      const d = new Date(m.date);
-      const dateStr = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
-      dateCounts[dateStr] = (dateCounts[dateStr] || 0) + 1;
-    });
-    const maxMatchesOnSingleDay = Object.values(dateCounts).reduce((max, val) => Math.max(max, val), 0);
-
-    // 복수전 성공 보너스 누적 횟수
-    const revengeCount = studentMatches.filter((m) => {
-      const isPlayerA = m.playerAId === studentId;
-      return isPlayerA ? (m.revengeBonusA ?? 0) > 0 : (m.revengeBonusB ?? 0) > 0;
-    }).length;
-
-    // 라이벌 격퇴 보너스 누적 횟수
-    const rivalCount = studentMatches.filter((m) => {
-      const isPlayerA = m.playerAId === studentId;
-      return isPlayerA ? (m.rivalBonusA ?? 0) > 0 : (m.rivalBonusB ?? 0) > 0;
-    }).length;
-
-    return [
-      // Common (커먼)
-      {
-        id: "court_first_greeting",
-        name: "코트의 첫인사",
-        description: "리그 첫 경기 기록 완료",
-        tier: "Common",
-        currentValue: totalGames >= 1 ? 1 : 0,
-        targetValue: 1,
-        isUnlocked: totalGames >= 1
-      },
-      {
-        id: "warmup_complete",
-        name: "워밍업 완료",
-        description: "누적 경기 수 10회 달성",
-        tier: "Common",
-        currentValue: totalGames,
-        targetValue: 10,
-        isUnlocked: totalGames >= 10
-      },
-      {
-        id: "taste_of_victory",
-        name: "승리의 맛",
-        description: "3연승 달성",
-        tier: "Common",
-        currentValue: maxWinStreak,
-        targetValue: 3,
-        isUnlocked: maxWinStreak >= 3
-      },
-      {
-        id: "unbroken_heart",
-        name: "꺾이지 않는 마음",
-        description: "3연패 기록 (실패를 부끄러워하지 않는 태도 칭찬)",
-        tier: "Common",
-        currentValue: maxLossStreak,
-        targetValue: 3,
-        isUnlocked: maxLossStreak >= 3
-      },
-      // Rare (레어)
-      {
-        id: "iron_stamina",
-        name: "강철 체력",
-        description: "누적 경기 수 30회 달성",
-        tier: "Rare",
-        currentValue: totalGames,
-        targetValue: 30,
-        isUnlocked: totalGames >= 30
-      },
-      {
-        id: "courageous_challenger",
-        name: "용기 있는 도전자",
-        description: "자신보다 티어가 높은 상대와 10회 대결 진행 (승패 무관)",
-        tier: "Rare",
-        currentValue: higherTierCount,
-        targetValue: 10,
-        isUnlocked: higherTierCount >= 10
-      },
-      {
-        id: "gym_spirit",
-        name: "체육관 지박령",
-        description: "동일한 날짜에 5경기 이상 참여",
-        tier: "Rare",
-        currentValue: maxMatchesOnSingleDay,
-        targetValue: 5,
-        isUnlocked: maxMatchesOnSingleDay >= 5
-      },
-      {
-        id: "unyielding_will",
-        name: "불굴의 의지",
-        description: "4연패 이상 기록 후 승리하여 연패 사슬 끊어내기",
-        tier: "Rare",
-        currentValue: brokeLossStreakOf4Plus ? 1 : 0,
-        targetValue: 1,
-        isUnlocked: brokeLossStreakOf4Plus
-      },
-      {
-        id: "avatar_of_revenge",
-        name: "복수의 화신",
-        description: "복수전 성공 3회 누적 획득",
-        tier: "Rare",
-        currentValue: revengeCount,
-        targetValue: 3,
-        isUnlocked: revengeCount >= 3
-      },
-      // Epic (에픽)
-      {
-        id: "court_ruler",
-        name: "코트의 지배자",
-        description: "누적 경기 수 70회 달성",
-        tier: "Epic",
-        currentValue: totalGames,
-        targetValue: 70,
-        isUnlocked: totalGames >= 70
-      },
-      {
-        id: "honorable_sweat",
-        name: "명예로운 땀방울",
-        description: "누적 패배 수 30회 달성 (실패에 굴하지 않는 스포츠맨십 칭찬)",
-        tier: "Epic",
-        currentValue: totalLosses,
-        targetValue: 30,
-        isUnlocked: totalLosses >= 30
-      },
-      {
-        id: "rival_destroyer",
-        name: "라이벌 파괴자",
-        description: "라이벌 격파 15회 누적 획득",
-        tier: "Epic",
-        currentValue: rivalCount,
-        targetValue: 15,
-        isUnlocked: rivalCount >= 15
-      },
-      // Legendary (레전더리)
-      {
-        id: "legendary_undefeated",
-        name: "무패의 전설",
-        description: "10연승 달성",
-        tier: "Legendary",
-        currentValue: maxWinStreak,
-        targetValue: 10,
-        isUnlocked: maxWinStreak >= 10
-      },
-      {
-        id: "true_champion",
-        name: "진정한 챔피언",
-        description: "누적 경기 수 120회 달성 (한 학기 동안 가장 성실하게 참여한 학생)",
-        tier: "Legendary",
-        currentValue: totalGames,
-        targetValue: 120,
-        isUnlocked: totalGames >= 120
-      }
-    ];
+    return calculateAchievementsPure(students, matches, tierThresholds, studentId);
   }, [students, matches, tierThresholds]);
 
   // 학생용 티어 승격 실시간 감지 감시자
@@ -2843,21 +2340,14 @@ function useLeagueStoreInternal() {
       return { success: false, message: "No classId" };
     }
     try {
-      const { data: currentClass } = await supabase
-        .from("classes")
-        .select("settings")
-        .eq("id", currentClassId)
-        .single();
+      const { data: currentClass } = await apiFetchClassSettings(currentClassId);
       
       const newSettings = {
         ...(currentClass?.settings || {}),
         season: seasonName
       };
 
-      const { error: updateErr } = await supabase
-        .from("classes")
-        .update({ settings: newSettings })
-        .eq("id", currentClassId);
+      const { error: updateErr } = await apiUpdateClassSettings(currentClassId, newSettings);
       
       if (updateErr) throw updateErr;
       
