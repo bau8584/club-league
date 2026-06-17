@@ -78,7 +78,7 @@ export function AdminStudentManage({
     setSelectedStudentId(s.id);
     setEditRpInput(s.rp.toString());
     setSearchQuery(""); // Clear search query after selection
-    toast.info(`${s.name} 학생의 프로필을 로드했습니다.`);
+    toast.info(`${s.realName || s.name} 학생의 프로필을 로드했습니다.`);
   };
 
   // Search filtered students list for editor select
@@ -86,7 +86,7 @@ export function AdminStudentManage({
     const q = searchQuery.trim().toLowerCase();
     if (!q) return [];
     return students.filter(
-      (s) => s.name.toLowerCase().includes(q) || `${s.grade}-${s.classNum}`.includes(q)
+      (s) => (s.realName || s.name).toLowerCase().includes(q) || `${s.grade}-${s.classNum}`.includes(q)
     );
   }, [students, searchQuery]);
 
@@ -98,7 +98,7 @@ export function AdminStudentManage({
       return toast.error("올바른 RP 점수 값을 입력해주세요 (0점 이상)");
     }
     onUpdateRP(selectedStudent.id, parsedRp);
-    toast.success(`${selectedStudent.name} 학생의 RP를 ${parsedRp}점으로 수동 조정했습니다.`);
+    toast.success(`${selectedStudent.realName || selectedStudent.name} 학생의 RP를 ${parsedRp}점으로 수동 조정했습니다.`);
   };
 
   // Apply RP presets instantly
@@ -107,7 +107,7 @@ export function AdminStudentManage({
     const nextRp = Math.max(0, selectedStudent.rp + delta);
     setEditRpInput(nextRp.toString());
     onUpdateRP(selectedStudent.id, nextRp);
-    toast.success(`${selectedStudent.name} 학생의 RP를 ${delta > 0 ? "+" : ""}${delta} 조정했습니다. (${nextRp} RP)`);
+    toast.success(`${selectedStudent.realName || selectedStudent.name} 학생의 RP를 ${delta > 0 ? "+" : ""}${delta} 조정했습니다. (${nextRp} RP)`);
   };
 
   // Student specific matches timeline
@@ -121,10 +121,10 @@ export function AdminStudentManage({
   // Individual student reset check
   const handleStudentReset = () => {
     if (!selectedStudent) return;
-    if (window.confirm(`정말로 [${selectedStudent.name}] 학생의 모든 전적(0승 0패, 1000 RP)을 초기화하시겠습니까? 이 학생이 치른 모든 경기 기록도 자동으로 삭제 및 처리됩니다.`)) {
+    if (window.confirm(`정말로 [${selectedStudent.realName || selectedStudent.name}] 학생의 모든 전적(0승 0패, 1000 RP)을 초기화하시겠습니까? 이 학생이 치른 모든 경기 기록도 자동으로 삭제 및 처리됩니다.`)) {
       onResetStudent(selectedStudent.id);
       setEditRpInput("1000");
-      toast.success(`${selectedStudent.name} 학생의 기록을 완전 초기화했습니다.`);
+      toast.success(`${selectedStudent.realName || selectedStudent.name} 학생의 기록을 완전 초기화했습니다.`);
     }
   };
 
@@ -165,7 +165,7 @@ export function AdminStudentManage({
                       >
                         <div className="flex items-center gap-2">
                           <GenderMark gender={s.gender} />
-                          <span className="font-bold text-foreground">{s.name}</span>
+                          <span className="font-bold text-foreground">{s.realName || s.name}</span>
                           <span className="text-xs text-muted-foreground">({s.grade}학년 {s.classNum}반 {s.number}번)</span>
                         </div>
                         <div className="flex items-center gap-2">
@@ -259,7 +259,7 @@ export function AdminStudentManage({
                       <div>
                         <div className="flex items-center gap-1.5 font-bold">
                           <GenderMark gender={s.gender} />
-                          <span>{s.name}</span>
+                          <span>{s.realName || s.name}</span>
                         </div>
                         <div className="flex items-center gap-2 mt-1.5">
                           <TierBadge rp={s.rp} thresholds={thresholds} />
@@ -287,7 +287,7 @@ export function AdminStudentManage({
                               <ShieldAlert className="size-5 shrink-0" /> 정말 학생을 삭제하시겠습니까?
                             </AlertDialogTitle>
                             <AlertDialogDescription className="text-sm text-muted-foreground mt-2 leading-relaxed">
-                              정말 <span className="font-black text-foreground">[{s.name}] ({s.grade}학년 {s.classNum}반 {s.number}번)</span> 학생의 모든 데이터를 영구 삭제하시겠습니까?<br /><br />
+                              정말 <span className="font-black text-foreground">[{s.realName || s.name}] ({s.grade}학년 {s.classNum}반 {s.number}번)</span> 학생의 모든 데이터를 영구 삭제하시겠습니까?<br /><br />
                               이 학생이 치른 <span className="font-bold text-destructive">모든 과거 경기 기록도 자동으로 제거</span>되며, 상대방 학생들의 승패와 RP 수치도 경기 전 상태로 부분 롤백됩니다. 이 작업은 되돌릴 수 없습니다.
                             </AlertDialogDescription>
                           </AlertDialogHeader>
@@ -351,7 +351,7 @@ export function AdminStudentManage({
                 
                 <div className="mt-1 flex items-center gap-2 text-2xl font-black">
                   <GenderMark gender={selectedStudent.gender} />
-                  {selectedStudent.name}
+                  {selectedStudent.realName || selectedStudent.name}
                 </div>
 
                 <div className="mt-3 flex items-center gap-2 flex-wrap">
@@ -378,10 +378,10 @@ export function AdminStudentManage({
                 <div className="mt-2.5">
                   <Button
                     onClick={() => {
-                      if (window.confirm(`정말로 [${selectedStudent.name}] 학생을 완전히 삭제하시겠습니까? 이 학생이 치른 모든 경기 기록도 연쇄 삭제되며 롤백됩니다. 이 작업은 취소할 수 없습니다.`)) {
+                      if (window.confirm(`정말로 [${selectedStudent.realName || selectedStudent.name}] 학생을 완전히 삭제하시겠습니까? 이 학생이 치른 모든 경기 기록도 연쇄 삭제되며 롤백됩니다. 이 작업은 취소할 수 없습니다.`)) {
                         onDeleteStudent?.(selectedStudent.id);
                         setSelectedStudentId(null);
-                        toast.success(`[${selectedStudent.name}] 학생이 성공적으로 삭제되었습니다.`);
+                        toast.success(`[${selectedStudent.realName || selectedStudent.name}] 학생이 성공적으로 삭제되었습니다.`);
                       }
                     }}
                     variant="destructive"
@@ -489,7 +489,7 @@ export function AdminStudentManage({
                             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                               <span>VS</span>
                               <GenderMark gender={opponent.gender} className="size-3.5 text-[9px]" />
-                              <span className="font-bold text-foreground">{opponent.name}</span>
+                              <span className="font-bold text-foreground">{opponent.realName || opponent.name}</span>
                               <span>({opponent.grade}-{opponent.classNum})</span>
                             </div>
                             <div className="text-[10px] text-muted-foreground mt-0.5">{matchDateStr}</div>

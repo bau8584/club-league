@@ -173,17 +173,9 @@ export function Lobby() {
       setModalTab("info");
       return toast.error("학교 이름을 입력해 주세요.");
     }
-    if (!newSport.trim()) {
-      setModalTab("info");
-      return toast.error("종목을 입력해 주세요.");
-    }
     if (!newLeagueName.trim()) {
       setModalTab("info");
       return toast.error("리그 이름을 입력해 주세요.");
-    }
-    if (!newSeason.trim()) {
-      setModalTab("info");
-      return toast.error("시즌 정보를 입력해 주세요.");
     }
     if (!/^\d{4}$/.test(adminCode)) {
       setModalTab("info");
@@ -191,27 +183,42 @@ export function Lobby() {
     }
     if (adminCode !== confirmAdminCode) {
       setModalTab("info");
-      return toast.error("관리자 코드가 일치하지 않습니다.");
+      return; // Block submission (inline error is displayed)
     }
+
+    const finalSeason = newSeason.trim() ? newSeason.trim() : getDynamicSeasonPlaceholder();
 
     setCreating(true);
     try {
-      const { error } = await supabase
+      // 1. classes 테이블에 인서트 (settings에서 adminCode 제외)
+      const { data: classData, error: classErr } = await supabase
         .from("classes")
         .insert({
           class_name: newLeagueName.trim(),
           settings: {
-            season: newSeason.trim(),
+            season: finalSeason,
             schoolName: newSchoolName.trim(),
-            sport: newSport.trim(),
-            adminCode: adminCode
+            sport: newSport.trim()
           },
           owner_uid: userId,
           scorekeeper_uids: [],
           co_admin_uids: []
-        });
+        })
+        .select("id")
+        .single();
 
-      if (error) throw error;
+      if (classErr) throw classErr;
+
+      // 2. class_secrets 테이블에 admin_code 삽입
+      if (classData) {
+        const { error: secretErr } = await supabase
+          .from("class_secrets")
+          .insert({
+            class_id: classData.id,
+            admin_code: adminCode
+          });
+        if (secretErr) throw secretErr;
+      }
 
       toast.success("새로운 리그가 개설되었습니다!");
       setIsModalOpen(false);
@@ -530,26 +537,26 @@ export function Lobby() {
             <form onSubmit={handleCreateLeague} className="space-y-4">
               {modalTab === "info" ? (
                 <>
-                  <div className="space-y-1.5 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                    <Label className="text-xs font-bold text-foreground">학교 이름</Label>
-                    <Input
-                      required
-                      value={newSchoolName}
-                      onChange={(e) => setNewSchoolName(e.target.value)}
-                      placeholder="예: 서울초등학교"
-                      className="h-10 border-border/60 bg-background/40 focus:border-neon-blue transition-all"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                    <Label className="text-xs font-bold text-foreground">종목</Label>
-                    <Input
-                      required
-                      value={newSport}
-                      onChange={(e) => setNewSport(e.target.value)}
-                      placeholder="예: 배드민턴, 테니스"
-                      className="h-10 border-border/60 bg-background/40 focus:border-neon-blue transition-all"
-                    />
+                  <div className="grid grid-cols-2 gap-3 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-bold text-foreground">학교 이름</Label>
+                      <Input
+                        required
+                        value={newSchoolName}
+                        onChange={(e) => setNewSchoolName(e.target.value)}
+                        placeholder="예: 서울초등학교"
+                        className="h-10 border-border/60 bg-background/40 focus:border-neon-blue transition-all"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-bold text-foreground">종목</Label>
+                      <Input
+                        value={newSport}
+                        onChange={(e) => setNewSport(e.target.value)}
+                        placeholder="예: 배드민턴, 테니스"
+                        className="h-10 border-border/60 bg-background/40 focus:border-neon-blue transition-all"
+                      />
+                    </div>
                   </div>
 
                   <div className="space-y-1.5 animate-in fade-in slide-in-from-bottom-2 duration-200">
@@ -566,7 +573,6 @@ export function Lobby() {
                   <div className="space-y-1.5 animate-in fade-in slide-in-from-bottom-2 duration-200">
                     <Label className="text-xs font-bold text-foreground">시즌 정보</Label>
                     <Input
-                      required
                       value={newSeason}
                       onChange={(e) => setNewSeason(e.target.value)}
                       placeholder={getDynamicSeasonPlaceholder()}
@@ -574,31 +580,37 @@ export function Lobby() {
                     />
                   </div>
 
-                  <div className="space-y-1.5 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                    <Label className="text-xs font-bold text-foreground">관리자 코드</Label>
-                    <Input
-                      type="password"
-                      required
-                      maxLength={4}
-                      value={adminCode}
-                      onChange={(e) => setAdminCode(e.target.value.replace(/\D/g, ""))}
-                      placeholder="4자리 숫자 입력"
-                      className="h-10 border-border/60 bg-background/40 focus:border-neon-blue transition-all"
-                    />
-                    <p className="text-[10px] text-muted-foreground mt-0.5">교사 관리자 및 티어 순위표 접근용 비밀번호</p>
-                  </div>
-
-                  <div className="space-y-1.5 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                    <Label className="text-xs font-bold text-foreground">관리자 코드 확인</Label>
-                    <Input
-                      type="password"
-                      required
-                      maxLength={4}
-                      value={confirmAdminCode}
-                      onChange={(e) => setConfirmAdminCode(e.target.value.replace(/\D/g, ""))}
-                      placeholder="4자리 숫자 재입력"
-                      className="h-10 border-border/60 bg-background/40 focus:border-neon-blue transition-all"
-                    />
+                  <div className="grid grid-cols-2 gap-3 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-bold text-foreground">관리자 코드</Label>
+                      <Input
+                        type="password"
+                        required
+                        maxLength={4}
+                        value={adminCode}
+                        onChange={(e) => setAdminCode(e.target.value.replace(/\D/g, ""))}
+                        placeholder="4자리 숫자 입력"
+                        className="h-10 border-border/60 bg-background/40 focus:border-neon-blue transition-all"
+                      />
+                      <p className="text-[10px] text-muted-foreground mt-0.5 leading-tight">교사 관리자 및 티어 순위표 접근용 비밀번호</p>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-bold text-foreground">관리자 코드 확인</Label>
+                      <Input
+                        type="password"
+                        required
+                        maxLength={4}
+                        value={confirmAdminCode}
+                        onChange={(e) => setConfirmAdminCode(e.target.value.replace(/\D/g, ""))}
+                        placeholder="4자리 숫자 재입력"
+                        className="h-10 border-border/60 bg-background/40 focus:border-neon-blue transition-all"
+                      />
+                      {confirmAdminCode && adminCode !== confirmAdminCode && (
+                        <p className="text-[10px] text-destructive mt-0.5 font-bold animate-in fade-in duration-200">
+                          코드가 일치하지 않습니다.
+                        </p>
+                      )}
+                    </div>
                   </div>
                 </>
               ) : (

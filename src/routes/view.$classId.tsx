@@ -43,13 +43,8 @@ function StudentViewerComponent() {
 
   // Name masking filter (e.g. 홍길동 -> 홍*동, 이철수 -> 이*수, 김철 -> 김*, 남궁민수 -> 남**수)
   const maskName = (name: string) => {
-    if (!name) return "";
-    const trimmed = name.trim();
-    if (trimmed.length <= 1) return trimmed;
-    if (trimmed.length === 2) {
-      return trimmed.charAt(0) + "*";
-    }
-    return trimmed.charAt(0) + "*".repeat(trimmed.length - 2) + trimmed.charAt(trimmed.length - 1);
+    // API 레벨에서 실명이 보호되고 display_name(닉네임 또는 학년-반-번호)이 내려오므로, 마스킹 처리 없이 그대로 노출합니다.
+    return name || "";
   };
 
   const getWinStreak = (recent: ("W" | "L")[]): number => {

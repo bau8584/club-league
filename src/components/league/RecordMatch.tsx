@@ -726,7 +726,7 @@ export function RecordMatch({
       const baseLoss = !won ? (-rpDelta + freshnessBonus + lossComfortBonus + greatMatchBonus - (arrogancePenalty + crushingPenalty + revengeAllowedPenalty + championPenalty + swampPenalty)) : 0;
 
       return {
-        name: student.name,
+        name: student.realName || student.name,
         grade: student.grade,
         classNum: student.classNum,
         number: student.number,
@@ -1113,7 +1113,7 @@ export function RecordMatch({
           <ScorePad 
             name={matchType === "double" 
               ? "팀 A" 
-              : (playerA?.name ?? "선수 A")
+              : ((playerA?.realName || playerA?.name) ?? "선수 A")
             } 
             value={scoreA} 
             onChange={setScoreA} 
@@ -1123,7 +1123,7 @@ export function RecordMatch({
           <ScorePad 
             name={matchType === "double" 
               ? "팀 B" 
-              : (playerB?.name ?? "선수 B")
+              : ((playerB?.realName || playerB?.name) ?? "선수 B")
             } 
             value={scoreB} 
             onChange={setScoreB} 
@@ -1791,7 +1791,7 @@ function PlayerSelector({
           <div className="text-xs opacity-80">{player.grade}학년 {player.classNum}반 · {player.number}번</div>
           <div className="mt-1 flex items-center gap-2 text-xl sm:text-2xl font-black min-w-0">
             <GenderMark gender={player.gender} className="size-5 text-xs shrink-0" />
-            <span className="whitespace-nowrap truncate flex-1">{player.name}</span>
+            <span className="whitespace-nowrap truncate flex-1">{player.realName || player.name}</span>
           </div>
           <div className="mt-2 flex items-center gap-2">
             <TierBadge rp={player.rp} thresholds={thresholds} />
@@ -1843,7 +1843,7 @@ function PlayerSelector({
                     {/* 3. 정중앙 이름 배치 */}
                     <div className="flex-grow flex items-center justify-center w-full min-w-0">
                       <span className="text-base font-bold text-white break-keep text-center w-full">
-                        {s.name}
+                        {s.realName || s.name}
                       </span>
                     </div>
 

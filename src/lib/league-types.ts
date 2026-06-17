@@ -7,14 +7,16 @@ export type Student = {
   // --- Supabase DB 테이블 스키마 속성 ---
   id: string; // UUID (Primary Key)
   rp: number; // 랭킹 포인트
+  class_id?: string; // 반 식별용 UUID (Foreign Key)
   
-  // --- 프론트엔드 전용 확장 / 직렬화 분해 속성 ---
-  // student_name (포맷: [grade]-[classNum]-[number]-[name]-[gender]) 컬럼에서 파싱됨
+  // --- 데이터베이스 정규화 컬럼 매핑 ---
   grade: number; // 학년 (1-6)
-  classNum: number; // 반 (1-10)
-  number: number; // 번호 (출석 번호)
-  name: string; // 학생 이름
-  gender: Gender; // 성별
+  classNum: number; // 반 (1-10) -> DB: class_number
+  number: number; // 번호 (출석 번호) -> DB: student_no
+  name: string; // 표시용 이름 (리더보드 노출용: nickname ?? "학년-반-번호번")
+  realName?: string; // 학생 실명 -> DB: real_name (교사만 접근)
+  nickname?: string | null; // 학생 별명 -> DB: nickname (기본값 NULL)
+  gender: Gender; // 성별 -> DB: gender
   
   // 경기 전적(matches) 데이터를 기반으로 실시간 계산되는 속성들
   recent: ("W" | "L")[]; // 최근 5경기 결과 (가장 최근이 첫 요소)
@@ -235,8 +237,9 @@ export const TIER_STYLES: Record<TierName, { bg: string; text: string; ring: str
   Diamond:  { bg: "bg-tier-diamond/15",  text: "text-tier-diamond",  ring: "ring-tier-diamond/40",  label: "다이아몬드" },
 };
 
-export function studentKey(s: { grade: number; classNum: number; number: number; name: string }) {
-  return `${s.grade}-${s.classNum}-${s.number}-${s.name}`;
+export function studentKey(s: { grade: number; classNum: number; number: number; name: string; realName?: string }) {
+  const studentName = s.realName || s.name;
+  return `${s.grade}-${s.classNum}-${s.number}-${studentName}`;
 }
 
 export type TierSettings = Record<"Bronze" | "Silver" | "Gold" | "Platinum", {

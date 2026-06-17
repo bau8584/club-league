@@ -62,7 +62,7 @@ export function Leaderboard({
       .filter((s) => (classNum === "all" ? true : s.classNum === classNum))
       .filter((s) => (tier === "all" ? true : getTier(s.rp, thresholds) === tier))
       .filter((s) => (gender === "all" ? true : s.gender === gender))
-      .filter((s) => (q ? s.name.toLowerCase().includes(q) : true))
+      .filter((s) => (q ? (s.realName || s.name).toLowerCase().includes(q) : true))
       .sort((a, b) => b.rp - a.rp);
   }, [students, grade, classNum, tier, gender, query, thresholds]);
 
@@ -160,7 +160,7 @@ export function Leaderboard({
                       <div className="flex items-center gap-2 font-semibold">
                         <GenderMark gender={s.gender} />
                         <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2">
-                          <span>{s.name}</span>
+                          <span>{s.realName || s.name}</span>
                           <span className="text-[10px] text-muted-foreground sm:hidden">
                             ({s.grade}-{s.classNum} · {s.number}번)
                           </span>

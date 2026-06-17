@@ -19,16 +19,19 @@ import {
   apiInsertMatchesBulk,
   apiUpdateMatchWinnerLoser,
   apiFetchStudents,
+  apiFetchStudentsPublic,
   apiUpdateStudentRp,
   apiResetStudentRp,
   apiResetAllClassStudentsRp,
-  apiUpdateStudentName,
+  apiUpdateStudentFields,
   apiInsertStudent,
   apiSoftDeleteStudent,
   apiUpdateStudentInfo,
   apiDeleteClassStudents,
   apiInsertStudentsBulk,
-  apiRecordMatchTransaction
+  apiRecordMatchTransaction,
+  apiFetchClassSecret,
+  apiUpdateClassSecret
 } from "./league-api";
 import {
   DEFAULT_TIERS,
@@ -80,6 +83,7 @@ function useLeagueStoreInternal() {
   const [isLocked, setIsLocked] = useState<boolean>(false);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [isClassOwner, setIsClassOwner] = useState<boolean>(false);
+  const [teacherAccessCode, setTeacherAccessCode] = useState<string>("");
   const isSyncingRef = useRef(false);
 
   useEffect(() => {
@@ -166,19 +170,46 @@ function useLeagueStoreInternal() {
         matchType: "single"
       }));
 
-      // 3. Fetch students for this class (excluding soft-deleted)
-      const { data: dbStudents, error: studentsErr } = await apiFetchStudents(classId);
+      // 3. Fetch students for this class (excluding soft-deleted) - 교사 여부에 따라 API 분기
+      let isTeacherSession = false;
+      try {
+        const { data: { user } } = await apiGetUser();
+        if (user && classData && (classData.owner_uid === user.id || (classData.co_admin_uids && classData.co_admin_uids.includes(user.id)))) {
+          isTeacherSession = true;
+        }
+      } catch (err) {
+        console.warn("Failed to check owner/admin session in loadClassData:", err);
+      }
+
+      // class_secrets 조회 추가 (교사 세션일 때만 RLS 우회하여 안전 조회)
+      let fetchedAccessCode = "";
+      if (isTeacherSession) {
+        try {
+          const { data: secretData, error: secretErr } = await apiFetchClassSecret(classId);
+          if (!secretErr && secretData) {
+            fetchedAccessCode = secretData.admin_code;
+          }
+        } catch (err) {
+          console.warn("Failed to fetch class secret in loadClassData:", err);
+        }
+      }
+      setTeacherAccessCode(fetchedAccessCode);
+
+      const studentsFetchResult = isTeacherSession 
+        ? await apiFetchStudents(classId)
+        : await apiFetchStudentsPublic(classId);
+
+      const { data: dbStudents, error: studentsErr } = studentsFetchResult;
       if (studentsErr) throw studentsErr;
 
       // Map Supabase students to frontend Student structure, computing stats on-the-fly
       const studentsList: Student[] = (dbStudents || []).map((s: any) => {
-        // student_name format: [grade]-[classNum]-[number]-[name]-[gender]
-        const nameParts = (s.student_name || "").split("-");
-        const grade = parseInt(nameParts[0], 10) || 0;
-        const classNum = parseInt(nameParts[1], 10) || 0;
-        const number = parseInt(nameParts[2], 10) || 0;
-        const name = nameParts[3] || "이름없음";
-        const gender = (nameParts[4] || "U") as Gender;
+        const grade = s.grade ?? 0;
+        const classNum = s.class_number ?? 0;
+        const number = s.student_no ?? 0;
+        // name은 display_name을 기본으로 하되, 없을 경우 fallback으로 포맷팅
+        const name = s.display_name || (s.nickname ?? `${grade}-${classNum}-${number}번`);
+        const gender = (s.gender || "U") as Gender;
 
         // Find matches for this student to compute derived stats
         const studentMatches = matchesList
@@ -212,6 +243,8 @@ function useLeagueStoreInternal() {
           classNum,
           number,
           name,
+          realName: s.real_name ?? "",
+          nickname: s.nickname ?? "",
           gender,
           rp: s.rp || 1000,
           wins,
@@ -834,7 +867,7 @@ function useLeagueStoreInternal() {
       const next: Student[] = [];
       const seenKeys = new Set<string>();
       for (const r of rows) {
-        const k = studentKey(r);
+        const k = studentKey({ grade: r.grade, classNum: r.classNum, number: r.number, name: r.name, realName: r.name });
         if (seenKeys.has(k)) continue;
         seenKeys.add(k);
         const exists = byKey.get(k);
@@ -848,13 +881,14 @@ function useLeagueStoreInternal() {
             grade: r.grade,
             classNum: r.classNum,
             number: r.number,
-            name: r.name,
+            name: `${r.grade}-${r.classNum}-${r.number}번`,
+            realName: r.name,
             gender: r.gender ?? "U",
             rp: 1000,
             recent: [],
             wins: 0,
             losses: 0,
-            demotionShields: 0,
+            demotionShields: 3,
           });
         }
       }
@@ -871,13 +905,25 @@ function useLeagueStoreInternal() {
           setIsSyncing(true);
           // Perform upserts into Supabase students table
           for (const r of rows) {
-            const studentName = `${r.grade}-${r.classNum}-${r.number}-${r.name}-${r.gender || 'U'}`;
-            const key = studentKey(r);
+            const key = studentKey({ grade: r.grade, classNum: r.classNum, number: r.number, name: r.name, realName: r.name });
             const exists = byKey.get(key);
             if (exists) {
-              await apiUpdateStudentName(exists.id, studentName);
+              await apiUpdateStudentFields(exists.id, {
+                grade: r.grade,
+                class_number: r.classNum,
+                student_no: r.number,
+                real_name: r.name,
+                gender: r.gender || 'U'
+              });
             } else {
-              const { data: insertedData, error: insertErr } = await apiInsertStudent(currentClassId, studentName);
+              const { data: insertedData, error: insertErr } = await apiInsertStudent(currentClassId, {
+                grade: r.grade,
+                class_number: r.classNum,
+                student_no: r.number,
+                real_name: r.name,
+                gender: r.gender || 'U',
+                rp: 1000
+              });
               
               if (insertErr) throw insertErr;
               if (insertedData) {
@@ -1013,12 +1059,8 @@ function useLeagueStoreInternal() {
 
     if (currentClassId) {
       try {
-        const student = students.find(s => s.id === studentId);
-        if (student) {
-          const studentName = `${student.grade}-${student.classNum}-${student.number}-${student.name}-${gender}`;
-          await apiUpdateStudentName(studentId, studentName);
-          toast.success("성별이 변경되었습니다.");
-        }
+        await apiUpdateStudentFields(studentId, { gender });
+        toast.success("성별이 변경되었습니다.");
       } catch (err: any) {
         console.error("Failed to update student gender in Supabase:", err.message);
         toast.error("성별 변경에 실패했습니다: " + err.message);
@@ -1181,17 +1223,17 @@ function useLeagueStoreInternal() {
     isSyncingRef.current = true;
     setIsSyncing(true);
 
-    const studentName = `${info.grade}-${info.classNum}-${info.number}-${info.name}-${info.gender}`;
-    
     // Update local state first (Optimistic)
     const nextStudents = students.map((s) => {
       if (s.id !== studentId) return s;
+      const display_name = s.nickname || `${info.grade}-${info.classNum}-${info.number}번`;
       return {
         ...s,
         grade: info.grade,
         classNum: info.classNum,
         number: info.number,
-        name: info.name,
+        name: display_name,
+        realName: info.name, // info.name is real name input
         gender: info.gender,
         rp: info.rp !== undefined ? info.rp : s.rp
       };
@@ -1201,7 +1243,13 @@ function useLeagueStoreInternal() {
 
     if (currentClassId) {
       try {
-        const updatePayload: any = { student_name: studentName };
+        const updatePayload: any = {
+          grade: info.grade,
+          class_number: info.classNum,
+          student_no: info.number,
+          real_name: info.name,
+          gender: info.gender
+        };
         if (info.rp !== undefined) {
           updatePayload.rp = info.rp;
         }
@@ -1252,12 +1300,16 @@ function useLeagueStoreInternal() {
 
         // 2. Insert students
         const studentsToInsert = restoredStudents.map((s) => {
-          const studentName = `${s.grade}-${s.classNum}-${s.number}-${s.name}-${s.gender || 'U'}`;
           return {
             id: s.id,
             class_id: currentClassId,
             rp: s.rp,
-            student_name: studentName,
+            grade: s.grade,
+            class_number: s.classNum,
+            student_no: s.number,
+            real_name: s.realName || s.name,
+            nickname: s.nickname || null,
+            gender: s.gender || 'U',
             created_at: new Date().toISOString()
           };
         });
@@ -2375,6 +2427,8 @@ function useLeagueStoreInternal() {
     matches, 
     title, 
     setTitle, 
+    teacherAccessCode,
+    setTeacherAccessCode,
     recordMatch, 
     upsertStudents, 
     isLocked, 

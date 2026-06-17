@@ -62,7 +62,8 @@ function Index() {
     seasonList,
     changeSeason,
     currentViewSeason,
-    changeViewSeason
+    changeViewSeason,
+    teacherAccessCode
   } = useLeagueStore();
 
   useEffect(() => {
@@ -457,6 +458,7 @@ function Index() {
             onSaveLeagueSettings={saveLeagueSettings}
             seasonList={seasonList}
             onChangeSeason={changeSeason}
+            teacherAccessCode={teacherAccessCode}
           />
         )}
       </main>
