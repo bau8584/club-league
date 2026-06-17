@@ -227,6 +227,45 @@ export async function apiRecordMatchTransaction(payload: {
   if (error) throw error;
 }
 
+// --- Student Self-Service API (개인 코드/별명) ---
+// 모든 쓰기는 서버 RPC를 거쳐 코드 검증 후에만 수행됩니다(코드는 클라이언트로 내려오지 않음).
+export async function apiStudentHasCode(studentId: string) {
+  return supabase.rpc("student_has_code", { p_student_id: studentId });
+}
+
+export async function apiVerifyStudentCode(studentId: string, code: string) {
+  return supabase.rpc("verify_student_code", { p_student_id: studentId, p_code: code });
+}
+
+export async function apiClaimStudent(studentId: string, code: string, nickname: string | null) {
+  return supabase.rpc("claim_student", {
+    p_student_id: studentId,
+    p_code: code,
+    p_nickname: nickname
+  });
+}
+
+export async function apiUpdateStudentNickname(studentId: string, code: string, nickname: string | null) {
+  return supabase.rpc("update_student_nickname", {
+    p_student_id: studentId,
+    p_code: code,
+    p_nickname: nickname
+  });
+}
+
+export async function apiChangeStudentCode(studentId: string, oldCode: string, newCode: string) {
+  return supabase.rpc("change_student_code", {
+    p_student_id: studentId,
+    p_old_code: oldCode,
+    p_new_code: newCode
+  });
+}
+
+// 교사 전용: 학생 개인 코드 초기화 (RLS로 교사만 허용)
+export async function apiResetStudentCode(studentId: string) {
+  return supabase.from("student_secrets").delete().eq("student_id", studentId);
+}
+
 // --- Class Secrets API ---
 export async function apiFetchClassSecret(classId: string) {
   return supabase

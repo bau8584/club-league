@@ -3,8 +3,9 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { Search, Trash2, RotateCcw, User, Save, Pencil, ArrowLeft, ShieldAlert } from "lucide-react";
+import { Search, Trash2, RotateCcw, User, Save, Pencil, ArrowLeft, ShieldAlert, KeyRound } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { apiResetStudentCode } from "@/lib/league-api";
 import type { Gender, Student, Match, TierName } from "@/lib/league-types";
 import { GenderMark } from "../GenderMark";
 import { TierBadge } from "../TierBadge";
@@ -401,6 +402,26 @@ export function AdminStudentManage({
                     className="w-full bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive/20 font-bold active:scale-95 transition-all"
                   >
                     <RotateCcw className="mr-2 size-3.5" /> 개인 데이터 초기화
+                  </Button>
+                </div>
+
+                {/* 개인 코드 초기화 (학생이 코드를 잊었을 때 잠금 해제) */}
+                <div className="mt-2.5">
+                  <Button
+                    onClick={async () => {
+                      if (!window.confirm(`[${selectedStudent.realName || selectedStudent.name}] 학생의 개인 코드를 초기화할까요? 학생이 다시 새 코드를 정할 수 있게 됩니다. (별명·전적은 그대로 유지됩니다.)`)) return;
+                      const { error } = await apiResetStudentCode(selectedStudent.id);
+                      if (error) {
+                        toast.error("코드 초기화에 실패했습니다: " + error.message);
+                      } else {
+                        toast.success(`[${selectedStudent.realName || selectedStudent.name}] 학생의 개인 코드를 초기화했습니다.`);
+                      }
+                    }}
+                    variant="secondary"
+                    size="sm"
+                    className="w-full font-bold active:scale-95 transition-all"
+                  >
+                    <KeyRound className="mr-2 size-3.5" /> 개인 코드 초기화
                   </Button>
                 </div>
               </div>
