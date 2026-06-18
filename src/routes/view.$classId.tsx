@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { TierBadge } from "@/components/league/TierBadge";
 import { GenderMark } from "@/components/league/GenderMark";
 import { MyAchievements } from "@/components/league/MyAchievements";
+import { SeasonSummary } from "@/components/league/SeasonSummary";
 import { StudentCardSettings } from "@/components/league/StudentCardSettings";
 import { Toaster } from "@/components/ui/sonner";
 import { cn } from "@/lib/utils";
@@ -15,8 +16,9 @@ import {
   type TierName,
   type Student,
   type Match,
+  type DecaySettingsRecord,
 } from "@/lib/league-types";
-import { Trophy, Search, ChevronLeft, TrendingUp, Medal, Calendar, Settings } from "lucide-react";
+import { Trophy, Search, ChevronLeft, TrendingUp, Medal, Calendar, Settings, Hourglass } from "lucide-react";
 
 export const Route = createFileRoute("/view/$classId")({
   component: StudentViewerComponent,
@@ -38,6 +40,22 @@ function studentNo(s: { grade: number; classNum: number; number: number }) {
 // 화면에 크게 보일 이름. 별명이 있으면 별명, 없으면 학번.
 function displayIdentity(s: { nickname?: string | null; grade: number; classNum: number; number: number }) {
   return s.nickname && s.nickname.trim() ? s.nickname.trim() : studentNo(s);
+}
+
+// 과거 시즌: 선수 카드 / 시즌 요약 전환 칩
+function ViewToggle({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "px-4 py-1.5 rounded-full border text-xs font-bold transition-all active:scale-95",
+        active ? "border-neon-blue/50 bg-neon-blue/15 text-neon-blue" : "border-border/40 text-muted-foreground hover:text-foreground"
+      )}
+    >
+      {children}
+    </button>
+  );
 }
 
 // 최근 5경기 흐름(W/L 점)을 그리는 공용 미니 위젯
@@ -68,11 +86,20 @@ function RecentDots({ recent, size = "sm" }: { recent: ("W" | "L")[]; size?: "sm
 
 function StudentViewerComponent() {
   const { classId } = Route.useParams();
-  const { students, matches, title, loadClassData, tierThresholds, hydrated, isSyncing } =
-    useLeagueStore();
+  const { students, matches, title, loadClassData, tierThresholds, hydrated, isSyncing,
+    seasonList, currentSeason, currentViewSeason, changeViewSeason,
+    decaySettings, decayAppliedDates } = useLeagueStore();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [showSummary, setShowSummary] = useState(false);
+  const isPastSeason = currentViewSeason !== "현재 시즌";
+
+  // 시즌 전환: 선택된 학생/보기 상태는 그대로 유지한 채 데이터만 교체.
+  // (학생 id는 시즌 간 동일하므로 같은 학생의 해당 시즌 기록이 바로 보인다)
+  const handleSeasonChange = (season: string) => {
+    changeViewSeason(season);
+  };
 
   useEffect(() => {
     if (classId) {
@@ -147,28 +174,77 @@ function StudentViewerComponent() {
                 <span>실시간 동기화 중...</span>
               </div>
             )}
+            {/* 시즌 선택 (과거 시즌 열람) */}
+            <div className="flex items-center gap-1.5 rounded-full border border-border/60 bg-card/60 px-3 py-1.5">
+              <Calendar className="size-3.5 text-neon-blue" />
+              <select
+                value={currentViewSeason}
+                onChange={(e) => handleSeasonChange(e.target.value)}
+                className="bg-transparent text-xs font-bold text-foreground focus:outline-none cursor-pointer pr-1"
+              >
+                <option value="현재 시즌" className="bg-background text-foreground font-bold">{currentSeason} (현재)</option>
+                {seasonList && seasonList.map((season) => (
+                  <option key={season} value={season} className="bg-background text-foreground font-bold">{season}</option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
       </header>
 
-      <main className="flex-1 mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8 relative z-10">
+      <main className="flex-1 mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8 relative z-10 space-y-5">
+        {/* 과거 시즌 읽기 전용 배너 */}
+        {isPastSeason && (
+          <div className="flex items-center gap-3 rounded-xl border border-amber-500/35 bg-amber-500/10 p-3.5 text-amber-200">
+            <Calendar className="size-5 shrink-0 text-amber-500" />
+            <div className="flex-1 text-xs sm:text-sm">
+              <span className="font-black">과거 시즌 {currentViewSeason}</span> 열람 중입니다. (읽기 전용)
+            </div>
+            <button
+              onClick={() => handleSeasonChange("현재 시즌")}
+              className="text-xs bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 rounded-lg px-3 py-1.5 font-bold transition-all active:scale-95 shrink-0 cursor-pointer"
+            >
+              현재 시즌으로
+            </button>
+          </div>
+        )}
+
         {selectedStudent ? (
           <StudentDashboard
             student={selectedStudent}
             students={students}
             matches={matches}
             thresholds={thresholds}
+            decaySettings={decaySettings}
+            decayAppliedDates={decayAppliedDates}
+            readOnly={isPastSeason}
             onBack={() => setSelectedId(null)}
             onSaved={() => loadClassData(classId, true)}
           />
-        ) : (
-          <StudentPicker
-            students={orderedStudents}
+        ) : isPastSeason && showSummary ? (
+          <SeasonSummary
+            season={currentViewSeason}
+            students={students}
+            matches={matches}
             thresholds={thresholds}
-            searchQuery={searchQuery}
-            onSearch={setSearchQuery}
-            onSelect={setSelectedId}
           />
+        ) : (
+          <>
+            {/* 과거 시즌일 때 선수 카드 / 시즌 요약 전환 */}
+            {isPastSeason && (
+              <div className="flex items-center gap-1.5">
+                <ViewToggle active={!showSummary} onClick={() => setShowSummary(false)}>선수 카드</ViewToggle>
+                <ViewToggle active={showSummary} onClick={() => setShowSummary(true)}>시즌 요약</ViewToggle>
+              </div>
+            )}
+            <StudentPicker
+              students={orderedStudents}
+              thresholds={thresholds}
+              searchQuery={searchQuery}
+              onSearch={setSearchQuery}
+              onSelect={setSelectedId}
+            />
+          </>
         )}
       </main>
 
@@ -279,6 +355,9 @@ function StudentDashboard({
   students,
   matches,
   thresholds,
+  decaySettings,
+  decayAppliedDates = {},
+  readOnly = false,
   onBack,
   onSaved,
 }: {
@@ -286,11 +365,39 @@ function StudentDashboard({
   students: Student[];
   matches: Match[];
   thresholds: Record<TierName, number>;
+  decaySettings?: DecaySettingsRecord;
+  decayAppliedDates?: Record<string, string>;
+  readOnly?: boolean;
   onBack: () => void;
   onSaved: () => void;
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const currentTier = getTier(student.rp, thresholds);
+
+  // 휴면 감점 카운트다운 (사이클당 1회 차감 기준). 과거 시즌 열람(readOnly)에서는 숨김.
+  // students_public 뷰에는 lastMatchDate가 없으므로 matches에서 마지막 경기일을 직접 계산한다.
+  const decayInfo = useMemo(() => {
+    if (readOnly) return null;
+    const tierKey = currentTier.toLowerCase() as 'bronze'|'silver'|'gold'|'platinum'|'diamond';
+    const setting = decaySettings?.[tierKey];
+    if (!setting || !setting.enabled) return null;
+
+    const lastMatchTime = matches
+      .filter((m) =>
+        m.playerAId === student.id ||
+        m.playerBId === student.id ||
+        m.playerA2Id === student.id ||
+        m.playerB2Id === student.id,
+      )
+      .reduce((max, m) => Math.max(max, new Date(m.date).getTime()), 0);
+    if (!lastMatchTime) return null; // 경기 기록이 없으면 표시하지 않음
+
+    const dayMs = 1000 * 60 * 60 * 24;
+    const appliedStr = decayAppliedDates[student.id];
+    const baseline = Math.max(lastMatchTime, appliedStr ? new Date(appliedStr).getTime() : 0);
+    const daysRemaining = Math.max(0, Math.ceil(setting.inactiveDays - (Date.now() - baseline) / dayMs));
+    return { daysRemaining, decayRp: setting.decayRp, warning: daysRemaining <= 3 };
+  }, [readOnly, matches, student.id, currentTier, decaySettings, decayAppliedDates]);
 
   // 다음 티어까지의 진행도 (RP 숫자는 노출하지 않고 막대/비율만)
   const progress = useMemo(() => {
@@ -331,13 +438,15 @@ function StudentDashboard({
           <ChevronLeft className="size-4" />
           목록으로
         </button>
-        <button
-          onClick={() => setSettingsOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-neon-blue/40 bg-neon-blue/5 px-3 py-1.5 text-sm font-bold text-neon-blue transition-colors hover:bg-neon-blue/15 cursor-pointer"
-        >
-          <Settings className="size-4" />
-          내 카드 설정
-        </button>
+        {!readOnly && (
+          <button
+            onClick={() => setSettingsOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-neon-blue/40 bg-neon-blue/5 px-3 py-1.5 text-sm font-bold text-neon-blue transition-colors hover:bg-neon-blue/15 cursor-pointer"
+          >
+            <Settings className="size-4" />
+            내 카드 설정
+          </button>
+        )}
       </div>
 
       {settingsOpen && (
@@ -414,6 +523,31 @@ function StudentDashboard({
               <RecentDots recent={student.recent} size="lg" />
             </div>
           </div>
+
+          {/* 휴면 감점 카운트다운 */}
+          {decayInfo && (
+            <div className={cn(
+              "rounded-xl border p-3 text-xs font-bold flex items-center justify-between gap-2.5 transition-all",
+              decayInfo.warning
+                ? "border-destructive/40 bg-destructive/10 text-destructive animate-pulse"
+                : "border-border/50 bg-background/40 text-muted-foreground"
+            )}>
+              <span className="flex items-center gap-1.5 leading-relaxed">
+                <Hourglass className="size-3.5 shrink-0" />
+                {decayInfo.daysRemaining <= 0
+                  ? `미활동으로 곧 RP ${decayInfo.decayRp}점이 차감됩니다. 지금 대결하세요!`
+                  : `대결이 없으면 ${decayInfo.daysRemaining}일 후 RP ${decayInfo.decayRp}점이 차감돼요.`}
+              </span>
+              <span className={cn(
+                "text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded border shrink-0",
+                decayInfo.warning
+                  ? "text-destructive bg-destructive/15 border-destructive/20"
+                  : "text-muted-foreground bg-card/65 border-border/40"
+              )}>
+                {decayInfo.daysRemaining <= 0 ? "감점 임박!" : `D-${decayInfo.daysRemaining}`}
+              </span>
+            </div>
+          )}
         </div>
       </Card>
 

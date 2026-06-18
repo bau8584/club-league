@@ -5,6 +5,7 @@ import { Card } from "./ui/card";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
+import { Toaster } from "./ui/sonner";
 import { toast } from "sonner";
 import { 
   Crown, 
@@ -20,7 +21,9 @@ import {
   X,
   Copy,
   Edit2,
-  Trash2
+  Trash2,
+  UserPlus,
+  UserX
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -32,6 +35,7 @@ import {
 import { cn } from "@/lib/utils";
 
 import { type Class } from "@/lib/league-types";
+import { LEAGUE_BUNDLES, buildBundleSettings, type BundleKey } from "@/lib/league-presets";
 
 export function Lobby() {
   const [userEmail, setUserEmail] = useState<string>("");
@@ -50,6 +54,18 @@ export function Lobby() {
   const [confirmAdminCode, setConfirmAdminCode] = useState("");
   const [creating, setCreating] = useState(false);
   const [modalTab, setModalTab] = useState<"info" | "settings">("info");
+  const [selectedBundle, setSelectedBundle] = useState<BundleKey>("standard");
+
+  // 리그 참여 모달
+  const [joinModalOpen, setJoinModalOpen] = useState(false);
+  const [joinCode, setJoinCode] = useState("");
+  const [joining, setJoining] = useState(false);
+
+  // 기록원 초대 모달 / 멤버 관리 모달
+  const [inviteLeague, setInviteLeague] = useState<Class | null>(null);
+  const [membersLeague, setMembersLeague] = useState<Class | null>(null);
+  const [members, setMembers] = useState<{ uid: string; email: string | null; role: string }[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
 
   const getDynamicSeasonPlaceholder = () => {
     const now = new Date();
@@ -76,6 +92,29 @@ export function Lobby() {
   const [editingLeague, setEditingLeague] = useState<Class | null>(null);
   const [editLeagueName, setEditLeagueName] = useState("");
   const [updatingName, setUpdatingName] = useState(false);
+  // 관리자 코드 편집
+  const [editAdminCode, setEditAdminCode] = useState("");
+  const [editConfirmCode, setEditConfirmCode] = useState("");
+  const [currentCodeExists, setCurrentCodeExists] = useState<boolean | null>(null); // null=확인중
+
+  // 리그 수정 모달 열기 (이름 채우고 현재 코드 존재 여부 조회)
+  const openEditLeague = async (league: Class) => {
+    setEditingLeague(league);
+    setEditLeagueName(league.class_name);
+    setEditAdminCode("");
+    setEditConfirmCode("");
+    setCurrentCodeExists(null);
+    try {
+      const { data } = await supabase
+        .from("class_secrets")
+        .select("admin_code")
+        .eq("class_id", league.id)
+        .maybeSingle();
+      setCurrentCodeExists(!!(data && data.admin_code));
+    } catch {
+      setCurrentCodeExists(false);
+    }
+  };
 
   useEffect(() => {
     // Get user info and load leagues
@@ -125,6 +164,13 @@ export function Lobby() {
     if (!editingLeague) return;
     if (!editLeagueName.trim()) return toast.error("리그 이름을 입력해 주세요.");
 
+    // 코드 변경을 입력했는지 (둘 중 하나라도 입력되면 변경 시도로 간주)
+    const wantsCodeChange = editAdminCode.length > 0 || editConfirmCode.length > 0;
+    if (wantsCodeChange) {
+      if (!/^\d{4}$/.test(editAdminCode)) return toast.error("관리자 코드는 4자리 숫자여야 합니다.");
+      if (editAdminCode !== editConfirmCode) return toast.error("코드 확인이 일치하지 않습니다.");
+    }
+
     setUpdatingName(true);
     try {
       const { error } = await supabase
@@ -134,9 +180,19 @@ export function Lobby() {
 
       if (error) throw error;
 
-      toast.success("리그 이름이 수정되었습니다!");
+      // 코드 변경/생성 (upsert: 기존 row 없으면 생성)
+      if (wantsCodeChange) {
+        const { error: codeErr } = await supabase
+          .from("class_secrets")
+          .upsert({ class_id: editingLeague.id, admin_code: editAdminCode }, { onConflict: "class_id" });
+        if (codeErr) throw codeErr;
+      }
+
+      toast.success(wantsCodeChange ? "리그 정보와 관리자 코드가 저장되었습니다!" : "리그 이름이 수정되었습니다!");
       setEditingLeague(null);
       setEditLeagueName("");
+      setEditAdminCode("");
+      setEditConfirmCode("");
       await loadLeagues(userId);
     } catch (err: any) {
       console.error("Failed to update league name:", err.message);
@@ -198,7 +254,9 @@ export function Lobby() {
           settings: {
             season: finalSeason,
             schoolName: newSchoolName.trim(),
-            sport: newSport.trim()
+            sport: newSport.trim(),
+            // 개설 시 선택한 '리그 성향' → 기준점/승패/보너스/패널티 일괄 적용
+            ...buildBundleSettings(selectedBundle),
           },
           owner_uid: userId,
           scorekeeper_uids: [],
@@ -238,6 +296,73 @@ export function Lobby() {
     }
   };
 
+  const handleJoinLeague = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const raw = joinCode.trim();
+    // 전체 초대 링크를 붙여넣어도 classId 추출
+    const fromUrl = raw.match(/classId=([0-9a-f-]{36})/i)?.[1];
+    const code = fromUrl || raw;
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(code);
+    if (!isUuid) {
+      return toast.error("올바른 리그 코드가 아닙니다. 개설자에게 받은 코드(또는 초대 링크)를 붙여넣어 주세요.");
+    }
+    setJoining(true);
+    try {
+      const { data, error } = await supabase.rpc("join_league", { p_class_id: code });
+      if (error) throw error;
+      const row = Array.isArray(data) ? data[0] : data;
+      toast.success(row?.is_owner ? "내가 개설한 리그입니다." : `'${row?.class_name ?? "리그"}'에 참여했습니다!`);
+      setJoinModalOpen(false);
+      setJoinCode("");
+      await loadLeagues(userId);
+    } catch (err: any) {
+      console.error("Failed to join league:", err.message);
+      toast.error(err.message || "리그 참여에 실패했습니다.");
+    } finally {
+      setJoining(false);
+    }
+  };
+
+  const handleLeaveLeague = async (league: Class) => {
+    if (!window.confirm(`[${league.class_name}] 리그에서 탈퇴하시겠습니까?\n다시 참여하려면 리그 코드가 필요합니다.`)) return;
+    try {
+      const { error } = await supabase.rpc("leave_league", { p_class_id: league.id });
+      if (error) throw error;
+      toast.success("리그에서 탈퇴했습니다.");
+      await loadLeagues(userId);
+    } catch (err: any) {
+      toast.error(err.message || "탈퇴에 실패했습니다.");
+    }
+  };
+
+  const openMembers = async (league: Class) => {
+    setMembersLeague(league);
+    setMembers([]);
+    setLoadingMembers(true);
+    try {
+      const { data, error } = await supabase.rpc("get_league_members", { p_class_id: league.id });
+      if (error) throw error;
+      setMembers((data as any[]) || []);
+    } catch (err: any) {
+      toast.error(err.message || "멤버를 불러오지 못했습니다.");
+    } finally {
+      setLoadingMembers(false);
+    }
+  };
+
+  const handleRemoveMember = async (uid: string, email: string | null) => {
+    if (!membersLeague) return;
+    if (!window.confirm(`${email || "이 멤버"}를 리그에서 내보내시겠습니까?`)) return;
+    try {
+      const { error } = await supabase.rpc("remove_league_member", { p_class_id: membersLeague.id, p_member: uid });
+      if (error) throw error;
+      toast.success("멤버를 내보냈습니다.");
+      setMembers((prev) => prev.filter((m) => m.uid !== uid));
+    } catch (err: any) {
+      toast.error(err.message || "내보내기에 실패했습니다.");
+    }
+  };
+
   const handleLogout = async () => {
     toast.loading("로그아웃 중...", { id: "logout" });
     await supabase.auth.signOut();
@@ -258,6 +383,7 @@ export function Lobby() {
 
   return (
     <div className="min-h-screen flex flex-col relative overflow-hidden bg-background">
+      <Toaster theme="dark" position="top-center" richColors />
       {/* Background neon elements */}
       <div className="absolute inset-0 bg-[linear-gradient(rgba(18,18,18,0.25)_1px,transparent_1px),linear-gradient(90deg,rgba(18,18,18,0.25)_1px,transparent_1px)] bg-[size:30px_30px] pointer-events-none opacity-30" />
       <div className="absolute -top-40 -left-40 size-96 rounded-full bg-neon-blue/10 blur-[130px] pointer-events-none" />
@@ -348,7 +474,7 @@ export function Lobby() {
                         <h4 className="text-sm sm:text-base font-black text-foreground group-hover:text-neon-blue transition-colors pr-8">
                           {league.class_name}
                         </h4>
-                        <div className="flex items-center gap-3 text-[10px] font-bold text-muted-foreground">
+                        <div className="flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:gap-3 text-[10px] font-bold text-muted-foreground">
                           <span className="flex items-center gap-1 px-2 py-0.5 rounded border border-border bg-background/50">
                             <Calendar className="size-3 text-neon-blue" />
                             시즌: {league.settings?.season || "2026-1"}
@@ -358,6 +484,15 @@ export function Lobby() {
                       </div>
                       
                       <div className="flex items-center gap-2 relative z-20">
+                        {/* 기록원 초대 (독립 버튼) */}
+                        <button
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setInviteLeague(league); }}
+                          className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-neon-green/40 bg-neon-green/10 text-neon-green hover:bg-neon-green/20 active:scale-95 transition-all cursor-pointer text-[11px] font-bold"
+                          title="기록원 초대"
+                        >
+                          <UserPlus className="size-4" /><span className="hidden lg:inline">기록원 추가</span>
+                        </button>
+
                         {/* Settings Dropdown Button */}
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -366,10 +501,10 @@ export function Lobby() {
                                 e.preventDefault();
                                 e.stopPropagation();
                               }}
-                              className="flex size-8 items-center justify-center rounded-lg border border-border/60 bg-background/40 text-muted-foreground hover:text-foreground hover:border-border/80 active:scale-95 transition-all cursor-pointer"
+                              className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-border/60 bg-background/40 text-muted-foreground hover:text-foreground hover:border-border/80 active:scale-95 transition-all cursor-pointer text-[11px] font-bold"
                               title="리그 설정"
                             >
-                              <Settings className="size-4" />
+                              <Settings className="size-4" /><span className="hidden lg:inline">리그 설정</span>
                             </button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent 
@@ -384,21 +519,18 @@ export function Lobby() {
                               onClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
-                                const inviteUrl = `${window.location.origin}/join?classId=${league.id}`;
-                                navigator.clipboard.writeText(inviteUrl);
-                                toast.success("초대 링크가 클립보드에 복사되었습니다!");
+                                openMembers(league);
                               }}
-                              className="flex items-center gap-2 cursor-pointer font-bold text-xs hover:text-neon-blue transition-colors"
+                              className="flex items-center gap-2 cursor-pointer font-bold text-xs hover:text-neon-green transition-colors"
                             >
-                              <Copy className="size-3.5" />
-                              <span>초대 링크 복사</span>
+                              <Users className="size-3.5" />
+                              <span>멤버 관리</span>
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
-                                setEditingLeague(league);
-                                setEditLeagueName(league.class_name);
+                                openEditLeague(league);
                               }}
                               className="flex items-center gap-2 cursor-pointer font-bold text-xs hover:text-neon-blue transition-colors"
                             >
@@ -420,8 +552,8 @@ export function Lobby() {
                           </DropdownMenuContent>
                         </DropdownMenu>
 
-                        <div className="flex size-8 items-center justify-center rounded-lg bg-neon-blue/10 border border-neon-blue/30 text-neon-blue group-hover:bg-neon-blue group-hover:text-primary-foreground transition-all duration-300">
-                          <Gamepad2 className="size-4.5" />
+                        <div className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg bg-neon-blue/10 border border-neon-blue/30 text-neon-blue group-hover:bg-neon-blue group-hover:text-primary-foreground transition-all duration-300 text-[11px] font-bold">
+                          <Gamepad2 className="size-4.5" /><span className="hidden lg:inline">리그 입장</span>
                         </div>
                       </div>
                     </Card>
@@ -438,6 +570,12 @@ export function Lobby() {
                 <Users className="size-4.5 text-neon-green" />
                 참여 중인 리그 ({joinedLeagues.length})
               </h3>
+              <button
+                onClick={() => setJoinModalOpen(true)}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-neon-green/40 bg-neon-green/10 text-neon-green hover:bg-neon-green/20 active:scale-95 transition-all text-[11px] font-bold cursor-pointer"
+              >
+                <Plus className="size-3.5" /> 리그 참여하기
+              </button>
             </div>
             
             {joinedLeagues.length === 0 ? (
@@ -459,7 +597,7 @@ export function Lobby() {
                         <h4 className="text-sm sm:text-base font-black text-foreground group-hover:text-neon-green transition-colors">
                           {league.class_name}
                         </h4>
-                        <div className="flex items-center gap-3 text-[10px] font-bold text-muted-foreground">
+                        <div className="flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:gap-3 text-[10px] font-bold text-muted-foreground">
                           <span className="flex items-center gap-1 px-2 py-0.5 rounded border border-border bg-background/50">
                             <Calendar className="size-3 text-neon-green" />
                             시즌: {league.settings?.season || "2026-1"}
@@ -467,8 +605,18 @@ export function Lobby() {
                           <span>소유주: {league.owner_uid === userId ? "나" : "다른 교사"}</span>
                         </div>
                       </div>
-                      <div className="flex size-8 items-center justify-center rounded-lg bg-neon-green/10 border border-neon-green/30 text-neon-green group-hover:bg-neon-green group-hover:text-primary-foreground transition-all duration-300">
-                        <Gamepad2 className="size-4.5" />
+                      <div className="flex items-center gap-2 relative z-20">
+                        <button
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleLeaveLeague(league); }}
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-border/60 bg-background/40 text-muted-foreground hover:text-destructive hover:border-destructive/40 active:scale-95 transition-all text-[11px] font-bold cursor-pointer"
+                          title="리그 탈퇴"
+                        >
+                          <UserX className="size-3.5" />
+                          <span>탈퇴</span>
+                        </button>
+                        <div className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg bg-neon-green/10 border border-neon-green/30 text-neon-green group-hover:bg-neon-green group-hover:text-primary-foreground transition-all duration-300 text-[11px] font-bold">
+                          <Gamepad2 className="size-4.5" /><span className="hidden lg:inline">리그 입장</span>
+                        </div>
                       </div>
                     </Card>
                   </Link>
@@ -614,17 +762,32 @@ export function Lobby() {
                   </div>
                 </>
               ) : (
-                <div className="py-8 text-center space-y-3 border border-dashed border-border/60 rounded-xl bg-background/20 animate-in fade-in duration-200">
-                  <div className="flex size-12 items-center justify-center rounded-full bg-neon-blue/10 border border-neon-blue/30 text-neon-blue mx-auto">
-                    <Settings className="size-6 text-neon-blue animate-spin" style={{ animationDuration: '6s' }} />
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-sm font-extrabold text-foreground">세부 리그 설정</p>
-                    <p className="text-xs text-muted-foreground px-4 leading-relaxed">
-                      초기 랭킹포인트(RP), 티어 별 승패점수 배정, <br/>
-                      경기 보너스 점수 규칙 등 상세한 리그 설정 기능은 <br/>
-                      <span className="text-neon-blue font-bold">추후 지원 예정</span>입니다.
-                    </p>
+                <div className="space-y-2 animate-in fade-in duration-200">
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    리그 성향을 고르면 <b className="text-foreground">티어 기준점·승패 점수·보너스·패널티</b>가 한 번에 설정됩니다. 세부 조정은 개설 후 [리그 글로벌 설정]에서 가능합니다.
+                  </p>
+                  <div className="space-y-2">
+                    {(Object.keys(LEAGUE_BUNDLES) as BundleKey[]).map((k) => {
+                      const b = LEAGUE_BUNDLES[k];
+                      const active = selectedBundle === k;
+                      return (
+                        <button
+                          key={k}
+                          type="button"
+                          onClick={() => setSelectedBundle(k)}
+                          className={cn(
+                            "w-full text-left rounded-xl border p-3 transition-all active:scale-[0.99]",
+                            active ? "border-neon-blue bg-neon-blue/10" : "border-border/50 bg-background/30 hover:border-border/80"
+                          )}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className={cn("text-sm font-black", active ? "text-neon-blue" : "text-foreground")}>{b.label}</span>
+                            {active && <span className="text-[10px] font-bold text-neon-blue">선택됨</span>}
+                          </div>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">{b.desc}</p>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -670,10 +833,10 @@ export function Lobby() {
             <div className="text-center mb-6">
               <h3 className="text-lg font-black text-foreground flex items-center justify-center gap-2">
                 <Edit2 className="size-5 text-neon-blue" />
-                리그 이름 수정하기
+                리그 설정 수정
               </h3>
               <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
-                선택한 리그의 이름을 변경합니다. 변경 후 즉시 순위표 및 대시보드 타이틀에 반영됩니다.
+                리그 이름과 관리자 코드를 변경합니다. 변경 후 즉시 반영됩니다.
               </p>
             </div>
 
@@ -687,6 +850,46 @@ export function Lobby() {
                   placeholder="예: 5학년 2반 배드민턴 리그"
                   className="h-10 border-border/60 bg-background/40 focus:border-neon-blue transition-all"
                 />
+              </div>
+
+              {/* 관리자 코드 (화면 잠금 해제용) */}
+              <div className="space-y-2 rounded-xl border border-amber-500/30 bg-amber-500/[0.05] p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <Label className="text-xs font-bold text-foreground">🔒 관리자 코드 (4자리)</Label>
+                  <span className={cn(
+                    "text-[10px] font-bold px-2 py-0.5 rounded-full border",
+                    currentCodeExists === null
+                      ? "text-muted-foreground border-border/40"
+                      : currentCodeExists
+                        ? "text-neon-green border-neon-green/40 bg-neon-green/10"
+                        : "text-amber-500 border-amber-500/40 bg-amber-500/10"
+                  )}>
+                    {currentCodeExists === null ? "확인 중..." : currentCodeExists ? "설정됨" : "미설정"}
+                  </span>
+                </div>
+                <p className="text-[10px] text-muted-foreground leading-snug">
+                  순위표·관리자 탭 잠금을 해제할 때 쓰는 코드입니다. {currentCodeExists ? "변경하지 않으려면 비워 두세요." : "잠금 기능을 쓰려면 코드를 설정하세요."}
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <Input
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={4}
+                    value={editAdminCode}
+                    onChange={(e) => setEditAdminCode(e.target.value.replace(/\D/g, ""))}
+                    placeholder={currentCodeExists ? "새 코드" : "코드 입력"}
+                    className="h-9 border-border/60 bg-background/40 focus:border-amber-500 text-center tracking-[0.3em] font-bold"
+                  />
+                  <Input
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={4}
+                    value={editConfirmCode}
+                    onChange={(e) => setEditConfirmCode(e.target.value.replace(/\D/g, ""))}
+                    placeholder="코드 확인"
+                    className="h-9 border-border/60 bg-background/40 focus:border-amber-500 text-center tracking-[0.3em] font-bold"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3 pt-2">
@@ -707,6 +910,132 @@ export function Lobby() {
                 </Button>
               </div>
             </form>
+          </Card>
+        </div>
+      )}
+
+      {/* Join League Modal */}
+      {joinModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-300">
+          <Card className="w-full max-w-md border-border/60 bg-card/95 p-6 rounded-2xl shadow-2xl relative overflow-hidden animate-in zoom-in-95 duration-300">
+            <div className="absolute top-4 right-4">
+              <button onClick={() => { setJoinModalOpen(false); setJoinCode(""); }} className="text-muted-foreground hover:text-foreground cursor-pointer">
+                <X className="size-5" />
+              </button>
+            </div>
+
+            <div className="text-center mb-5">
+              <h3 className="text-lg font-black text-foreground flex items-center justify-center gap-2">
+                <Users className="size-5 text-neon-green" />
+                리그 참여하기
+              </h3>
+              <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
+                개설자에게 받은 <b className="text-foreground">리그 코드</b>(또는 초대 링크)를 붙여넣으면 그 리그의 관리 교사로 등록됩니다.
+              </p>
+            </div>
+
+            <form onSubmit={handleJoinLeague} className="space-y-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-foreground">리그 코드</Label>
+                <Input
+                  required
+                  value={joinCode}
+                  onChange={(e) => setJoinCode(e.target.value)}
+                  placeholder="리그 코드 또는 초대 링크 붙여넣기"
+                  className="h-10 border-border/60 focus:border-neon-green transition-all font-mono text-xs"
+                />
+                <p className="text-[10px] text-muted-foreground leading-snug">
+                  ※ 참여하면 그 리그의 학생·경기를 관리할 수 있습니다(리그 전체 범위). 리그 글로벌 설정·시즌·데이터는 개설자만 가능합니다.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                <Button type="button" variant="outline" onClick={() => { setJoinModalOpen(false); setJoinCode(""); }} className="h-10 rounded-xl cursor-pointer">
+                  취소
+                </Button>
+                <Button type="submit" disabled={joining} className="h-10 rounded-xl bg-neon-green hover:bg-neon-green/90 text-primary-foreground font-bold shadow-md active:scale-95 transition-all cursor-pointer">
+                  {joining ? "참여 중..." : "참여하기"}
+                </Button>
+              </div>
+            </form>
+          </Card>
+        </div>
+      )}
+
+      {/* 기록원 초대 모달 */}
+      {inviteLeague && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-300">
+          <Card className="w-full max-w-md border-border/60 bg-card/95 p-6 rounded-2xl shadow-2xl relative animate-in zoom-in-95 duration-300">
+            <div className="absolute top-4 right-4">
+              <button onClick={() => setInviteLeague(null)} className="text-muted-foreground hover:text-foreground cursor-pointer"><X className="size-5" /></button>
+            </div>
+            <div className="text-center mb-5">
+              <h3 className="text-lg font-black text-foreground flex items-center justify-center gap-2">
+                <UserPlus className="size-5 text-neon-green" /> 기록원 초대
+              </h3>
+              <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
+                아래 <b className="text-foreground">리그 코드</b>를 함께 관리할 교사에게 전달하세요. 받은 사람은 로비 → [+ 리그 참여하기]에 붙여넣으면 됩니다.
+              </p>
+            </div>
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-foreground">리그 코드</Label>
+                <div className="flex gap-2">
+                  <Input readOnly value={inviteLeague.id} className="h-10 font-mono text-[11px]" />
+                  <Button type="button" onClick={() => { navigator.clipboard.writeText(inviteLeague.id); toast.success("리그 코드가 복사되었습니다!"); }}
+                    className="h-10 px-3 bg-neon-green hover:bg-neon-green/90 text-primary-foreground font-bold shrink-0">
+                    <Copy className="size-4" />
+                  </Button>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-muted-foreground">또는 초대 링크</Label>
+                <div className="flex gap-2">
+                  <Input readOnly value={`${window.location.origin}/join?classId=${inviteLeague.id}`} className="h-10 font-mono text-[11px]" />
+                  <Button type="button" variant="outline" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/join?classId=${inviteLeague.id}`); toast.success("초대 링크가 복사되었습니다!"); }}
+                    className="h-10 px-3 font-bold shrink-0">
+                    <Copy className="size-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* 멤버 관리 모달 */}
+      {membersLeague && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-300">
+          <Card className="w-full max-w-md border-border/60 bg-card/95 p-6 rounded-2xl shadow-2xl relative animate-in zoom-in-95 duration-300">
+            <div className="absolute top-4 right-4">
+              <button onClick={() => setMembersLeague(null)} className="text-muted-foreground hover:text-foreground cursor-pointer"><X className="size-5" /></button>
+            </div>
+            <div className="mb-4">
+              <h3 className="text-lg font-black text-foreground flex items-center gap-2">
+                <Users className="size-5 text-neon-blue" /> 멤버 관리
+              </h3>
+              <p className="text-xs text-muted-foreground mt-1 truncate">{membersLeague.class_name}</p>
+            </div>
+            {loadingMembers ? (
+              <p className="text-xs text-muted-foreground py-6 text-center">불러오는 중...</p>
+            ) : members.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-6 text-center border border-dashed border-border/30 rounded-xl">참여 중인 멤버가 없습니다. 기록원을 초대해 보세요.</p>
+            ) : (
+              <div className="space-y-2 max-h-[320px] overflow-y-auto">
+                {members.map((m) => (
+                  <div key={m.uid} className="flex items-center justify-between gap-2 rounded-xl border border-border/40 bg-background/40 px-3.5 py-2.5">
+                    <div className="min-w-0">
+                      <div className="font-bold text-sm truncate">{m.email || m.uid.slice(0, 8) + "…"}</div>
+                      <div className="text-[10px] text-muted-foreground">{m.role}</div>
+                    </div>
+                    <Button type="button" variant="ghost" onClick={() => handleRemoveMember(m.uid, m.email)}
+                      className="h-8 px-3 rounded-lg text-[11px] font-bold text-destructive hover:bg-destructive/10 shrink-0">
+                      <UserX className="size-3.5 mr-1" /> 내보내기
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
           </Card>
         </div>
       )}

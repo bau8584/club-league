@@ -7,10 +7,12 @@ import { RecordMatch } from "@/components/league/RecordMatch";
 import { AdminPanel } from "@/components/league/AdminPanel";
 import { MatchRecommend } from "@/components/league/MatchRecommend";
 import { MyRecord } from "@/components/league/MyRecord";
+import { SeasonSummary } from "@/components/league/SeasonSummary";
+import { LockGate } from "@/components/league/LockGate";
 import { Toaster } from "@/components/ui/sonner";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { Crown, Swords, Trophy, Users, Pencil, Target, LogOut, School, ShieldAlert, Award } from "lucide-react";
+import { Crown, Swords, Trophy, Users, Pencil, Target, LogOut, School, ShieldAlert, Award, BarChart3, ArrowLeft, Lock } from "lucide-react";
 import { MyAchievements } from "@/components/league/MyAchievements";
 
 export const Route = createFileRoute("/class/$classId")({
@@ -23,7 +25,7 @@ export const Route = createFileRoute("/class/$classId")({
   component: Index,
 });
 
-type Tab = "leaderboard" | "recommend" | "record" | "admin" | "myRecord" | "myAchievements";
+type Tab = "leaderboard" | "recommend" | "record" | "admin" | "myRecord" | "myAchievements" | "seasonSummary";
 
 function Index() {
   const { classId } = Route.useParams();
@@ -36,18 +38,19 @@ function Index() {
     loadClassData,
     recordMatch,
     upsertStudents,
-    isLocked,
-    setIsLocked,
     deleteMatch,
     resetStudent,
     resetAllData,
     updateStudentRP,
     isSyncing,
     isClassOwner,
+    isClassManager,
     session,
     logoutUser,
     tierThresholds,
     rpVariables,
+    decaySettings,
+    decayAppliedDates,
     updateLeagueSettings,
     updateStudentGender,
     deleteStudent,
@@ -60,10 +63,12 @@ function Index() {
     promotionEvent,
     setPromotionEvent,
     seasonList,
-    changeSeason,
+    currentSeason,
     currentViewSeason,
     changeViewSeason,
-    teacherAccessCode
+    teacherAccessCode,
+    lockLeaderboard,
+    lockAdmin
   } = useLeagueStore();
 
   useEffect(() => {
@@ -74,6 +79,12 @@ function Index() {
 
   const [tab, setTab] = useState<Tab>("leaderboard");
   const [editingTitle, setEditingTitle] = useState(false);
+  // 화면 잠금: 해제되면 수동 재잠금(또는 새로고침) 전까지 유지
+  const [unlocked, setUnlocked] = useState(false);
+  // 현재 탭이 잠금 대상인지. 코드 미설정 시 fail-open(잠그지 않음).
+  const currentTabLocked = (tab === "leaderboard" && lockLeaderboard) || (tab === "admin" && lockAdmin);
+  const anyLockEnabled = lockLeaderboard || lockAdmin;
+  const showLockGate = currentTabLocked && !!teacherAccessCode && !unlocked && session?.role !== "STUDENT";
   const [recommendInitials, setRecommendInitials] = useState<{
     playerAId: string;
     playerBId: string;
@@ -99,11 +110,11 @@ function Index() {
     }
   }, [session]);
 
-  // 과거 시즌 조회 시 쓰기/설정 탭에서 조회 전용 탭으로 강제 이동
+  // 과거 시즌 조회 시 쓰기/설정 탭에서 조회 전용 탭(시즌 요약)으로 강제 이동
   useEffect(() => {
     if (currentViewSeason !== "현재 시즌") {
-      if (tab === "record" || tab === "admin") {
-        setTab("leaderboard");
+      if (tab === "record" || tab === "admin" || tab === "recommend") {
+        setTab("seasonSummary");
       }
     }
   }, [currentViewSeason, tab]);
@@ -117,13 +128,13 @@ function Index() {
     }
   }, [session, tab]);
 
-  // 기록원(Scorekeeper) 권한 탈선 보안 가드: 개설자(owner)가 아닌 교사가 관리자 탭에 접근 시 차단 및 record로 리다이렉트
+  // 관리 권한이 없는 사용자가 관리자 탭 접근 시 차단
   useEffect(() => {
-    if (session && session.role === "TEACHER" && !isClassOwner && tab === "admin") {
-      toast.error("해당 메뉴에 접근할 권한이 없습니다 (클래스 개설자만 접근 가능).");
+    if (session && session.role === "TEACHER" && !isClassManager && tab === "admin") {
+      toast.error("해당 메뉴에 접근할 권한이 없습니다.");
       setTab("record");
     }
-  }, [session, isClassOwner, tab]);
+  }, [session, isClassManager, tab]);
 
   // 학생 로그인 시 AI 매치메이킹 타겟(recommendSel)을 본인 정보로 즉시 고정
   useEffect(() => {
@@ -248,7 +259,7 @@ function Index() {
                   onChange={(e) => changeViewSeason(e.target.value)}
                   className="bg-transparent text-foreground font-bold focus:outline-none cursor-pointer pr-1"
                 >
-                  <option value="현재 시즌" className="bg-background text-foreground font-bold">현재 시즌</option>
+                  <option value="현재 시즌" className="bg-background text-foreground font-bold">{currentSeason} (현재)</option>
                   {seasonList && seasonList.map((season) => (
                     <option key={season} value={season} className="bg-background text-foreground font-bold">
                       {season}
@@ -264,36 +275,43 @@ function Index() {
                 <span className="font-bold text-neon-green">{students.length}</span>
               </div>
 
-              {/* Copy Invite / View Links (Teacher only) */}
+              {/* 학생 열람 링크 (교사 전용) — 기록원 초대는 로비로 이동 */}
               {session.role === "TEACHER" && (
-                <>
-                  <button
-                    onClick={() => {
-                      const inviteUrl = `${window.location.origin}/join?classId=${classId}`;
-                      navigator.clipboard.writeText(inviteUrl);
-                      toast.success("기록원 초대 링크가 클립보드에 복사되었습니다!");
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border/60 bg-card/60 text-muted-foreground hover:text-neon-blue hover:border-neon-blue/40 active:scale-95 transition-all text-xs font-bold cursor-pointer"
-                    title="기록원 초대 링크 복사"
-                  >
-                    <Users className="size-3.5 text-neon-blue" />
-                    <span>기록원 초대</span>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      const viewUrl = `${window.location.origin}/view/${classId}`;
-                      navigator.clipboard.writeText(viewUrl);
-                      toast.success("학생용 실시간 열람 링크가 클립보드에 복사되었습니다!");
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border/60 bg-card/60 text-muted-foreground hover:text-neon-green hover:border-neon-green/40 active:scale-95 transition-all text-xs font-bold cursor-pointer"
-                    title="학생 실시간 열람 링크 복사"
-                  >
-                    <Trophy className="size-3.5 text-neon-green" />
-                    <span>학생 열람 링크</span>
-                  </button>
-                </>
+                <button
+                  onClick={() => {
+                    const viewUrl = `${window.location.origin}/view/${classId}`;
+                    navigator.clipboard.writeText(viewUrl);
+                    toast.success("학생용 실시간 열람 링크가 클립보드에 복사되었습니다!");
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border/60 bg-card/60 text-muted-foreground hover:text-neon-green hover:border-neon-green/40 active:scale-95 transition-all text-xs font-bold cursor-pointer"
+                  title="학생 실시간 열람 링크 복사"
+                >
+                  <Trophy className="size-3.5 text-neon-green" />
+                  <span>학생 열람 링크</span>
+                </button>
               )}
+
+              {/* 다시 잠그기 (잠금이 켜져 있고 현재 해제된 상태일 때) */}
+              {session.role === "TEACHER" && anyLockEnabled && unlocked && (
+                <button
+                  onClick={() => setUnlocked(false)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 active:scale-95 transition-all text-xs font-bold cursor-pointer"
+                  title="순위표·관리자 화면을 다시 잠급니다"
+                >
+                  <Lock className="size-3.5" />
+                  <span>다시 잠그기</span>
+                </button>
+              )}
+
+              {/* 리그 로비로 돌아가기 */}
+              <button
+                onClick={() => { window.location.href = "/"; }}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border/60 bg-card/60 text-muted-foreground hover:text-neon-blue hover:border-neon-blue/40 active:scale-95 transition-all text-xs font-bold"
+                title="리그 로비로 돌아가기"
+              >
+                <ArrowLeft className="size-4" />
+                <span className="hidden sm:inline">리그 로비</span>
+              </button>
 
               {/* Logout Button (Rectangular Style with Text) */}
               <button
@@ -329,6 +347,13 @@ function Index() {
               </>
             ) : (
               <>
+                {/* 과거 시즌 열람 시: 시즌 요약 탭 */}
+                {currentViewSeason !== "현재 시즌" && (
+                  <TabButton active={tab === "seasonSummary"} onClick={() => setTab("seasonSummary")} icon={<BarChart3 className="size-4" />}>
+                    시즌 요약
+                  </TabButton>
+                )}
+
                 {/* 1. 경기 기록 입력 (교사 전용) */}
                 {currentViewSeason === "현재 시즌" && (
                   <TabButton active={tab === "record"} onClick={() => setTab("record")} icon={<Swords className="size-4" />}>
@@ -336,10 +361,12 @@ function Index() {
                   </TabButton>
                 )}
 
-                {/* 2. 매치 추천 (교사) */}
-                <TabButton active={tab === "recommend"} onClick={() => setTab("recommend")} icon={<Target className="size-4" />}>
-                  매치 추천
-                </TabButton>
+                {/* 2. 매치 추천 (교사) — 과거 시즌 열람 시 숨김 */}
+                {currentViewSeason === "현재 시즌" && (
+                  <TabButton active={tab === "recommend"} onClick={() => setTab("recommend")} icon={<Target className="size-4" />}>
+                    매치 추천
+                  </TabButton>
+                )}
 
                 {/* 3. 티어 순위표 (교사) */}
                 <TabButton active={tab === "leaderboard"} onClick={() => setTab("leaderboard")} icon={<Trophy className="size-4" />}>
@@ -347,7 +374,7 @@ function Index() {
                 </TabButton>
                 
                 {/* 4. 교사 관리자 (교사 전용) */}
-                {currentViewSeason === "현재 시즌" && isClassOwner && (
+                {currentViewSeason === "현재 시즌" && isClassManager && (
                   <TabButton active={tab === "admin"} onClick={() => setTab("admin")} icon={<Users className="size-4" />}>
                     교사 관리자
                   </TabButton>
@@ -376,10 +403,28 @@ function Index() {
           </div>
         )}
         {/* Tenant Panels */}
-        {tab === "leaderboard" && session.role !== "STUDENT" && (
-          <Leaderboard 
-            students={students} 
-            thresholds={tierThresholds} 
+        {tab === "seasonSummary" && currentViewSeason !== "현재 시즌" && (
+          <SeasonSummary
+            season={currentViewSeason}
+            students={students}
+            matches={matches}
+            thresholds={tierThresholds}
+          />
+        )}
+
+        {/* 화면 잠금 게이트 (순위표·관리자 탭) */}
+        {showLockGate && (
+          <LockGate
+            expectedCode={teacherAccessCode}
+            title={tab === "admin" ? "관리자 탭 잠금" : "순위표 잠금"}
+            onUnlock={() => setUnlocked(true)}
+          />
+        )}
+
+        {tab === "leaderboard" && session.role !== "STUDENT" && !showLockGate && (
+          <Leaderboard
+            students={students}
+            thresholds={tierThresholds}
           />
         )}
         
@@ -410,6 +455,8 @@ function Index() {
             matches={matches}
             thresholds={tierThresholds}
             rpVariables={rpVariables}
+            decaySettings={decaySettings}
+            decayAppliedDates={decayAppliedDates}
           />
         )}
 
@@ -423,7 +470,6 @@ function Index() {
           <RecordMatch
             students={students}
             onRecord={recordMatch}
-            isLocked={isLocked}
             initials={recommendInitials}
             onClearInitials={() => setRecommendInitials(null)}
             thresholds={tierThresholds}
@@ -432,14 +478,13 @@ function Index() {
           />
         )}
         
-         {session.role !== "STUDENT" && tab === "admin" && isClassOwner && (
-          <AdminPanel 
+         {session.role !== "STUDENT" && tab === "admin" && isClassManager && !showLockGate && (
+          <AdminPanel
+            isOwner={isClassOwner}
             students={students}
             matches={matches}
-            onUpsert={upsertStudents} 
+            onUpsert={upsertStudents}
             count={students.length}
-            isLocked={isLocked}
-            onToggleLock={setIsLocked}
             onDeleteMatch={deleteMatch}
             onResetStudent={resetStudent}
             onResetAll={resetAllData}
@@ -456,8 +501,6 @@ function Index() {
             title={title}
             activeBonuses={activeBonuses}
             onSaveLeagueSettings={saveLeagueSettings}
-            seasonList={seasonList}
-            onChangeSeason={changeSeason}
             teacherAccessCode={teacherAccessCode}
           />
         )}

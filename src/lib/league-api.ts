@@ -41,12 +41,14 @@ export async function apiUpdateClassSettingsAndName(classId: string, className: 
 }
 
 // --- Matches API ---
-export async function apiFetchMatches(classId: string) {
-  return supabase
+// season 을 주면 해당 시즌 경기만, 안 주면 전체.
+export async function apiFetchMatches(classId: string, season?: string) {
+  let q = supabase
     .from("matches")
     .select("*")
-    .eq("class_id", classId)
-    .order("created_at", { ascending: true });
+    .eq("class_id", classId);
+  if (season) q = q.eq("season", season);
+  return q.order("created_at", { ascending: true });
 }
 
 export async function apiInsertMatch(classId: string, winnerId: string, loserId: string) {
@@ -182,6 +184,31 @@ export async function apiSoftDeleteStudent(studentId: string) {
     .eq("id", studentId);
 }
 
+// 삭제된(휴지통) 학생 목록
+export async function apiFetchDeletedStudents(classId: string) {
+  return supabase
+    .from("students")
+    .select("id, rp, real_name, nickname, grade, class_number, student_no, gender")
+    .eq("class_id", classId)
+    .eq("is_deleted", true);
+}
+
+// 휴지통에서 복원
+export async function apiRestoreStudent(studentId: string) {
+  return supabase
+    .from("students")
+    .update({ is_deleted: false })
+    .eq("id", studentId);
+}
+
+// 영구 삭제 (행 자체 제거)
+export async function apiHardDeleteStudent(studentId: string) {
+  return supabase
+    .from("students")
+    .delete()
+    .eq("id", studentId);
+}
+
 export async function apiUpdateStudentInfo(studentId: string, payload: {
   grade?: number;
   class_number?: number;
@@ -208,6 +235,15 @@ export async function apiInsertStudentsBulk(students: any[]) {
   return supabase
     .from("students")
     .insert(students);
+}
+
+// 안전한 복원: 서버에서 원자적(트랜잭션)으로 삭제+삽입. 실패 시 자동 롤백.
+export async function apiRestoreClassData(classId: string, students: any[], matches: any[]) {
+  return supabase.rpc("restore_class_data", {
+    p_class_id: classId,
+    p_students: students,
+    p_matches: matches,
+  });
 }
 
 export async function apiRecordMatchTransaction(payload: {
@@ -264,6 +300,50 @@ export async function apiChangeStudentCode(studentId: string, oldCode: string, n
 // 교사 전용: 학생 개인 코드 초기화 (RLS로 교사만 허용)
 export async function apiResetStudentCode(studentId: string) {
   return supabase.from("student_secrets").delete().eq("student_id", studentId);
+}
+
+// --- Seasons API ---
+// 시즌 목록 (과거 스냅샷 + 현재). 각 행: { season, is_current }
+export async function apiListSeasons(classId: string) {
+  return supabase.rpc("list_class_seasons", { p_class_id: classId });
+}
+
+// 새 시즌 시작 (소유자/공동관리자만, 서버에서 권한 검증).
+// 현재 순위 스냅샷 → 학생 RP/전적 초기화 → 시즌 라벨 변경을 한 트랜잭션에서 수행.
+export async function apiStartNewSeason(classId: string, newSeason: string) {
+  return supabase.rpc("start_new_season", { p_class_id: classId, p_new_season: newSeason });
+}
+
+// 과거 시즌 최종 순위 스냅샷 조회 (교사용 — real_name 포함, RLS로 교사만 허용)
+export async function apiFetchSeasonStandings(classId: string, season: string) {
+  return supabase
+    .from("season_standings")
+    .select("*")
+    .eq("class_id", classId)
+    .eq("season", season);
+}
+
+// 과거 시즌 순위 공개 조회 (학생/익명용 — real_name 제외)
+export async function apiFetchSeasonStandingsPublic(classId: string, season: string) {
+  return supabase.rpc("get_season_standings_public", {
+    p_class_id: classId,
+    p_season: season,
+  });
+}
+
+// 과거 시즌으로 복귀 (이어서 진행)
+export async function apiRestoreSeason(classId: string, targetSeason: string) {
+  return supabase.rpc("restore_season", { p_class_id: classId, p_target_season: targetSeason });
+}
+
+// 시즌 이름 변경
+export async function apiRenameSeason(classId: string, oldName: string, newName: string) {
+  return supabase.rpc("rename_season", { p_class_id: classId, p_old: oldName, p_new: newName });
+}
+
+// 과거 시즌 삭제 (deleteMatches=true면 경기 원본까지 삭제)
+export async function apiDeleteSeason(classId: string, season: string, deleteMatches = false) {
+  return supabase.rpc("delete_season", { p_class_id: classId, p_season: season, p_delete_matches: deleteMatches });
 }
 
 // --- Class Secrets API ---

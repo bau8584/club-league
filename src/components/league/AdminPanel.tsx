@@ -15,7 +15,8 @@ import {
   Calendar,
   Users,
   Settings,
-  UserPlus
+  UserPlus,
+  ChevronDown
 } from "lucide-react";
 import type { Gender, Student, Match, TierName, TierSettings, DynamicBonuses, DynamicPenalties } from "@/lib/league-types";
 import { useLeagueStore, type ActiveBonuses } from "@/lib/league-store";
@@ -36,8 +37,20 @@ import {
 import { AdminSettings } from "./admin/AdminSettings";
 import { AdminStudentManage } from "./admin/AdminStudentManage";
 import { AdminMatchRecords } from "./admin/AdminMatchRecords";
+import { SeasonManagePanel } from "./admin/SeasonManagePanel";
+import { CurrentSeasonPanel } from "./admin/CurrentSeasonPanel";
 
 type Row = { grade: number; classNum: number; number: number; name: string; gender?: Gender };
+
+// 관리자 패널의 하위 탭 목록 — PC 사이드바와 모바일 드롭다운이 공유한다.
+const ADMIN_MENU_ITEMS = [
+  { id: "settings", label: "리그 글로벌 설정", icon: Settings, desc: "리그 이름, 티어, RP 규칙 설정" },
+  { id: "studentRegister", label: "학생 등록", icon: UserPlus, desc: "나이스 명렬표 대량 등록" },
+  { id: "studentManage", label: "학생 관리", icon: User, desc: "학급 명단, RP 수정 및 삭제" },
+  { id: "matchRecords", label: "리그 기록 관리", icon: Swords, desc: "전체 경기 조회, 점수 수정/삭제" },
+  { id: "dataManage", label: "데이터 관리", icon: Database, desc: "JSON 백업 다운로드 및 복원" },
+  { id: "seasonManage", label: "시즌 관리", icon: Calendar, desc: "시즌 초기화 및 신규 시즌 생성" },
+] as const;
 
 function detectGender(token: string): Gender | null {
   const t = token.trim();
@@ -74,12 +87,11 @@ function parsePaste(text: string): { rows: Row[]; errors: number } {
 }
 
 export function AdminPanel({
+  isOwner = false,
   students,
   matches,
   onUpsert,
   count,
-  isLocked,
-  onToggleLock,
   onDeleteMatch,
   onResetStudent,
   onResetAll,
@@ -97,15 +109,12 @@ export function AdminPanel({
   title,
   activeBonuses,
   onSaveLeagueSettings,
-  seasonList,
-  onChangeSeason,
 }: {
+  isOwner?: boolean;
   students: Student[];
   matches: Match[];
   onUpsert: (rows: Row[]) => Promise<{ added: number; kept: number }>;
   count: number;
-  isLocked: boolean;
-  onToggleLock: (locked: boolean) => void;
   onDeleteMatch: (matchId: string) => void;
   onResetStudent: (studentId: string) => void;
   onResetAll: () => void;
@@ -132,11 +141,12 @@ export function AdminPanel({
     dynamicBonuses?: DynamicBonuses,
     dynamicPenalties?: DynamicPenalties
   ) => Promise<void>;
-  seasonList?: string[];
-  onChangeSeason?: (seasonName: string) => Promise<{ success: boolean; message?: string }>;
 }) {
   // Active Tab for dashboard split layout
-  const [activeTab, setActiveTab] = useState<string>("settings");
+  // 소유자(개설자) 전용 탭 — 관리 교사(공동관리자/기록원)에게는 숨김
+  const OWNER_ONLY_TABS = new Set(["settings", "dataManage", "seasonManage"]);
+  const menuItems = ADMIN_MENU_ITEMS.filter((i) => isOwner || !OWNER_ONLY_TABS.has(i.id));
+  const [activeTab, setActiveTab] = useState<string>(isOwner ? "settings" : "studentManage");
 
   // JSON Rollback/Restore states
   const [restoreDialogOpen, setRestoreDialogOpen] = useState(false);
@@ -152,7 +162,11 @@ export function AdminPanel({
     decayDays,
     decayAmount: storeDecayAmount,
     decayTiers,
+    decaySettings,
     saveDecaySettings,
+    lockLeaderboard,
+    lockAdmin,
+    saveLockSetting,
     checkAndApplyAutomaticDecay,
     tierSettings,
     dynamicBonuses,
@@ -175,79 +189,8 @@ export function AdminPanel({
     };
   }, []);
 
-  // Season change states
-  const [isSeasonChangeModalOpen, setIsSeasonChangeModalOpen] = useState(false);
-  const [newSeasonName, setNewSeasonName] = useState("");
-  const [isSeasonChangeLoading, setIsSeasonChangeLoading] = useState(false);
-
-  const recommendedSeasonName = useMemo(() => {
-    if (!seasonList || seasonList.length === 0) {
-      return "시즌1";
-    }
-    
-    let maxNumber = 0;
-    let hasSeasonPattern = false;
-    
-    for (const season of seasonList) {
-      const sName = typeof season === "string" ? season : (season && typeof season === "object" && "name" in season ? String((season as any).name) : "");
-      if (!sName) continue;
-      
-      const match = sName.match(/시즌\s*(\d+)/);
-      if (match) {
-        hasSeasonPattern = true;
-        const num = parseInt(match[1], 10);
-        if (num > maxNumber) {
-          maxNumber = num;
-        }
-      } else {
-        const numbers = sName.match(/\d+/g);
-        if (numbers) {
-          const lastNum = parseInt(numbers[numbers.length - 1], 10);
-          if (lastNum > maxNumber) {
-            maxNumber = lastNum;
-          }
-        }
-      }
-    }
-    
-    if (hasSeasonPattern || maxNumber > 0) {
-      return `시즌${maxNumber + 1}`;
-    }
-    return "시즌1";
-  }, [seasonList]);
-
-  const handleOpenSeasonChangeModal = () => {
-    setNewSeasonName(recommendedSeasonName);
-    setIsSeasonChangeModalOpen(true);
-  };
-
-  const handleSeasonChangeSubmit = async () => {
-    if (!newSeasonName.trim()) {
-      return toast.error("시즌명을 입력해주세요.");
-    }
-    if (!onChangeSeason) {
-      return toast.error("시즌 변경 기능이 지원되지 않는 세션입니다.");
-    }
-
-    setIsSeasonChangeLoading(true);
-    try {
-      const res = await onChangeSeason(newSeasonName.trim());
-      if (res.success) {
-        toast.success("새 시즌이 시작되었습니다!");
-        setIsSeasonChangeModalOpen(false);
-        setTimeout(() => {
-          window.location.reload();
-        }, 1200);
-      } else {
-        toast.error(res.message || "새 시즌 시작 처리에 실패했습니다.");
-      }
-    } catch (err: any) {
-      console.error(err);
-      toast.error("오류가 발생했습니다: " + err.message);
-    } finally {
-      setIsSeasonChangeLoading(false);
-    }
-  };
+  // 시즌 관리 서브탭 (현재 / 과거)
+  const [seasonSubTab, setSeasonSubTab] = useState<"current" | "past">("current");
 
   // Bulk upload states
   const [text, setText] = useState("");
@@ -270,6 +213,8 @@ export function AdminPanel({
         classNum: s.classNum,
         number: s.number,
         name: s.name,
+        realName: s.realName ?? null,
+        nickname: s.nickname ?? null,
         gender: s.gender,
         rp: s.rp,
         recent: s.recent,
@@ -319,6 +264,8 @@ export function AdminPanel({
           classNum: Number(s.classNum),
           number: Number(s.number),
           name: String(s.name),
+          realName: s.realName !== undefined && s.realName !== null ? String(s.realName) : undefined,
+          nickname: s.nickname !== undefined && s.nickname !== null ? String(s.nickname) : null,
           gender: (s.gender === "M" || s.gender === "F") ? s.gender : "U",
           rp: Number(s.rp),
           recent: Array.isArray(s.recent) ? s.recent : [],
@@ -372,6 +319,17 @@ export function AdminPanel({
           return toast.error("파싱 가능한 유효한 학생 데이터가 없습니다.");
         }
 
+        // 검증: 학생 id는 유효한 UUID여야 하고 RP는 숫자여야 한다 (안전한 복원 사전 점검)
+        const isUuid = (v: any) => typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+        const badStudent = parsedStudents.find((s) => !isUuid(s.id) || Number.isNaN(s.rp));
+        if (badStudent) {
+          return toast.error("백업 파일이 손상되었거나 이 앱의 형식이 아닙니다 (학생 ID/RP 오류). 복원을 중단합니다.");
+        }
+        const badMatch = parsedMatches.find((m) => !isUuid(m.id) || !isUuid(m.playerAId) || !isUuid(m.playerBId));
+        if (badMatch) {
+          return toast.error("백업 파일의 경기 데이터가 손상되었습니다 (ID 오류). 복원을 중단합니다.");
+        }
+
         setPendingRestoreData(parsedStudents);
         setPendingRestoreMatches(parsedMatches);
         setRestoreDialogOpen(true);
@@ -385,25 +343,42 @@ export function AdminPanel({
   };
 
   return (
-    <div className="flex flex-col md:flex-row gap-6 min-h-[600px] w-full text-foreground">
-      {/* Left Sidebar Menu */}
-      <div className="w-full md:w-64 shrink-0 flex flex-col gap-2 bg-card/45 border border-border/40 rounded-2xl p-4 backdrop-blur shadow-lg">
+    <div className="flex flex-col lg:flex-row gap-6 min-h-[600px] w-full text-foreground">
+      {/* 폰·태블릿 세로: 상단 고정 드롭다운 (스크롤해도 항상 위에 떠있음) */}
+      <div className="lg:hidden sticky top-0 z-30 -mx-1 px-1 pt-1">
+        <div className="bg-card/95 border border-border/40 rounded-2xl p-3 backdrop-blur-md shadow-lg">
+          <label htmlFor="admin-tab-select" className="text-[10px] font-black text-neon-blue tracking-tight block mb-1.5 px-0.5">
+            교사 관리자 패널
+          </label>
+          <div className="relative">
+            <select
+              id="admin-tab-select"
+              value={activeTab}
+              onChange={(e) => setActiveTab(e.target.value)}
+              className="w-full h-11 pl-3 pr-9 rounded-xl bg-neon-blue/10 border border-neon-blue/30 text-sm font-bold text-neon-blue appearance-none focus:outline-none focus:ring-2 focus:ring-neon-blue/40"
+            >
+              {menuItems.map((item) => (
+                <option key={item.id} value={item.id} className="bg-card text-foreground font-bold">
+                  {item.label}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="size-4 text-neon-blue absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
+        </div>
+      </div>
+
+      {/* Left Sidebar Menu (데스크톱·태블릿 가로 전용) */}
+      <div className="hidden lg:flex w-full lg:w-64 shrink-0 flex-col gap-2 bg-card/45 border border-border/40 rounded-2xl p-4 backdrop-blur shadow-lg self-start sticky top-4">
         <div className="px-3 py-2">
           <h2 className="text-lg font-black text-neon-blue tracking-tight">교사 관리자 패널</h2>
           <p className="text-[10px] text-muted-foreground mt-0.5">리그 글로벌 설정 및 학생 데이터를 통제합니다.</p>
         </div>
         <div className="h-px bg-border/20 my-2" />
-        
+
         {/* Menu Buttons */}
         <div className="flex flex-col gap-1">
-          {[
-            { id: "settings", label: "리그 글로벌 설정", icon: Settings, desc: "리그 이름, 티어, RP 규칙 설정" },
-            { id: "studentRegister", label: "학생 등록", icon: UserPlus, desc: "나이스 명렬표 대량 등록" },
-            { id: "studentManage", label: "개별 학생 관리", icon: User, desc: "학급 명단, RP 수정 및 삭제" },
-            { id: "matchRecords", label: "리그 기록 관리", icon: Swords, desc: "전체 경기 조회, 점수 수정/삭제" },
-            { id: "dataManage", label: "데이터 관리", icon: Database, desc: "JSON 백업 다운로드 및 복원" },
-            { id: "seasonManage", label: "시즌 관리", icon: Calendar, desc: "시즌 초기화 및 신규 시즌 생성" },
-          ].map((item) => {
+          {menuItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
             return (
@@ -433,10 +408,8 @@ export function AdminPanel({
       <div className="flex-1 min-w-0 flex flex-col gap-6">
         
         {/* settings Tab */}
-        {activeTab === "settings" && (
+        {activeTab === "settings" && isOwner && (
           <AdminSettings
-            isLocked={isLocked}
-            onToggleLock={onToggleLock}
             thresholds={thresholds}
             rpVariables={rpVariables}
             onUpdateSettings={onUpdateSettings}
@@ -447,7 +420,13 @@ export function AdminPanel({
             decayDays={decayDays}
             decayAmount={storeDecayAmount}
             decayTiers={decayTiers}
+            decaySettings={decaySettings}
             saveDecaySettings={saveDecaySettings}
+            lockLeaderboard={lockLeaderboard}
+            lockAdmin={lockAdmin}
+            saveLockSetting={saveLockSetting}
+            accessCode={teacherAccessCode}
+            isOwner={isOwner}
             tierSettings={tierSettings}
             dynamicBonuses={dynamicBonuses}
             dynamicPenalties={dynamicPenalties}
@@ -479,7 +458,7 @@ export function AdminPanel({
         )}
 
         {/* dataManage Tab */}
-        {activeTab === "dataManage" && (
+        {activeTab === "dataManage" && isOwner && (
           <div className="grid gap-6 md:grid-cols-2">
             
             {/* JSON Backup Card */}
@@ -550,7 +529,7 @@ export function AdminPanel({
               value={text}
               onChange={(e) => setText(e.target.value)}
               placeholder={`5\t1\t1\t홍길동\t남\n5\t1\t2\t김민지\t여`}
-              className="min-h-[160px] resize-y border-border/60 bg-background/60 font-mono text-xs"
+              className="min-h-[160px] resize-y border-border/60 bg-input font-mono text-xs"
             />
             <div className="mt-3 flex flex-wrap items-center gap-3 text-[11px]">
               <span className="rounded bg-muted/60 px-2 py-0.5">
@@ -609,95 +588,26 @@ export function AdminPanel({
           </Card>
         )}
 
-        {/* seasonManage Tab */}
-        {activeTab === "seasonManage" && (
-          <Card className="border border-destructive/40 bg-destructive/5 p-5 backdrop-blur shadow-lg space-y-6">
-            <div className="flex items-center gap-2 text-destructive">
-              <ShieldAlert className="size-5" />
-              <h3 className="font-black text-base">위험 구역 (Danger Zone)</h3>
-            </div>
-            
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="max-w-xl">
-                <h4 className="text-sm font-bold text-foreground">새 시즌 아카이브 시작 (추천)</h4>
-                <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
-                  현재 리그의 전체 경기 결과와 학생 데이터를 지정된 명칭의 **아카이브 시트로 복제 및 안전 백업**한 뒤, 메인 리그를 초기 상태(1000 RP, 0승 0패)로 깔끔하게 리셋합니다.
-                </p>
-              </div>
-              
-              <div className="shrink-0 self-end sm:self-center">
-                <Button
-                  onClick={handleOpenSeasonChangeModal}
-                  variant="destructive"
-                  className="bg-destructive font-black tracking-wide hover:bg-destructive/80 active:scale-95 transition-all shadow-[0_0_15px_rgba(239,68,68,0.3)]"
-                >
-                  <RotateCcw className="mr-2 size-4" /> 새 시즌 시작 (데이터 초기화)
-                </Button>
-              </div>
-            </div>
-          </Card>
-        )}
-
-        {/* Season Change Dialog */}
-        {isSeasonChangeModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-            <Card className="max-w-md w-full border border-destructive/30 bg-background p-6 shadow-2xl rounded-2xl relative z-50 animate-in zoom-in-95 duration-200">
-              <h4 className="text-base font-black mb-2 flex items-center gap-1.5 text-destructive">
-                <ShieldAlert className="size-5" /> 새 시즌 시작 및 데이터 초기화
-              </h4>
-              <p className="text-xs text-muted-foreground leading-relaxed mb-4">
-                새로운 시즌을 시작하시겠습니까? 현재 기록은 아카이브로 이동하고 메인 데이터는 초기화됩니다.
-              </p>
-
-              <div className="space-y-3 bg-muted/20 p-4 rounded-xl border border-border/30 mb-5">
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
-                    새 시즌 이름
-                  </label>
-                  <Input
-                    type="text"
-                    value={newSeasonName}
-                    onChange={(e) => setNewSeasonName(e.target.value)}
-                    placeholder="예: 시즌2 또는 2026 2학기"
-                    className="font-sans font-bold h-11 bg-background border-border/65 focus-visible:ring-destructive/50"
-                    disabled={isSeasonChangeLoading}
-                  />
-                  <p className="text-[10px] text-muted-foreground">
-                    (기존 백업 목록을 스캔하여 추천된 명칭이며, 자유롭게 커스텀 입력이 가능합니다.)
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  onClick={() => setIsSeasonChangeModalOpen(false)}
-                  variant="outline"
-                  className="w-1/2 h-10 font-bold border-border/80 text-foreground rounded-xl"
-                  disabled={isSeasonChangeLoading}
-                >
-                  취소
-                </Button>
-                <Button
-                  type="button"
-                  onClick={handleSeasonChangeSubmit}
-                  className="w-1/2 h-10 font-black bg-destructive text-destructive-foreground hover:bg-destructive/90 rounded-xl flex items-center justify-center gap-1.5"
-                  disabled={isSeasonChangeLoading}
-                >
-                  {isSeasonChangeLoading ? (
-                    <>
-                      <span className="size-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                      <span>진행 중...</span>
-                    </>
-                  ) : (
-                    <>
-                      <RotateCcw className="size-4" />
-                      <span>확인 (실행)</span>
-                    </>
+        {/* seasonManage Tab — 현재 시즌 / 과거 시즌 서브탭 */}
+        {activeTab === "seasonManage" && isOwner && (
+          <div className="space-y-5">
+            <div className="flex gap-1.5 p-1 bg-muted/40 border border-border/20 rounded-xl w-full sm:w-max">
+              {([["current", "현재 시즌"], ["past", "과거 시즌"]] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setSeasonSubTab(key)}
+                  className={cn(
+                    "px-4 py-2 text-xs font-black rounded-lg transition-all active:scale-95",
+                    seasonSubTab === key
+                      ? "bg-neon-blue/15 text-neon-blue border border-neon-blue/35"
+                      : "text-muted-foreground hover:text-foreground border border-transparent hover:bg-muted/50"
                   )}
-                </Button>
-              </div>
-            </Card>
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {seasonSubTab === "current" ? <CurrentSeasonPanel /> : <SeasonManagePanel />}
           </div>
         )}
 
@@ -709,7 +619,7 @@ export function AdminPanel({
                 <ShieldAlert className="size-5 shrink-0" /> 데이터 복구 경고
               </AlertDialogTitle>
               <AlertDialogDescription className="text-sm text-muted-foreground mt-2 leading-relaxed">
-                기존 데이터가 모두 삭제되고 업로드한 JSON 백업 파일 기준으로 복구됩니다. 진행하시겠습니까?
+                현재 데이터를 업로드한 백업으로 교체합니다. <b className="text-foreground">진행 직전 현재 데이터가 자동으로 한 번 더 백업 다운로드</b>되며, 복원은 서버에서 한 번에 처리되어 <b className="text-foreground">중간에 실패하면 원본이 그대로 유지</b>됩니다. 진행하시겠습니까?
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter className="mt-6 gap-2">
@@ -723,11 +633,12 @@ export function AdminPanel({
               >
                 취소
               </AlertDialogCancel>
-              <AlertDialogAction 
+              <AlertDialogAction
                 onClick={() => {
                   if (pendingRestoreData) {
+                    // 안전장치: 복원 직전 현재 데이터를 자동으로 백업 다운로드
+                    try { downloadJSON(); } catch (e) { console.warn("auto-backup before restore failed", e); }
                     onRestoreFromCSV?.(pendingRestoreData, pendingRestoreMatches || []);
-                    toast.success("성공적으로 데이터가 JSON 백업에서 롤백되었습니다!");
                   }
                   setRestoreDialogOpen(false);
                   setPendingRestoreData(null);

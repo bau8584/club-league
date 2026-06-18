@@ -26,12 +26,23 @@ import {
   apiUpdateStudentFields,
   apiInsertStudent,
   apiSoftDeleteStudent,
+  apiFetchDeletedStudents,
+  apiRestoreStudent,
+  apiHardDeleteStudent,
   apiUpdateStudentInfo,
   apiDeleteClassStudents,
   apiInsertStudentsBulk,
+  apiRestoreClassData,
   apiRecordMatchTransaction,
   apiFetchClassSecret,
-  apiUpdateClassSecret
+  apiUpdateClassSecret,
+  apiListSeasons,
+  apiStartNewSeason,
+  apiFetchSeasonStandings,
+  apiFetchSeasonStandingsPublic,
+  apiRestoreSeason,
+  apiRenameSeason,
+  apiDeleteSeason
 } from "./league-api";
 import {
   DEFAULT_TIERS,
@@ -80,17 +91,28 @@ function useLeagueStoreInternal() {
   const [students, setStudents] = useState<Student[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [title, setTitle] = useState<string>("2026 초등 리그전");
-  const [isLocked, setIsLocked] = useState<boolean>(false);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [isClassOwner, setIsClassOwner] = useState<boolean>(false);
+  // 관리 권한자: 소유자/공동관리자/기록원 — 학생·경기 관리 가능 (리그 글로벌 설정·시즌·복원은 소유자 전용)
+  const [isClassManager, setIsClassManager] = useState<boolean>(false);
+  const isClassManagerRef = useRef(false);
+  useEffect(() => { isClassManagerRef.current = isClassManager; }, [isClassManager]);
   const [teacherAccessCode, setTeacherAccessCode] = useState<string>("");
+  // 화면 잠금: 태블릿을 학생에게 맡길 때 순위표/관리자 탭을 리그 코드로 잠근다. (독립 토글)
+  const [lockLeaderboard, setLockLeaderboard] = useState<boolean>(false);
+  const [lockAdmin, setLockAdmin] = useState<boolean>(false);
+  const lockLeaderboardRef = useRef(false);
+  const lockAdminRef = useRef(false);
+  useEffect(() => { lockLeaderboardRef.current = lockLeaderboard; }, [lockLeaderboard]);
+  useEffect(() => { lockAdminRef.current = lockAdmin; }, [lockAdmin]);
   const isSyncingRef = useRef(false);
 
   useEffect(() => {
     isSyncingRef.current = isSyncing;
   }, [isSyncing]);
 
-  const [seasonList, setSeasonList] = useState<string[]>(["현재 시즌"]);
+  const [seasonList, setSeasonList] = useState<string[]>([]); // 과거 시즌 라벨만 (현재 시즌은 별도)
+  const [currentSeason, setCurrentSeason] = useState<string>("시즌 1"); // 현재 활성 시즌의 실제 라벨
   const [currentViewSeason, setCurrentViewSeason] = useState<string>("현재 시즌");
   const currentViewSeasonRef = useRef(currentViewSeason);
   useEffect(() => {
@@ -100,6 +122,12 @@ function useLeagueStoreInternal() {
   // 3대 역할 로그인 세션 상태
   const [session, setSession] = useState<UserSession>(null);
   const [currentClassId, setCurrentClassId] = useState<string | null>(null);
+  const currentClassIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    currentClassIdRef.current = currentClassId;
+  }, [currentClassId]);
+  // 교사 세션 여부(소유자/공동관리자) — 과거 시즌 조회 시 실명 포함 여부 결정에 사용
+  const isTeacherRef = useRef(false);
   const channelRef = useRef<any>(null);
   const loadClassDataRef = useRef<any>(null);
 
@@ -113,23 +141,32 @@ function useLeagueStoreInternal() {
 
   const loadClassData = useCallback(async (classId: string, isBackground = false) => {
     loadClassDataRef.current = loadClassData;
+    // 과거 시즌을 보는 중이면 백그라운드(실시간) 재로딩이 현재 시즌 데이터로 덮어쓰지 않도록 막는다.
+    if (isBackground && currentViewSeasonRef.current !== "현재 시즌") return;
     if (!isBackground) setIsSyncing(true);
     try {
       // 1. Fetch class details
       const { data: classData, error: classErr } = await apiFetchClass(classId);
       if (classErr) throw classErr;
 
-      // Check ownership
+      // 권한 판별: 소유자(owner) / 관리자(owner|co_admin|scorekeeper)
       let isOwner = false;
+      let isManager = false;
       try {
         const { data: { user } } = await apiGetUser();
-        if (user && classData && classData.owner_uid === user.id) {
-          isOwner = true;
+        if (user && classData) {
+          const uid = user.id;
+          isOwner = classData.owner_uid === uid;
+          isManager = isOwner
+            || (Array.isArray(classData.co_admin_uids) && classData.co_admin_uids.includes(uid))
+            || (Array.isArray(classData.scorekeeper_uids) && classData.scorekeeper_uids.includes(uid));
         }
       } catch (err) {
         console.warn("Failed to check owner uid inside loadClassData:", err);
       }
       setIsClassOwner(isOwner);
+      setIsClassManager(isManager);
+      isClassManagerRef.current = isManager;
 
       if (classData) {
         setTitle(classData.class_name);
@@ -147,6 +184,10 @@ function useLeagueStoreInternal() {
             if (migrated.decayAmount !== undefined) setDecayAmount(Number(migrated.decayAmount));
             if (migrated.decayTiers !== undefined) setDecayTiers(migrated.decayTiers);
             if (migrated.lastDecayDate !== undefined) setLastDecayDate(migrated.lastDecayDate);
+            if (migrated.decayApplied !== undefined && migrated.decayApplied) setDecayAppliedDates(migrated.decayApplied);
+            // 잠금 설정 로드 (구버전 kioskLockEnabled 단일값도 호환)
+            setLockLeaderboard(!!(migrated.lockLeaderboard ?? migrated.kioskLockEnabled));
+            setLockAdmin(!!(migrated.lockAdmin ?? migrated.kioskLockEnabled));
             if (migrated.tierSettings !== undefined) setTierSettings(migrated.tierSettings);
             if (migrated.dynamicBonuses !== undefined) setDynamicBonuses(migrated.dynamicBonuses);
              if (migrated.dynamicPenalties !== undefined) setDynamicPenalties(migrated.dynamicPenalties);
@@ -155,8 +196,10 @@ function useLeagueStoreInternal() {
         }
       }
 
-      // 2. Fetch matches for this class
-      const { data: dbMatches, error: matchesErr } = await apiFetchMatches(classId);
+      // 2. Fetch matches for this class — 현재 시즌 경기만 (과거 시즌은 changeViewSeason에서 별도 조회)
+      const activeSeason = (classData?.settings?.season as string) || "시즌 1";
+      setCurrentSeason(activeSeason);
+      const { data: dbMatches, error: matchesErr } = await apiFetchMatches(classId, activeSeason);
       if (matchesErr) throw matchesErr;
 
       // Map Supabase matches to frontend Match structure
@@ -170,16 +213,9 @@ function useLeagueStoreInternal() {
         matchType: "single"
       }));
 
-      // 3. Fetch students for this class (excluding soft-deleted) - 교사 여부에 따라 API 분기
-      let isTeacherSession = false;
-      try {
-        const { data: { user } } = await apiGetUser();
-        if (user && classData && (classData.owner_uid === user.id || (classData.co_admin_uids && classData.co_admin_uids.includes(user.id)))) {
-          isTeacherSession = true;
-        }
-      } catch (err) {
-        console.warn("Failed to check owner/admin session in loadClassData:", err);
-      }
+      // 3. Fetch students - 관리 권한자(소유자/공동관리자/기록원)는 실명 포함 조회
+      const isTeacherSession = isManager;
+      isTeacherRef.current = isTeacherSession;
 
       // class_secrets 조회 추가 (교사 세션일 때만 RLS 우회하여 안전 조회)
       let fetchedAccessCode = "";
@@ -266,6 +302,20 @@ function useLeagueStoreInternal() {
 
       setCurrentClassId(classId);
 
+      // 시즌 목록 채우기: ["현재 시즌", ...과거 시즌 라벨]
+      try {
+        const { data: seasons } = await apiListSeasons(classId);
+        if (seasons) {
+          const past = (seasons as any[])
+            .filter((r) => !r.is_current)
+            .map((r) => r.season as string)
+            .filter(Boolean);
+          setSeasonList(past);
+        }
+      } catch (err) {
+        console.warn("Failed to load season list:", err);
+      }
+
       // Realtime subscription setup
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
@@ -338,10 +388,12 @@ function useLeagueStoreInternal() {
   });
 
   const [decayEnabled, setDecayEnabled] = useState<boolean>(false);
-  const [decayDays, setDecayDays] = useState<number>(14);
-  const [decayAmount, setDecayAmount] = useState<number>(10);
-  const [decayTiers, setDecayTiers] = useState<TierName[]>(["Bronze", "Silver", "Gold", "Platinum"]);
+  const [decayDays, setDecayDays] = useState<number>(10);
+  const [decayAmount, setDecayAmount] = useState<number>(5);
+  const [decayTiers, setDecayTiers] = useState<TierName[]>(["Gold", "Platinum", "Diamond"]);
   const [lastDecayDate, setLastDecayDate] = useState<string>("");
+  // 학생별 마지막 휴면 감점 적용일 (YYYY-MM-DD). 사이클당 1회 감점 판정의 기준 시점.
+  const [decayAppliedDates, setDecayAppliedDates] = useState<Record<string, string>>({});
 
   const [promotionQueue, setPromotionQueue] = useState<{ isPromoted: boolean; newTier: string; studentName?: string }[]>([]);
   const promotionEvent = promotionQueue[0] || null;
@@ -538,8 +590,8 @@ function useLeagueStoreInternal() {
       toast.error("과거 시즌 기록은 수정할 수 없습니다 (읽기 전용).");
       return;
     }
-    if (!isClassOwner) {
-      toast.error("권한이 없습니다. 클래스 개설자만 이 작업을 수행할 수 있습니다.");
+    if (!isClassManagerRef.current) {
+      toast.error("권한이 없습니다. 학생·경기 관리 권한이 없습니다.");
       return;
     }
     if (isSyncingRef.current) {
@@ -646,7 +698,7 @@ function useLeagueStoreInternal() {
       toast.error("과거 시즌 기록은 수정할 수 없습니다 (읽기 전용).");
       return;
     }
-    if (!isClassOwner) {
+    if (!isClassManagerRef.current) {
       toast.error("권한이 없습니다. 클래스 개설자만 이 작업을 수행할 수 있습니다.");
       return;
     }
@@ -804,7 +856,7 @@ function useLeagueStoreInternal() {
       toast.error("과거 시즌 기록은 수정할 수 없습니다 (읽기 전용).");
       return;
     }
-    if (!isClassOwner) {
+    if (!isClassManagerRef.current) {
       toast.error("권한이 없습니다. 클래스 개설자만 이 작업을 수행할 수 있습니다.");
       return;
     }
@@ -851,8 +903,8 @@ function useLeagueStoreInternal() {
         toast.error("과거 시즌 기록은 수정할 수 없습니다 (읽기 전용).");
         return { added: 0, kept: 0 };
       }
-      if (!isClassOwner) {
-        toast.error("권한이 없습니다. 클래스 개설자만 이 작업을 수행할 수 있습니다.");
+      if (!isClassManagerRef.current) {
+        toast.error("권한이 없습니다. 학생·경기 관리 권한이 없습니다.");
         return { added: 0, kept: 0 };
       }
       if (isSyncingRef.current) {
@@ -1039,7 +1091,7 @@ function useLeagueStoreInternal() {
       toast.error("과거 시즌 기록은 수정할 수 없습니다 (읽기 전용).");
       return;
     }
-    if (!isClassOwner) {
+    if (!isClassManagerRef.current) {
       toast.error("권한이 없습니다. 클래스 개설자만 이 작업을 수행할 수 있습니다.");
       return;
     }
@@ -1081,7 +1133,7 @@ function useLeagueStoreInternal() {
       toast.error("과거 시즌 기록은 수정할 수 없습니다 (읽기 전용).");
       return;
     }
-    if (!isClassOwner) {
+    if (!isClassManagerRef.current) {
       toast.error("권한이 없습니다. 클래스 개설자만 이 작업을 수행할 수 있습니다.");
       return;
     }
@@ -1212,7 +1264,7 @@ function useLeagueStoreInternal() {
       toast.error("과거 시즌 기록은 수정할 수 없습니다 (읽기 전용).");
       return;
     }
-    if (!isClassOwner) {
+    if (!isClassManagerRef.current) {
       toast.error("권한이 없습니다. 클래스 개설자만 이 작업을 수행할 수 있습니다.");
       return;
     }
@@ -1270,6 +1322,108 @@ function useLeagueStoreInternal() {
     }
   }, [students, currentClassId, isClassOwner]);
 
+  // 일괄 학생 정보 수정 (엑셀형 편집 저장) — 한 번의 낙관적 갱신 + 병렬 저장
+  const bulkUpdateStudents = useCallback(async (
+    updates: { id: string; real_name?: string; student_no?: number; gender?: Gender; rp?: number }[]
+  ): Promise<boolean> => {
+    if (currentViewSeasonRef.current !== "현재 시즌") {
+      toast.error("과거 시즌 기록은 수정할 수 없습니다 (읽기 전용).");
+      return false;
+    }
+    if (!isClassManagerRef.current) {
+      toast.error("권한이 없습니다. 학생·경기 관리 권한이 없습니다.");
+      return false;
+    }
+    if (isSyncingRef.current) {
+      toast.warning("데이터가 동기화 중입니다. 잠시 후 다시 시도해 주세요.");
+      return false;
+    }
+    if (updates.length === 0) return true;
+
+    isSyncingRef.current = true;
+    setIsSyncing(true);
+    const previous = [...students];
+    const byId = new Map(updates.map((u) => [u.id, u]));
+    const next = students.map((s) => {
+      const u = byId.get(s.id);
+      if (!u) return s;
+      const number = u.student_no ?? s.number;
+      return {
+        ...s,
+        number,
+        realName: u.real_name ?? s.realName,
+        gender: u.gender ?? s.gender,
+        rp: u.rp ?? s.rp,
+        name: s.nickname || `${s.grade}-${s.classNum}-${number}번`,
+      };
+    });
+    setStudents(next);
+
+    try {
+      const results = await Promise.all(updates.map((u) => {
+        const payload: any = {};
+        if (u.real_name !== undefined) payload.real_name = u.real_name;
+        if (u.student_no !== undefined) payload.student_no = u.student_no;
+        if (u.gender !== undefined) payload.gender = u.gender;
+        if (u.rp !== undefined) payload.rp = u.rp;
+        return apiUpdateStudentInfo(u.id, payload);
+      }));
+      const firstErr = results.find((r) => r.error);
+      if (firstErr?.error) throw firstErr.error;
+      toast.success(`${updates.length}명의 정보를 저장했습니다.`);
+      return true;
+    } catch (err: any) {
+      console.error("Bulk update failed:", err);
+      toast.error("일괄 저장에 실패했습니다: " + (err.message || ""));
+      setStudents(previous);
+      return false;
+    } finally {
+      isSyncingRef.current = false;
+      setIsSyncing(false);
+    }
+  }, [students, currentClassId, isClassOwner]);
+
+  // 휴지통: 삭제된 학생 목록 조회
+  const fetchDeletedStudents = useCallback(async (): Promise<{ id: string; realName: string; nickname: string; grade: number; classNum: number; number: number; rp: number }[]> => {
+    const classId = currentClassIdRef.current;
+    if (!classId) return [];
+    const { data, error } = await apiFetchDeletedStudents(classId);
+    if (error) {
+      console.warn("Failed to fetch deleted students:", error);
+      return [];
+    }
+    return ((data as any[]) || []).map((s) => ({
+      id: s.id,
+      realName: s.real_name ?? "",
+      nickname: s.nickname ?? "",
+      grade: s.grade ?? 0,
+      classNum: s.class_number ?? 0,
+      number: s.student_no ?? 0,
+      rp: s.rp ?? 1000,
+    }));
+  }, []);
+
+  // 휴지통: 학생 복원
+  const restoreDeletedStudent = useCallback(async (studentId: string): Promise<boolean> => {
+    if (!isClassManagerRef.current) { toast.error("권한이 없습니다."); return false; }
+    const classId = currentClassIdRef.current;
+    if (!classId) return false;
+    const { error } = await apiRestoreStudent(studentId);
+    if (error) { toast.error("복원에 실패했습니다: " + error.message); return false; }
+    toast.success("학생을 복원했습니다. (과거 경기 기록은 복구되지 않습니다)");
+    await loadClassDataRef.current?.(classId);
+    return true;
+  }, [isClassOwner]);
+
+  // 휴지통: 영구 삭제
+  const hardDeleteStudent = useCallback(async (studentId: string): Promise<boolean> => {
+    if (!isClassManagerRef.current) { toast.error("권한이 없습니다."); return false; }
+    const { error } = await apiHardDeleteStudent(studentId);
+    if (error) { toast.error("영구 삭제에 실패했습니다: " + error.message); return false; }
+    toast.success("학생을 영구 삭제했습니다.");
+    return true;
+  }, [isClassOwner]);
+
   // CSV 롤백 복원 액션
   const restoreFromCSV = useCallback(async (restoredStudents: Student[], restoredMatches: Match[]) => {
     if (currentViewSeasonRef.current !== "현재 시즌") {
@@ -1294,49 +1448,17 @@ function useLeagueStoreInternal() {
 
     if (currentClassId) {
       try {
-        // 1. Delete all existing matches and students for this class
-        await apiDeleteClassMatches(currentClassId);
-        await apiDeleteClassStudents(currentClassId);
+        // 서버에서 원자적(트랜잭션)으로 삭제+삽입. 어느 한 행이라도 잘못되면 자동 롤백되어 원본 보존.
+        const { data, error } = await apiRestoreClassData(currentClassId, restoredStudents, restoredMatches);
+        if (error) throw error;
 
-        // 2. Insert students
-        const studentsToInsert = restoredStudents.map((s) => {
-          return {
-            id: s.id,
-            class_id: currentClassId,
-            rp: s.rp,
-            grade: s.grade,
-            class_number: s.classNum,
-            student_no: s.number,
-            real_name: s.realName || s.name,
-            nickname: s.nickname || null,
-            gender: s.gender || 'U',
-            created_at: new Date().toISOString()
-          };
-        });
-        if (studentsToInsert.length > 0) {
-          const { error: insStudentsErr } = await apiInsertStudentsBulk(studentsToInsert);
-          if (insStudentsErr) throw insStudentsErr;
-        }
-
-        // 3. Insert matches
-        const matchesToInsert = restoredMatches.map((m) => {
-          return {
-            id: m.id,
-            class_id: currentClassId,
-            winner_id: m.scoreA > m.scoreB ? m.playerAId : m.playerBId,
-            loser_id: m.scoreA > m.scoreB ? m.playerBId : m.playerAId,
-            created_at: m.date || new Date().toISOString()
-          };
-        });
-        if (matchesToInsert.length > 0) {
-          const { error: insMatchesErr } = await apiInsertMatchesBulk(matchesToInsert);
-          if (insMatchesErr) throw insMatchesErr;
-        }
-
-        toast.success("데이터가 성공적으로 복구되었습니다!");
+        const counts = (data as any) || {};
+        toast.success(`복원 완료! (학생 ${counts.students ?? 0}명, 경기 ${counts.matches ?? 0}건)`);
+        // 서버 기준으로 다시 로딩하여 화면과 DB를 일치시킨다.
+        await loadClassDataRef.current?.(currentClassId);
       } catch (err: any) {
         console.error("Failed to restore data in Supabase:", err.message);
-        toast.error("데이터 복구에 실패했습니다: " + err.message);
+        toast.error("데이터 복구에 실패했습니다(원본은 그대로 유지됨): " + err.message);
         setStudents(previousStudents);
         setMatches(previousMatches);
       } finally {
@@ -1369,27 +1491,35 @@ function useLeagueStoreInternal() {
     let affectedCount = 0;
     const now = new Date().getTime();
 
+    // 오늘 날짜 (YYYY-MM-DD, 로컬) — 감점 적용일 기록용
+    const todayLocal = new Date(now - (new Date().getTimezoneOffset() * 60 * 1000));
+    const todayStr = todayLocal.toISOString().split("T")[0];
+    const nextApplied = { ...decayAppliedDates };
+
     const nextStudents = students.map((s) => {
       const studentTier = getTier(s.rp, tierThresholds);
       const tierKey = studentTier.toLowerCase() as 'bronze'|'silver'|'gold'|'platinum'|'diamond';
       const setting = decaySettings[tierKey];
 
       if (!setting || !setting.enabled) return s;
+      if (!s.lastMatchDate) return s;
 
       const limitDays = inactiveDays !== undefined ? inactiveDays : setting.inactiveDays;
       const amount = decayAmount !== undefined ? decayAmount : setting.decayRp;
       const msThreshold = limitDays * 24 * 60 * 60 * 1000;
 
-      if (s.lastMatchDate) {
-        const lastTime = new Date(s.lastMatchDate).getTime();
-        const elapsed = now - lastTime;
-        if (elapsed >= msThreshold) {
-          affectedCount++;
-          return {
-            ...s,
-            rp: Math.max(0, s.rp - amount),
-          };
-        }
+      // 사이클당 1회: max(마지막 경기일, 마지막 감점일) 기준
+      const lastMatchTime = new Date(s.lastMatchDate).getTime();
+      const appliedStr = decayAppliedDates[s.id];
+      const baseline = Math.max(lastMatchTime, appliedStr ? new Date(appliedStr).getTime() : 0);
+      const elapsed = now - baseline;
+      if (elapsed >= msThreshold) {
+        affectedCount++;
+        nextApplied[s.id] = todayStr;
+        return {
+          ...s,
+          rp: Math.max(0, s.rp - amount),
+        };
       }
       return s;
     });
@@ -1397,6 +1527,7 @@ function useLeagueStoreInternal() {
     if (affectedCount > 0) {
       const previousStudents = [...students];
       setStudents(nextStudents);
+      setDecayAppliedDates(nextApplied);
 
       if (currentClassId) {
         try {
@@ -1405,6 +1536,16 @@ function useLeagueStoreInternal() {
             if (prev && prev.rp !== s.rp) {
               await apiUpdateStudentRp(s.id, s.rp);
             }
+          }
+          // 감점 적용일 맵을 클래스 설정에 영속화
+          try {
+            const { data: currentClass } = await apiFetchClassSettings(currentClassId);
+            await apiUpdateClassSettings(currentClassId, {
+              ...(currentClass?.settings || {}),
+              decayApplied: nextApplied
+            });
+          } catch (e) {
+            console.warn("Failed to persist decayApplied map:", e);
           }
           toast.success(`휴면 강등 완료: ${affectedCount}명의 RP가 차감되었습니다.`);
         } catch (err: any) {
@@ -1425,7 +1566,7 @@ function useLeagueStoreInternal() {
     }
 
     return affectedCount;
-  }, [students, matches, tierThresholds, decaySettings, currentClassId, isClassOwner]);
+  }, [students, matches, tierThresholds, decaySettings, decayAppliedDates, currentClassId, isClassOwner]);
 
   // 경기 점수 수정 및 보너스/RP 완벽 재계산 액션
   const updateMatchScore = useCallback(async (matchId: string, nextScoreA: number, nextScoreB: number) => {
@@ -1433,7 +1574,7 @@ function useLeagueStoreInternal() {
       toast.error("과거 시즌 기록은 수정할 수 없습니다 (읽기 전용).");
       return;
     }
-    if (!isClassOwner) {
+    if (!isClassManagerRef.current) {
       toast.error("권한이 없습니다. 클래스 개설자만 이 작업을 수행할 수 있습니다.");
       return;
     }
@@ -2178,8 +2319,40 @@ function useLeagueStoreInternal() {
     }
   }, [tierThresholds, rpVariables, tierSettings, dynamicBonuses, dynamicPenalties, decayEnabled, decayDays, decayAmount, decayTiers, currentClassId, isClassOwner]);
 
+  // 화면 잠금 on/off 저장 (소유자 전용). which: 어떤 화면을 토글할지.
+  const saveLockSetting = useCallback(async (which: "leaderboard" | "admin", enabled: boolean) => {
+    if (!isClassOwner) {
+      toast.error("권한이 없습니다. 클래스 개설자만 이 작업을 수행할 수 있습니다.");
+      return;
+    }
+    const prevLeaderboard = lockLeaderboardRef.current;
+    const prevAdmin = lockAdminRef.current;
+    const nextLeaderboard = which === "leaderboard" ? enabled : prevLeaderboard;
+    const nextAdmin = which === "admin" ? enabled : prevAdmin;
+    if (which === "leaderboard") setLockLeaderboard(enabled); else setLockAdmin(enabled);
+
+    if (currentClassId) {
+      try {
+        const { data: currentClass } = await apiFetchClassSettings(currentClassId);
+        const newSettings = {
+          ...(currentClass?.settings || {}),
+          lockLeaderboard: nextLeaderboard,
+          lockAdmin: nextAdmin
+        };
+        const { error: updateErr } = await apiUpdateClassSettings(currentClassId, newSettings);
+        if (updateErr) throw updateErr;
+        toast.success(enabled ? "잠금이 켜졌습니다." : "잠금이 꺼졌습니다.");
+      } catch (err: any) {
+        console.error("Failed to save lock setting:", err.message);
+        toast.error("잠금 설정 저장에 실패했습니다: " + err.message);
+        // 롤백
+        if (which === "leaderboard") setLockLeaderboard(prevLeaderboard); else setLockAdmin(prevAdmin);
+      }
+    }
+  }, [currentClassId, isClassOwner]);
+
   // Decay settings save function
-  const saveDecaySettings = useCallback(async (enabled: boolean, days: number, amount: number, tiers: TierName[]) => {
+  const saveDecaySettings = useCallback(async (enabled: boolean, days: number, amount: number, tiers: TierName[], perTierRp?: Partial<Record<TierName, number>>) => {
     if (currentViewSeasonRef.current !== "현재 시즌") {
       toast.error("과거 시즌 설정은 수정할 수 없습니다 (읽기 전용).");
       return;
@@ -2201,11 +2374,11 @@ function useLeagueStoreInternal() {
     setDecayTiers(tiers);
 
     const nextDecaySettings = {
-      bronze: { enabled: enabled && tiers.includes("Bronze"), inactiveDays: days, decayRp: amount },
-      silver: { enabled: enabled && tiers.includes("Silver"), inactiveDays: days, decayRp: amount },
-      gold: { enabled: enabled && tiers.includes("Gold"), inactiveDays: days, decayRp: amount },
-      platinum: { enabled: enabled && tiers.includes("Platinum"), inactiveDays: days, decayRp: amount },
-      diamond: { enabled: enabled && tiers.includes("Diamond"), inactiveDays: days, decayRp: amount }
+      bronze: { enabled: enabled && tiers.includes("Bronze"), inactiveDays: days, decayRp: perTierRp?.Bronze ?? amount },
+      silver: { enabled: enabled && tiers.includes("Silver"), inactiveDays: days, decayRp: perTierRp?.Silver ?? amount },
+      gold: { enabled: enabled && tiers.includes("Gold"), inactiveDays: days, decayRp: perTierRp?.Gold ?? amount },
+      platinum: { enabled: enabled && tiers.includes("Platinum"), inactiveDays: days, decayRp: perTierRp?.Platinum ?? amount },
+      diamond: { enabled: enabled && tiers.includes("Diamond"), inactiveDays: days, decayRp: perTierRp?.Diamond ?? amount }
     };
     setDecaySettings(nextDecaySettings);
 
@@ -2267,15 +2440,19 @@ function useLeagueStoreInternal() {
       const setting = decaySettings[tierKey];
 
       if (!setting || !setting.enabled) return;
+      if (!s.lastMatchDate) return;
 
+      // 사이클당 1회: 마지막 경기일과 마지막 감점일 중 더 최근 시점부터 기준일수가 지나야 감점.
+      // (경기하면 lastMatchDate 갱신으로 리셋, 안 하면 감점 후 다시 기준일수 경과해야 다음 1회)
       const msThreshold = setting.inactiveDays * 24 * 60 * 60 * 1000;
-      if (s.lastMatchDate) {
-        const lastTime = new Date(s.lastMatchDate).getTime();
-        const elapsed = now - lastTime;
-        if (elapsed >= msThreshold) {
-          targetIds.push(s.id);
-          decayDeltas[s.id] = setting.decayRp;
-        }
+      const lastMatchTime = new Date(s.lastMatchDate).getTime();
+      const appliedStr = decayAppliedDates[s.id];
+      const lastAppliedTime = appliedStr ? new Date(appliedStr).getTime() : 0;
+      const baseline = Math.max(lastMatchTime, lastAppliedTime);
+      const elapsed = now - baseline;
+      if (elapsed >= msThreshold) {
+        targetIds.push(s.id);
+        decayDeltas[s.id] = setting.decayRp;
       }
     });
 
@@ -2299,35 +2476,44 @@ function useLeagueStoreInternal() {
 
     try {
       setIsSyncing(true);
-      // Apply decay in Supabase
+      // Apply decay in Supabase + 학생별 감점일(decayApplied) 기록
+      const nextApplied = { ...decayAppliedDates };
       for (const id of targetIds) {
         const s = students.find((st) => st.id === id);
         if (s) {
-          const amount = decayDeltas[id] || 10;
+          const amount = decayDeltas[id] || 5;
           const nextRp = Math.max(0, s.rp - amount);
           await apiUpdateStudentRp(id, nextRp);
+          nextApplied[id] = todayStr;
         }
       }
 
-      // Update class settings lastDecayDate
+      // 로컬 학생 RP 즉시 반영 (리로드 전에도 카운트다운/리더보드 정합)
+      setStudents((prev) => prev.map((s) =>
+        targetIds.includes(s.id) ? { ...s, rp: Math.max(0, s.rp - (decayDeltas[s.id] || 5)) } : s
+      ));
+      setDecayAppliedDates(nextApplied);
+
+      // Update class settings lastDecayDate + decayApplied
       const { data: currentClass } = await apiFetchClassSettings(currentClassId);
 
       const newSettings = {
         ...(currentClass?.settings || {}),
-        lastDecayDate: todayStr
+        lastDecayDate: todayStr,
+        decayApplied: nextApplied
       };
 
       await apiUpdateClassSettings(currentClassId, newSettings);
 
       setLastDecayDate(todayStr);
-      
+
       toast.success(`자동 휴면 차감 완료: 총 ${targetIds.length}명의 학생 RP가 각각 차감되었습니다.`, { duration: 5000 });
     } catch (e) {
       console.error("Failed executing automatic RP decay in Supabase:", e);
     } finally {
       setIsSyncing(false);
     }
-  }, [students, decaySettings, lastDecayDate, currentClassId, tierThresholds]);
+  }, [students, decaySettings, lastDecayDate, decayAppliedDates, currentClassId, tierThresholds]);
 
   // 학생용 '나의 업적' 자동 연산 함수 (Derived State)
   const calculateAchievements = useCallback((studentId: string): Achievement[] => {
@@ -2392,34 +2578,152 @@ function useLeagueStoreInternal() {
       return { success: false, message: "No classId" };
     }
     try {
-      const { data: currentClass } = await apiFetchClassSettings(currentClassId);
-      
-      const newSettings = {
-        ...(currentClass?.settings || {}),
-        season: seasonName
-      };
+      // 서버 RPC: 현재 순위 스냅샷 → 학생 RP/전적 초기화 → 시즌 라벨 변경 (한 트랜잭션)
+      const { error: rpcErr } = await apiStartNewSeason(currentClassId, seasonName);
+      if (rpcErr) throw rpcErr;
 
-      const { error: updateErr } = await apiUpdateClassSettings(currentClassId, newSettings);
-      
-      if (updateErr) throw updateErr;
-      
-      toast.success("시즌이 성공적으로 변경되었습니다.");
-      return { success: true };
-    } catch (error: any) {
-      console.error("Failed to change season in Supabase:", error);
-      return { success: false, message: error.message || "Database Error" };
-    } finally {
+      // 새 시즌의 현재 데이터로 재로딩 (시즌 목록도 loadClassData 안에서 갱신됨)
       isSyncingRef.current = false;
       setIsSyncing(false);
+      await loadClassDataRef.current?.(currentClassId);
+
+      toast.success(`새 시즌 '${seasonName}'을(를) 시작했습니다. 이전 시즌 순위는 보관되었습니다.`);
+      return { success: true };
+    } catch (error: any) {
+      console.error("Failed to start new season in Supabase:", error);
+      toast.error(error.message || "새 시즌 시작에 실패했습니다.");
+      isSyncingRef.current = false;
+      setIsSyncing(false);
+      return { success: false, message: error.message || "Database Error" };
     }
   }, [currentClassId, isClassOwner]);
 
   // 6. 과거 시즌 데이터 Fetch 액션 메소드
   const changeViewSeason = useCallback(async (seasonName: string) => {
     setCurrentViewSeason(seasonName);
+
+    // "현재 시즌" 선택 시 라이브 데이터로 복귀
+    if (seasonName === "현재 시즌") {
+      if (currentClassIdRef.current) await loadClassDataRef.current?.(currentClassIdRef.current);
+      return;
+    }
+
+    const classId = currentClassIdRef.current;
+    if (!classId) return;
+
+    setIsSyncing(true);
+    try {
+      // 과거 시즌: 보관된 최종 순위 + 해당 시즌 경기 조회 (읽기 전용으로 표시)
+      // 교사면 실명 포함(season_standings), 학생/익명이면 공개 RPC(실명 제외)
+      const standingsPromise = isTeacherRef.current
+        ? apiFetchSeasonStandings(classId, seasonName)
+        : apiFetchSeasonStandingsPublic(classId, seasonName);
+      const [{ data: standings }, { data: pastMatches }] = await Promise.all([
+        standingsPromise,
+        apiFetchMatches(classId, seasonName),
+      ]);
+
+      const matchesList: Match[] = (pastMatches || []).map((m: any) => ({
+        id: m.id,
+        playerAId: m.winner_id,
+        playerBId: m.loser_id,
+        scoreA: 21,
+        scoreB: 19,
+        date: m.created_at || new Date().toISOString(),
+        matchType: "single" as const,
+      }));
+
+      const studentsList: Student[] = (standings || []).map((s: any) => {
+        const grade = s.grade ?? 0;
+        const classNum = s.class_number ?? 0;
+        const number = s.student_no ?? 0;
+        const name = s.display_name || (s.nickname ?? `${grade}-${classNum}-${number}번`);
+
+        // 승패는 그 시즌 경기 기록에서 계산 (win_count 컬럼은 앱에서 갱신되지 않아 신뢰 불가)
+        const myMatches = matchesList
+          .filter((m) => m.playerAId === s.student_id || m.playerBId === s.student_id)
+          .sort((x, y) => new Date(y.date).getTime() - new Date(x.date).getTime());
+        const wins = myMatches.filter((m) => m.playerAId === s.student_id).length;
+        const losses = myMatches.filter((m) => m.playerBId === s.student_id).length;
+        const recent = myMatches.slice(0, 5).map((m) => (m.playerAId === s.student_id ? "W" : "L"));
+
+        return {
+          id: s.student_id,
+          grade,
+          classNum,
+          number,
+          name,
+          realName: s.real_name ?? "",
+          nickname: s.nickname ?? "",
+          gender: (s.gender || "U") as Gender,
+          rp: s.rp ?? 1000,
+          wins,
+          losses,
+          recent,
+          currentStreak: 0,
+          demotionShields: 3,
+        };
+      });
+      studentsList.sort((a, b) => b.rp - a.rp);
+
+      setStudents(studentsList);
+      setMatches([...matchesList].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+    } catch (err: any) {
+      console.error("Failed to load past season data:", err);
+      toast.error("과거 시즌 데이터를 불러오지 못했습니다.");
+    } finally {
+      setIsSyncing(false);
+    }
   }, []);
 
-  return { 
+  // 7. 과거 시즌 관리 (교사 전용) — 복귀 / 이름변경 / 삭제 / 명예의 전당
+  const restoreSeason = useCallback(async (targetSeason: string) => {
+    const classId = currentClassIdRef.current;
+    if (!classId) return { success: false };
+    try {
+      const { error } = await apiRestoreSeason(classId, targetSeason);
+      if (error) throw error;
+      setCurrentViewSeason("현재 시즌");
+      await loadClassDataRef.current?.(classId);
+      toast.success(`'${targetSeason}' 시즌으로 복귀했습니다. (이어서 진행)`);
+      return { success: true };
+    } catch (err: any) {
+      toast.error(err.message || "시즌 복귀에 실패했습니다.");
+      return { success: false, message: err.message };
+    }
+  }, []);
+
+  const renameSeason = useCallback(async (oldName: string, newName: string) => {
+    const classId = currentClassIdRef.current;
+    if (!classId) return { success: false };
+    try {
+      const { error } = await apiRenameSeason(classId, oldName, newName);
+      if (error) throw error;
+      await loadClassDataRef.current?.(classId);
+      toast.success(`시즌 이름을 '${newName}'(으)로 변경했습니다.`);
+      return { success: true };
+    } catch (err: any) {
+      toast.error(err.message || "시즌 이름 변경에 실패했습니다.");
+      return { success: false, message: err.message };
+    }
+  }, []);
+
+  const deleteSeason = useCallback(async (season: string, deleteMatches: boolean) => {
+    const classId = currentClassIdRef.current;
+    if (!classId) return { success: false };
+    try {
+      const { error } = await apiDeleteSeason(classId, season, deleteMatches);
+      if (error) throw error;
+      await loadClassDataRef.current?.(classId);
+      toast.success(`'${season}' 시즌을 삭제했습니다.`);
+      return { success: true };
+    } catch (err: any) {
+      toast.error(err.message || "시즌 삭제에 실패했습니다.");
+      return { success: false, message: err.message };
+    }
+  }, []);
+
+  return {
     hydrated, 
     currentClassId,
     loadClassData,
@@ -2429,16 +2733,18 @@ function useLeagueStoreInternal() {
     setTitle, 
     teacherAccessCode,
     setTeacherAccessCode,
-    recordMatch, 
-    upsertStudents, 
-    isLocked, 
-    setIsLocked, 
-    deleteMatch, 
+    lockLeaderboard,
+    lockAdmin,
+    saveLockSetting,
+    recordMatch,
+    upsertStudents,
+    deleteMatch,
     resetStudent, 
     resetAllData, 
     updateStudentRP,
     isSyncing,
     isClassOwner,
+    isClassManager,
     session,
     logoutUser,
     tierThresholds,
@@ -2447,6 +2753,10 @@ function useLeagueStoreInternal() {
     updateStudentGender,
     deleteStudent,
     updateStudentInfo,
+    bulkUpdateStudents,
+    fetchDeletedStudents,
+    restoreDeletedStudent,
+    hardDeleteStudent,
     restoreFromCSV,
     bulkDecayRP,
     updateMatchScore,
@@ -2456,9 +2766,13 @@ function useLeagueStoreInternal() {
     promotionEvent,
     setPromotionEvent,
     seasonList,
+    currentSeason,
     changeSeason,
     currentViewSeason,
     changeViewSeason,
+    restoreSeason,
+    renameSeason,
+    deleteSeason,
     decayEnabled,
     setDecayEnabled,
     decayDays,
@@ -2469,6 +2783,7 @@ function useLeagueStoreInternal() {
     setDecayTiers,
     lastDecayDate,
     setLastDecayDate,
+    decayAppliedDates,
     saveDecaySettings,
     checkAndApplyAutomaticDecay,
     tierSettings,

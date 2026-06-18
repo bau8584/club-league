@@ -1,86 +1,29 @@
 import type { TiersRecord, DecaySettingsRecord, DynamicPenalties, DynamicBonuses, TierName } from "./league-types";
+import { STANDARD_BONUSES, STANDARD_PENALTIES } from "./league-presets";
 
+// 표준(약간 성장형) 기본 티어 — league-presets STANDARD 와 정합
 export const DEFAULT_TIERS: TiersRecord = {
-  bronze: { threshold: 0, winRp: 20, loseRp: 0 },
-  silver: { threshold: 1000, winRp: 15, loseRp: 5 },
-  gold: { threshold: 1200, winRp: 15, loseRp: 10 },
-  platinum: { threshold: 1400, winRp: 10, loseRp: 15 },
-  diamond: { threshold: 1600, winRp: 10, loseRp: 20 }
+  bronze: { threshold: 0, winRp: 24, loseRp: 6 },
+  silver: { threshold: 870, winRp: 20, loseRp: 12 },
+  gold: { threshold: 1120, winRp: 16, loseRp: 16 },
+  platinum: { threshold: 1400, winRp: 13, loseRp: 21 },
+  diamond: { threshold: 1720, winRp: 11, loseRp: 27 }
 };
 
+// 휴면 감점은 "기준일수(inactiveDays) 동안 미경기 시 사이클당 1회"만 차감된다.
+// (한 번 깎인 뒤 다시 기준일수가 지나야 다음 1회 감점 — 매일 누적이 아님)
+// 초보 보호를 위해 하위 티어(브론즈·실버)는 기본 비활성, 상위 티어일수록 차감 폭을 키운다.
 export const DEFAULT_DECAY_SETTINGS: DecaySettingsRecord = {
-  bronze: { enabled: false, inactiveDays: 14, decayRp: 10 },
-  silver: { enabled: false, inactiveDays: 14, decayRp: 10 },
-  gold: { enabled: true, inactiveDays: 14, decayRp: 10 },
-  platinum: { enabled: true, inactiveDays: 14, decayRp: 10 },
-  diamond: { enabled: true, inactiveDays: 14, decayRp: 15 }
+  bronze: { enabled: false, inactiveDays: 10, decayRp: 5 },
+  silver: { enabled: false, inactiveDays: 10, decayRp: 5 },
+  gold: { enabled: true, inactiveDays: 10, decayRp: 5 },
+  platinum: { enabled: true, inactiveDays: 10, decayRp: 7 },
+  diamond: { enabled: true, inactiveDays: 10, decayRp: 10 }
 };
 
-export const DEFAULT_DYNAMIC_PENALTIES: DynamicPenalties = {
-  enabled: true,
-  arrogance: true,
-  crushing: true,
-  revengeFail: true,
-  championWeight: true,
-  lossStreak: true,
-  arroganceGold: 20,
-  arrogancePlatinum: 30,
-  arroganceDiamond: 40,
-  crushingGold: 10,
-  crushingPlatinum: 15,
-  crushingDiamond: 20,
-  revengeAllowedGold: 10,
-  revengeAllowedPlatinum: 15,
-  revengeAllowedDiamond: 20,
-  championGold: 5,
-  championPlatinum: 10,
-  championDiamond: 15,
-  swampGold2: 5,
-  swampGold3: 10,
-  swampPlatinum2: 10,
-  swampPlatinum3: 15,
-  swampDiamond2: 15,
-  swampDiamond3: 25,
-  redCardPenalty: 10
-};
-
-export const DEFAULT_DYNAMIC_BONUSES: DynamicBonuses = {
-  freshnessEnabled: true,
-  freshnessGames: 5,
-  freshnessRp: 5,
-  streakEnabled: true,
-  streakWins: 3,
-  streakRp: 10,
-  firstWinEnabled: true,
-  firstWinRp: 15,
-  revengeEnabled: true,
-  revengeRp: 10,
-  underdogEnabled: true,
-  underdogDiff1Rp: 5,
-  underdogDiff2Rp: 10,
-  underdogDiff3Rp: 15,
-  greatMatchEnabled: true,
-  greatMatchRp: 10,
-  greatMatchWin1Rp: 10,
-  greatMatchLose1Rp: 5,
-  greatMatchWin2Rp: 5,
-  greatMatchLose2Rp: 2,
-  greatMatchWin3Rp: 2,
-  greatMatchLose3Rp: 0,
-  lossComfortEnabled: true,
-  lossComfortRp: 5,
-  lossComfortMaxTier: "Gold",
-  willOfSteelEnabled: true,
-  willOfSteel3Rp: 10,
-  willOfSteel4Rp: 15,
-  willOfSteel5Rp: 20,
-  mentoring: {
-    enabled: false,
-    mentorRp: 10,
-    menteeRp: 15,
-    minTierGap: 1
-  }
-};
+// 표준 보너스/패널티 — league-presets STANDARD 를 단일 소스로 사용
+export const DEFAULT_DYNAMIC_PENALTIES: DynamicPenalties = STANDARD_PENALTIES;
+export const DEFAULT_DYNAMIC_BONUSES: DynamicBonuses = STANDARD_BONUSES;
 
 export function migrateSettings(rawSettings: any): any {
   if (!rawSettings) return null;
@@ -89,14 +32,14 @@ export function migrateSettings(rawSettings: any): any {
 
   // 1. Migrate "tiers" (RP & thresholds)
   if (!migrated.tiers) {
-    const th = migrated.tierThresholds || { Bronze: 0, Silver: 1000, Gold: 1200, Platinum: 1400, Diamond: 1600 };
+    const th = migrated.tierThresholds || { Bronze: 0, Silver: 870, Gold: 1120, Platinum: 1400, Diamond: 1720 };
     const ts = migrated.tierSettings || {
-      Bronze: { winDelta: 20, loseDelta: 0 },
-      Silver: { winDelta: 15, loseDelta: 5 },
-      Gold: { winDelta: 15, loseDelta: 10 },
-      Platinum: { winDelta: 10, loseDelta: 15 }
+      Bronze: { winDelta: 24, loseDelta: 6 },
+      Silver: { winDelta: 20, loseDelta: 12 },
+      Gold: { winDelta: 16, loseDelta: 16 },
+      Platinum: { winDelta: 13, loseDelta: 21 }
     };
-    const rpv = migrated.rpVariables || { winDelta: 10, loseDelta: 20 };
+    const rpv = migrated.rpVariables || { winDelta: 11, loseDelta: 27 };
 
     migrated.tiers = {
       bronze: {
@@ -138,9 +81,9 @@ export function migrateSettings(rawSettings: any): any {
   // 2. Migrate "decaySettings"
   if (!migrated.decaySettings) {
     const enabled = migrated.decayEnabled !== undefined ? migrated.decayEnabled : false;
-    const days = migrated.decayDays !== undefined ? Number(migrated.decayDays) : 14;
-    const amount = migrated.decayAmount !== undefined ? Number(migrated.decayAmount) : 10;
-    const tiersList = migrated.decayTiers || ["Bronze", "Silver", "Gold", "Platinum"];
+    const days = migrated.decayDays !== undefined ? Number(migrated.decayDays) : 10;
+    const amount = migrated.decayAmount !== undefined ? Number(migrated.decayAmount) : 5;
+    const tiersList = migrated.decayTiers || ["Gold", "Platinum", "Diamond"];
 
     migrated.decaySettings = {
       bronze: { enabled: enabled && tiersList.includes("Bronze"), inactiveDays: days, decayRp: amount },

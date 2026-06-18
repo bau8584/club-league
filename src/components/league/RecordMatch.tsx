@@ -4,7 +4,7 @@ import { Card } from "@/components/ui/card";
 import { TierBadge } from "./TierBadge";
 import { GenderMark } from "./GenderMark";
 import { cn } from "@/lib/utils";
-import { Trophy, X, Lock, Sparkles, User, Users, Crown, Award, Zap, RotateCcw } from "lucide-react";
+import { Trophy, X, Sparkles, User, Users, Crown, Award, Zap, RotateCcw } from "lucide-react";
 import type { Student, Match, TierName } from "@/lib/league-types";
 import { getTier, getTierSubdivision, TIER_ORDER, getFullTierLabel } from "@/lib/league-types";
 import { toast } from "sonner";
@@ -65,7 +65,6 @@ type MatchResultData = {
 export function RecordMatch({
   students,
   onRecord,
-  isLocked,
   initials,
   onClearInitials,
   thresholds,
@@ -90,7 +89,6 @@ export function RecordMatch({
     matchType?: "single" | "double";
   } | null;
   onClearInitials?: () => void;
-  isLocked?: boolean;
   thresholds?: Record<string, number>;
   rpVariables?: { winDelta: number; loseDelta: number };
   onUpdateGender?: (studentId: string, gender: "M" | "F" | "U") => void;
@@ -512,24 +510,6 @@ export function RecordMatch({
       }
     }
   }, [a.studentId, a2.studentId, b.studentId, b2.studentId, students]);
-
-  if (isLocked) {
-    return (
-      <Card className="flex flex-col items-center justify-center border-border/60 bg-card/60 p-10 text-center backdrop-blur shadow-2xl relative overflow-hidden min-h-[450px]">
-        <div className="absolute inset-0 bg-gradient-to-tr from-destructive/10 via-background/5 to-neon-blue/10 pointer-events-none opacity-60" />
-        <div className="relative z-10 flex flex-col items-center">
-          <div className="flex size-20 items-center justify-center rounded-full bg-destructive/10 border border-destructive/30 text-destructive shadow-[0_0_40px_rgba(239,68,68,0.25)] animate-pulse mb-6">
-            <Lock className="size-10" />
-          </div>
-          <h3 className="text-2xl font-black tracking-tight mb-2 text-foreground">경기 결과 등록 잠김</h3>
-          <p className="max-w-md text-sm text-muted-foreground leading-relaxed">
-            현재 체육 교사에 의해 경기 기록 입력이 잠금처리 되었습니다.<br />
-            선생님의 지시에 따라 활동에 참여해주세요.
-          </p>
-        </div>
-      </Card>
-    );
-  }
 
   const playerA = students.find((s) => s.id === a.studentId) ?? null;
   const playerB = students.find((s) => s.id === b.studentId) ?? null;

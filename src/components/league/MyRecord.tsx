@@ -19,11 +19,12 @@ import {
 import { 
   getTier, 
   getTierSubdivision, 
-  getFullTierLabel, 
-  TIER_STYLES, 
-  type TierName, 
-  type Student, 
-  type Match 
+  getFullTierLabel,
+  TIER_STYLES,
+  type TierName,
+  type Student,
+  type Match,
+  type DecaySettingsRecord
 } from "@/lib/league-types";
 
 interface MyRecordProps {
@@ -39,6 +40,8 @@ interface MyRecordProps {
   matches: Match[];
   thresholds?: Record<TierName, number>;
   rpVariables?: { winDelta: number; loseDelta: number };
+  decaySettings?: DecaySettingsRecord;
+  decayAppliedDates?: Record<string, string>;
 }
 
 export function MyRecord({
@@ -46,7 +49,9 @@ export function MyRecord({
   students,
   matches,
   thresholds,
-  rpVariables = { winDelta: 25, loseDelta: 20 }
+  rpVariables = { winDelta: 25, loseDelta: 20 },
+  decaySettings,
+  decayAppliedDates = {}
 }: MyRecordProps) {
   
   // 1. 현재 접속한 학생 정보 매칭 (동명이인 처리 포함)
@@ -134,26 +139,44 @@ export function MyRecord({
     };
   }, [me, thresholds]);
 
-  // 4.5. 마지막 경기 이후 경과 시간 및 휴면 경고 기준 계산
+  // 4.5. 휴면 감점 카운트다운 계산 (사이클당 1회 차감 기준)
+  //  - status: "new"(전적 없음) | "exempt"(감점 면제 티어) | "active"(감점 대상)
+  //  - daysRemaining: 다음 RP 차감까지 남은 일수 (active일 때)
   const inactivityInfo = useMemo(() => {
     if (!me || !me.lastMatchDate) {
-      return { elapsedDays: null, warning: false, text: "아직 등록된 경기 전적이 없습니다. 첫 대결에 도전하세요!" };
+      return { status: "new" as const, daysRemaining: null, warning: false, text: "아직 등록된 경기 전적이 없습니다. 첫 대결에 도전하세요!" };
     }
-    const elapsedMs = new Date().getTime() - new Date(me.lastMatchDate).getTime();
-    const elapsedDays = Math.floor(elapsedMs / (1000 * 60 * 60 * 24));
-    
-    // 7일에 가까워지는(5일 이상) 시점부터 경고 활성화
-    const warning = elapsedDays >= 5;
-    
+
+    const myTier = getTier(me.rp, thresholds);
+    const tierKey = myTier.toLowerCase() as 'bronze'|'silver'|'gold'|'platinum'|'diamond';
+    const setting = decaySettings?.[tierKey];
+
+    const dayMs = 1000 * 60 * 60 * 24;
+
+    // 감점 면제(설정 비활성) 티어
+    if (!setting || !setting.enabled) {
+      return { status: "exempt" as const, daysRemaining: null, warning: false, text: "현재 등급은 휴면 감점이 없습니다. 편하게 즐기세요! 😊" };
+    }
+
+    // 사이클당 1회: max(마지막 경기일, 마지막 감점일) 기준으로 남은 일수 계산
+    const lastMatchTime = new Date(me.lastMatchDate).getTime();
+    const appliedStr = decayAppliedDates[me.id];
+    const baseline = Math.max(lastMatchTime, appliedStr ? new Date(appliedStr).getTime() : 0);
+    const elapsedMs = new Date().getTime() - baseline;
+    const daysRemaining = Math.max(0, Math.ceil(setting.inactiveDays - elapsedMs / dayMs));
+
+    // 3일 이하 남으면 경고
+    const warning = daysRemaining <= 3;
+
     let text = "";
-    if (elapsedDays === 0) {
-      text = "오늘 매치에 참여했습니다! 리그 활성 상태가 유지되고 있습니다. 👍";
+    if (daysRemaining <= 0) {
+      text = `${setting.inactiveDays}일 이상 미활동 상태입니다. 곧 RP ${setting.decayRp}점이 차감됩니다. 지금 대결하세요!`;
     } else {
-      text = `마지막 경기 후 ${elapsedDays}일이 경과되었습니다.`;
+      text = `대결이 없으면 ${daysRemaining}일 후 RP ${setting.decayRp}점이 차감됩니다.`;
     }
-    
-    return { elapsedDays, warning, text };
-  }, [me]);
+
+    return { status: "active" as const, daysRemaining, warning, text };
+  }, [me, thresholds, decaySettings, decayAppliedDates]);
 
   if (!me || !tierProgress) {
     return (
@@ -221,23 +244,29 @@ export function MyRecord({
             {/* 휴면 경고 안내 바 */}
             <div className={cn(
               "rounded-xl border p-3 text-xs font-bold flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-sm transition-all",
-              inactivityInfo.elapsedDays === null 
+              inactivityInfo.status === "new"
                 ? "border-neon-blue/30 bg-neon-blue/5 text-neon-blue"
-                : inactivityInfo.warning
-                  ? "border-destructive/40 bg-destructive/10 text-destructive animate-pulse"
-                  : "border-border bg-background/30 text-muted-foreground"
+                : inactivityInfo.status === "exempt"
+                  ? "border-border bg-background/30 text-muted-foreground"
+                  : inactivityInfo.warning
+                    ? "border-destructive/40 bg-destructive/10 text-destructive animate-pulse"
+                    : "border-border bg-background/30 text-muted-foreground"
             )}>
               <span className="flex items-center gap-1.5 leading-relaxed">
-                {inactivityInfo.warning ? "⚠️ " : "⏱️ "}
+                {inactivityInfo.status === "new" ? "🌱 " : inactivityInfo.status === "exempt" ? "😊 " : inactivityInfo.warning ? "⚠️ " : "⏱️ "}
                 {inactivityInfo.text}
               </span>
-              {me.rp >= (thresholds?.Gold ?? 1200) && inactivityInfo.warning ? (
+              {inactivityInfo.status === "active" && inactivityInfo.warning ? (
                 <span className="text-[9px] font-black uppercase tracking-wider text-destructive bg-destructive/15 border border-destructive/20 px-2 py-0.5 rounded animate-bounce shrink-0 self-end sm:self-center">
-                  휴면 강등 위험! (대결 촉구)
+                  {(inactivityInfo.daysRemaining ?? 0) <= 0 ? "휴면 감점 임박!" : `RP 차감 D-${inactivityInfo.daysRemaining}`}
                 </span>
-              ) : inactivityInfo.elapsedDays !== null ? (
+              ) : inactivityInfo.status === "active" ? (
                 <span className="text-[9px] font-black uppercase tracking-wider text-muted-foreground bg-card/65 px-2 py-0.5 rounded border border-border/40 shrink-0 self-end sm:self-center">
-                  휴면 강등 안전구역
+                  RP 차감까지 D-{inactivityInfo.daysRemaining}
+                </span>
+              ) : inactivityInfo.status === "exempt" ? (
+                <span className="text-[9px] font-black uppercase tracking-wider text-muted-foreground bg-card/65 px-2 py-0.5 rounded border border-border/40 shrink-0 self-end sm:self-center">
+                  감점 없음
                 </span>
               ) : (
                 <span className="text-[9px] font-black uppercase tracking-wider text-neon-blue bg-neon-blue/10 px-2 py-0.5 rounded border border-neon-blue/20 shrink-0 self-end sm:self-center">
