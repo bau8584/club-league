@@ -6,6 +6,7 @@ import { Leaderboard } from "@/features/leaderboard/Leaderboard";
 import { RecordMatch } from "@/components/league/RecordMatch";
 import { AdminPanel } from "@/components/league/AdminPanel";
 import { MatchRecommend } from "@/components/league/MatchRecommend";
+import { Onboarding } from "@/features/onboarding/Onboarding";
 import { MyRecord } from "@/components/league/MyRecord";
 import { SeasonSummary } from "@/components/league/SeasonSummary";
 import { Toaster } from "@/components/ui/sonner";
@@ -44,6 +45,10 @@ function Index() {
     isSyncing,
     isClassOwner,
     isClassManager,
+    isClassMember,
+    myPlayerId,
+    claimPlayer,
+    createMyPlayer,
     session,
     logoutUser,
     tierThresholds,
@@ -74,6 +79,8 @@ function Index() {
   }, [classId, loadClassData]);
 
   const [tab, setTab] = useState<Tab>("leaderboard");
+  // 일반회원(가입했지만 관리자 아님)인데 아직 내 선수 미연동 → 프로필 설정 온보딩
+  const needsOnboarding = isClassMember && !isClassManager && !myPlayerId;
   const [editingTitle, setEditingTitle] = useState(false);
   const [recommendInitials, setRecommendInitials] = useState<{
     playerAId: string;
@@ -346,6 +353,14 @@ function Index() {
 
       {/* Main Panel Content Routing */}
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        {needsOnboarding ? (
+          <Onboarding
+            students={students}
+            thresholds={tierThresholds}
+            onClaim={claimPlayer}
+            onCreate={createMyPlayer}
+          />
+        ) : (<>
         {/* Read-Only Warning Banner */}
         {currentViewSeason !== "현재 시즌" && (
           <div className="mb-6 flex items-center gap-3 rounded-xl border border-amber-500/35 bg-amber-500/10 p-4 text-amber-200 shadow-[0_0_15px_rgba(245,158,11,0.08)] animate-in slide-in-from-top duration-200">
@@ -453,6 +468,7 @@ function Index() {
             onSaveLeagueSettings={saveLeagueSettings}
           />
         )}
+        </>)}
       </main>
 
       {isSyncing && (

@@ -34,6 +34,7 @@ import {
   apiInsertStudentsBulk,
   apiRestoreClassData,
   apiRecordMatchTransaction,
+  apiClaimPlayer,
   apiListSeasons,
   apiStartNewSeason,
   apiFetchSeasonStandings,
@@ -97,6 +98,11 @@ function useLeagueStoreInternal() {
   const [isClassManager, setIsClassManager] = useState<boolean>(false);
   const isClassManagerRef = useRef(false);
   useEffect(() => { isClassManagerRef.current = isClassManager; }, [isClassManager]);
+  // 일반회원 포함 가입 여부 + 내 연동 선수
+  const [isClassMember, setIsClassMember] = useState<boolean>(false);
+  const isClassMemberRef = useRef(false);
+  useEffect(() => { isClassMemberRef.current = isClassMember; }, [isClassMember]);
+  const [myPlayerId, setMyPlayerId] = useState<string | null>(null);
   const isSyncingRef = useRef(false);
 
   useEffect(() => {
@@ -141,33 +147,39 @@ function useLeagueStoreInternal() {
       const { data: classData, error: classErr } = await apiFetchClass(classId);
       if (classErr) throw classErr;
 
-      // 권한 판별: 소유자(owner) / 관리자(owner|co_admin|scorekeeper)
+      // 권한 판별: 관리자 = 소유자/공동관리자(admin_uids) / 일반회원 = member_uids(가입자)
       let isOwner = false;
       let isManager = false;
+      let isMember = false;
+      let myUid: string | null = null;
       let authResolved = false;
       try {
         const { data: { user } } = await apiGetUser();
         if (user && classData) {
           authResolved = true;
+          myUid = user.id;
           const uid = user.id;
           isOwner = classData.owner_uid === uid;
           isManager = isOwner
-            || (Array.isArray(classData.admin_uids) && classData.admin_uids.includes(uid))
+            || (Array.isArray(classData.admin_uids) && classData.admin_uids.includes(uid));
+          isMember = isManager
             || (Array.isArray(classData.member_uids) && classData.member_uids.includes(uid));
         }
       } catch (err) {
         console.warn("Failed to check owner uid inside loadClassData:", err);
       }
-      // 백그라운드(실시간) 재로딩 중 인증이 일시적으로 실패(getUser 오류/유저 없음)하면
-      // 권한을 강등하지 말고 직전 권한을 유지한다. 강등 시 잠긴 관리자 탭이 튕기는 문제 방지.
+      // 백그라운드(실시간) 재로딩 중 인증이 일시적으로 실패하면 권한을 강등하지 말고 직전 권한 유지.
       if (!authResolved && isBackground) {
         isOwner = isClassOwnerRef.current;
         isManager = isClassManagerRef.current;
+        isMember = isClassMemberRef.current;
       }
       setIsClassOwner(isOwner);
       setIsClassManager(isManager);
+      setIsClassMember(isMember);
       isClassOwnerRef.current = isOwner;
       isClassManagerRef.current = isManager;
+      isClassMemberRef.current = isMember;
 
       if (classData) {
         setTitle(classData.name);
@@ -281,6 +293,17 @@ function useLeagueStoreInternal() {
       studentsList.sort((a, b) => b.rp - a.rp);
 
       setStudents(studentsList);
+
+      // 내 연동 선수 + 세션 역할: 관리자=TEACHER, 일반회원=STUDENT(연동 선수)
+      const myPlayer = myUid ? studentsList.find((s) => s.userId === myUid) : null;
+      setMyPlayerId(myPlayer?.id ?? null);
+      if (myUid) {
+        if (isManager) {
+          setSession((prev) => prev ? { ...prev, role: "TEACHER", studentId: undefined } : prev);
+        } else if (isMember) {
+          setSession((prev) => prev ? { ...prev, role: "STUDENT", studentId: myPlayer?.id } : prev);
+        }
+      }
 
       // We reverse matches to show newest first in history
       const sortedMatches = [...matchesList].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -2721,6 +2744,39 @@ function useLeagueStoreInternal() {
     }
   }, []);
 
+  // ── 일반 회원 셀프 참가 ──
+  // 명단의 비어있는 닉네임에 내 계정 연동
+  const claimPlayer = useCallback(async (playerId: string): Promise<boolean> => {
+    const { error } = await apiClaimPlayer(playerId);
+    if (error) { toast.error("연동에 실패했습니다: " + error.message); return false; }
+    toast.success("닉네임에 연동되었습니다!");
+    const cid = currentClassIdRef.current;
+    if (cid) await loadClassDataRef.current?.(cid);
+    return true;
+  }, []);
+
+  // 새 프로필을 만들어 내 계정에 연동
+  const createMyPlayer = useCallback(async (profile: {
+    nickname: string; gender: Gender; group?: string | null; birthYear?: number | null;
+  }): Promise<boolean> => {
+    const cid = currentClassIdRef.current;
+    if (!cid) return false;
+    const { data: { user } } = await apiGetUser();
+    if (!user) { toast.error("로그인이 필요합니다."); return false; }
+    const { error } = await apiInsertStudent(cid, {
+      name: profile.nickname,
+      nickname: profile.nickname,
+      gender: profile.gender,
+      group_label: profile.group ?? null,
+      birth_year: profile.birthYear ?? null,
+      user_id: user.id,
+    });
+    if (error) { toast.error("프로필 생성에 실패했습니다: " + error.message); return false; }
+    toast.success("프로필이 만들어졌습니다!");
+    await loadClassDataRef.current?.(cid);
+    return true;
+  }, []);
+
   return {
     hydrated, 
     currentClassId,
@@ -2740,6 +2796,10 @@ function useLeagueStoreInternal() {
     isSyncing,
     isClassOwner,
     isClassManager,
+    isClassMember,
+    myPlayerId,
+    claimPlayer,
+    createMyPlayer,
     session,
     logoutUser,
     tierThresholds,

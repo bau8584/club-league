@@ -139,7 +139,7 @@ export async function apiFetchStudents(classId: string) {
 export async function apiFetchStudentsPublic(classId: string) {
   return supabase
     .from("players_public")
-    .select("id, league_id, rp, tier, win_count, lose_count, nickname, group_label, gender, is_deleted, recent_matches, display_name")
+    .select("id, league_id, user_id, rp, tier, win_count, lose_count, nickname, group_label, gender, is_deleted, recent_matches, display_name")
     .eq("league_id", classId)
     .or("is_deleted.is.null,is_deleted.eq.false");
 }
@@ -331,6 +331,17 @@ export async function apiChangeStudentCode(studentId: string, oldCode: string, n
 // 관리자 전용: 선수 개인 코드 초기화
 export async function apiResetStudentCode(studentId: string) {
   return supabase.from("player_secrets").delete().eq("player_id", studentId);
+}
+
+// --- 일반 회원(self-signup) API ---
+// 명단의 비어있는 닉네임(계정 미연결)을 내 계정에 연동
+export async function apiClaimPlayer(playerId: string) {
+  return supabase.rpc("claim_player", { p_player_id: playerId });
+}
+
+// 방장: 멤버 ↔ 관리자 승격/강등
+export async function apiSetMemberAdmin(classId: string, uid: string, makeAdmin: boolean) {
+  return supabase.rpc("set_member_admin", { p_class_id: classId, p_uid: uid, p_make_admin: makeAdmin });
 }
 
 // --- Seasons API ---
