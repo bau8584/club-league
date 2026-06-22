@@ -1102,11 +1102,10 @@ function useLeagueStoreInternal() {
         };
 
         await apiUpdateClassSettings(currentClassId, newSettings);
-        
-        toast.success("리그 설정이 저장되었습니다!");
+        // 토스트는 호출측(AdminSettings)의 toast.promise에서 한 번만 처리. 여기선 조용히, 실패는 rethrow.
       } catch (err: any) {
         console.error("Failed to update settings in Supabase:", err.message);
-        toast.error("설정 저장에 실패했습니다: " + err.message);
+        throw err;
       } finally {
         isSyncingRef.current = false;
         setIsSyncing(false);
@@ -2337,10 +2336,10 @@ function useLeagueStoreInternal() {
         );
         
         if (updateErr) throw updateErr;
-        toast.success("설정이 성공적으로 저장되었습니다!");
+        // 토스트는 호출측(AdminSettings) toast.promise에서 한 번만 처리.
       } catch (err: any) {
         console.error("Failed to save league settings in Supabase:", err.message);
-        toast.error("설정 저장에 실패했습니다: " + err.message);
+        throw err;
       } finally {
         isSyncingRef.current = false;
         setIsSyncing(false);
@@ -2457,10 +2456,10 @@ function useLeagueStoreInternal() {
         const { error: updateErr } = await apiUpdateClassSettings(currentClassId, newSettings);
         
         if (updateErr) throw updateErr;
-        toast.success("휴면 강등 설정이 저장되었습니다.");
+        // 토스트는 호출측(AdminSettings) toast.promise에서 한 번만 처리.
       } catch (err: any) {
         console.error("Failed to save decay settings in Supabase:", err.message);
-        toast.error("설정 저장에 실패했습니다: " + err.message);
+        throw err;
       } finally {
         isSyncingRef.current = false;
         setIsSyncing(false);

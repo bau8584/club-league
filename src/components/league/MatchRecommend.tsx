@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { TierBadge } from "./TierBadge";
@@ -16,7 +16,8 @@ import {
   Users,
   RotateCcw,
   UserCheck,
-  UserPlus
+  UserPlus,
+  ChevronDown
 } from "lucide-react";
 import type { Student, Match } from "@/lib/league-types";
 import { getTier } from "@/lib/league-types";
@@ -29,6 +30,51 @@ type Selection = { grade: number | null; classNum: number | null; studentId: str
 const displayNameOf = (s: Student) => s.displayName || s.nickname || s.name;
 // 구분조 라벨 헬퍼 (미지정 시 표기)
 const groupLabelOf = (s: Student) => s.group || "구분조 미지정";
+
+// 예상 RP 미리보기 — 세련된 승/패 배지 (값은 예상 추정치)
+function RpPreview({ win, loss }: { win: number; loss: number }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="inline-flex items-center gap-1 rounded-md bg-sky-500/10 px-2 py-1 text-sky-300 ring-1 ring-inset ring-sky-500/20">
+        <span className="text-[9px] font-bold uppercase tracking-wide opacity-60">승</span>
+        <span className="font-mono text-xs font-bold tabular-nums">+{win}</span>
+      </span>
+      <span className="inline-flex items-center gap-1 rounded-md bg-rose-500/10 px-2 py-1 text-rose-300 ring-1 ring-inset ring-rose-500/20">
+        <span className="text-[9px] font-bold uppercase tracking-wide opacity-60">패</span>
+        <span className="font-mono text-xs font-bold tabular-nums">{loss}</span>
+      </span>
+      <span className="text-[9px] text-slate-500">예상 추정치</span>
+    </div>
+  );
+}
+
+// 키워드 태그 — 클릭하면 아래에 설명이 펼쳐지는 아코디언
+function TagAccordion({ tags, leading }: { tags: { label: string; style: string; desc: string }[]; leading?: ReactNode }) {
+  const [open, setOpen] = useState<string | null>(null);
+  return (
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
+        {leading}
+        {tags.map((tag) => (
+          <button
+            key={tag.label}
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setOpen(open === tag.label ? null : tag.label); }}
+            className={cn("inline-flex items-center gap-0.5 rounded border px-1.5 py-0.5 text-[9px] font-bold transition-all", tag.style, open === tag.label && "ring-1 ring-inset ring-white/40")}
+          >
+            {tag.label}
+            <ChevronDown className={cn("size-2.5 transition-transform", open === tag.label && "rotate-180")} />
+          </button>
+        ))}
+      </div>
+      {open && (
+        <div className="rounded-md border border-slate-800/60 bg-slate-950/50 px-2.5 py-1.5 text-[10px] leading-relaxed text-slate-300 animate-in fade-in slide-in-from-top-1 duration-150">
+          {tags.find((t) => t.label === open)?.desc}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const TIER_RANK_MAP: Record<string, number> = {
   Bronze: 1,
@@ -155,6 +201,8 @@ export function MatchRecommend({
   // 선택 UI용 로컬 구분조 상태 (null = 전체)
   const [pickGroup, setPickGroup] = useState<string | null>(null);
   const [pickSearch, setPickSearch] = useState("");
+  // 복식 팀원 직접 검색
+  const [teammateSearch, setTeammateSearch] = useState("");
 
   const rosterForPickGroup = useMemo(() => {
     if (pickGroup == null) return [];
@@ -517,14 +565,8 @@ export function MatchRecommend({
   const partnerRecommendations = useMemo(() => {
     if (!player || gameType !== "double") return [];
 
-    // 파트너 후보: 같은 구분조 우선, 없으면 전체. 본인 제외.
-    let candidates = students.filter((s) => s.id !== player.id);
-
-    // 같은 구분조 선호
-    const sameGroup = candidates.filter((c) => (c.group || null) === (player.group || null));
-    if (sameGroup.length > 0) {
-      candidates = sameGroup;
-    }
+    // 파트너 후보: 구분조와 무관하게 본인 제외 전원. (추천은 점수순 정렬, 검색으로 직접 선택도 가능)
+    const candidates = students.filter((s) => s.id !== player.id);
 
     // Partner history (last 5 double matches)
     const recentPartnerIds = new Set<string>();
@@ -695,6 +737,17 @@ export function MatchRecommend({
     return students.find((s) => s.id === selectedTeammateId) ?? null;
   }, [selectedTeammateId, students]);
 
+  // 팀원 검색 필터 (추천 점수순은 유지하되, 닉네임으로 직접 찾아 선택 가능)
+  const filteredPartners = useMemo(() => {
+    const q = teammateSearch.trim().toLowerCase();
+    if (!q) return partnerRecommendations;
+    return partnerRecommendations.filter((c) => {
+      const n = (c.student.name || "").toLowerCase();
+      const nk = (c.student.nickname || "").toLowerCase();
+      return n.includes(q) || nk.includes(q);
+    });
+  }, [partnerRecommendations, teammateSearch]);
+
   // 매칭 범위는 구분조와 무관하게 전체 회원
   const scopeLabel = "전체 회원";
 
@@ -846,17 +899,7 @@ export function MatchRecommend({
       {/* 2. Flat Single match recommendations */}
       {player && gameType === "single" && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Sparkles className="size-5 text-amber-500 animate-pulse" />
-              <h4 className="font-black text-base text-slate-100">🤖 AI 추천 단식 라이벌</h4>
-            </div>
-
-            <div className="rounded-full bg-slate-900 border border-slate-800 px-3 py-1 text-[11px] text-slate-400 font-semibold flex items-center gap-1.5 shadow-sm">
-              <span className="size-1.5 rounded-full bg-neon-blue animate-ping" />
-              추천 범위: <span className="font-bold text-slate-200">{scopeLabel}</span>
-            </div>
-          </div>
+          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">추천 라이벌</h4>
 
           {showPromptToSelect ? (
             <Card className="flex flex-col items-center justify-center p-12 text-center border-dashed border-slate-800 bg-slate-950/40">
@@ -882,81 +925,46 @@ export function MatchRecommend({
                       </div>
 
                       <div className="space-y-4">
-                        {/* Opponent Profile */}
-                        <div>
-                          <div className="text-[10px] text-slate-400 font-medium">
-                            {groupLabelOf(s)}
-                          </div>
-                          <div className="mt-0.5 flex items-center gap-1.5 text-lg font-black text-slate-100">
-                            <GenderMark gender={s.gender} className="size-4.5 text-[9px]" />
-                            {displayNameOf(s)}
-                          </div>
-                        </div>
-
-                        {/* Current Tier & RP */}
-                        <div className="flex items-center gap-2">
+                        {/* 프로필: 닉네임 옆에 구분조 · 티어 · 전적 */}
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pr-8">
+                          <GenderMark gender={s.gender} className="size-4 text-[9px] shrink-0" />
+                          <span className="text-base font-black text-slate-100">{displayNameOf(s)}</span>
+                          {s.group && <span className="text-[10px] text-slate-500">{s.group}</span>}
                           <TierBadge rp={s.rp} thresholds={thresholds} />
-                          <span className="font-mono text-xs text-neon-blue font-bold">{s.rp} RP</span>
-                          <span className="text-[10px] text-slate-500">({s.wins}승 {s.losses}패)</span>
+                          <span className="text-[10px] text-slate-500">{s.wins}승 {s.losses}패</span>
                         </div>
 
-                        {/* Expected RP win/loss preview */}
+                        {/* RP 정보: RP값 + 예상 승/패(추정치) */}
                         {(() => {
                           const expectedWin = getExpectedDelta(player, s, true);
                           const expectedLoss = getExpectedDelta(player, s, false);
                           return (
-                            <div className="text-[11px] bg-slate-950/45 px-3 py-2 rounded-lg border border-slate-800/60 flex flex-col gap-1">
-                              <div className="text-[10px] text-slate-400 font-bold">[예상 RP]</div>
-                              <div className="font-mono text-xs font-black flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                                <span className="text-blue-400">[승리 시 +{expectedWin}RP]</span>
-                                <span className="text-red-400">[패배 시 {expectedLoss}RP]</span>
-                              </div>
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[11px]">
+                              <span className="font-mono text-xs font-bold text-neon-blue">{s.rp} RP</span>
+                              <RpPreview win={expectedWin} loss={expectedLoss} />
                             </div>
                           );
                         })()}
 
-                        {/* Smart tags list */}
-                        {rival.tags.length > 0 && (
-                          <div className="flex flex-wrap gap-1">
-                            {rival.tags.map((tag) => (
-                              <span
-                                key={tag.label}
-                                className={cn("inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider border", tag.style)}
-                                title={tag.desc}
-                              >
-                                {tag.label}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Explaining hover tip - all tags list */}
-                        {rival.tags.length > 0 && (
-                          <div className="space-y-1.5 bg-slate-950/45 p-2.5 rounded border border-slate-800/40">
-                            {rival.tags.map((tag) => (
-                              <div key={tag.label} className="text-[10px] text-slate-300 leading-relaxed">
-                                • {tag.desc}
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                        {/* 키워드 — 클릭 시 아래에 설명 펼침 */}
+                        {rival.tags.length > 0 && <TagAccordion tags={rival.tags} />}
                       </div>
 
                       {/* Action Button */}
                       {isStudentView ? (
-                        <div className="mt-5 w-full text-center py-2 rounded-lg border border-neon-blue/30 bg-neon-blue/5 text-neon-blue text-xs font-black tracking-wide flex items-center justify-center gap-1">
-                          <Swords className="size-3.5" /> 추천 단식 라이벌
+                        <div className="mt-5 w-full text-center py-2 rounded-lg border border-neon-blue/30 bg-neon-blue/5 text-neon-blue text-xs font-black tracking-wide">
+                          추천 라이벌
                         </div>
                       ) : isReadOnly ? (
-                        <div className="mt-5 w-full text-center py-2 rounded-lg border border-slate-800 bg-slate-900/30 text-slate-500 text-xs font-bold tracking-wide flex items-center justify-center gap-1">
-                          <Swords className="size-3.5 opacity-50" /> 경기하기 (읽기 전용)
+                        <div className="mt-5 w-full text-center py-2 rounded-lg border border-slate-800 bg-slate-900/30 text-slate-500 text-xs font-bold tracking-wide">
+                          경기하기 (읽기 전용)
                         </div>
                       ) : (
                         <Button
                           onClick={() => onSelectRecommendedMatch(player.id, s.id, undefined, undefined, "single")}
-                          className="mt-5 w-full bg-gradient-to-r from-neon-blue to-tier-diamond hover:from-neon-blue hover:to-tier-diamond text-slate-950 font-bold active:scale-[0.98] transition-all gap-1 text-xs"
+                          className="mt-5 w-full bg-gradient-to-r from-neon-blue to-tier-diamond hover:opacity-90 text-slate-950 font-bold active:scale-[0.98] transition-all text-xs"
                         >
-                          <Swords className="size-3.5" /> ⚔️ 이 회원과 경기하기
+                          이 회원과 경기하기
                         </Button>
                       )}
                     </Card>
@@ -1008,80 +1016,71 @@ export function MatchRecommend({
             <div className="space-y-4">
               <div className="flex items-center gap-2">
                 <Users className="size-5 text-neon-green" />
-                <h4 className="font-black text-base text-slate-100">👥 시너지가 기대되는 아군 팀원 후보</h4>
+                <h4 className="font-black text-base text-slate-100">👥 아군 팀원 선택</h4>
               </div>
+              <p className="text-[11px] text-slate-400 -mt-1">추천(점수순)에서 고르거나, 검색해서 원하는 팀원을 직접 선택하세요.</p>
 
-              <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
-                {partnerRecommendations.length > 0 ? (
-                  partnerRecommendations.map((cand) => {
+              {/* 팀원 직접 검색 */}
+              <input
+                type="text"
+                value={teammateSearch}
+                onChange={(e) => setTeammateSearch(e.target.value)}
+                placeholder="닉네임으로 팀원 검색"
+                className="w-full rounded-lg border border-border/60 bg-[#0e1322]/80 px-3 py-2 text-sm text-white placeholder:text-muted-foreground focus:border-neon-green/60 focus:outline-none"
+              />
+
+              <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3">
+                {filteredPartners.length > 0 ? (
+                  filteredPartners.map((cand) => {
                     const s = cand.student;
                     return (
-                      <Card
+                      <button
                         key={s.id}
+                        type="button"
                         onClick={() => setSelectedTeammateId(s.id)}
-                        className="border-slate-800 bg-slate-900/30 p-4 hover:border-neon-green/60 hover:bg-slate-900/60 active:scale-[0.98] transition-all cursor-pointer flex flex-col justify-between group"
+                        className="group flex flex-col rounded-xl border border-slate-800 bg-slate-900/30 p-3 text-left transition-all hover:border-neon-green/60 hover:bg-slate-900/60 active:scale-[0.98]"
                       >
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <div className="text-[9px] text-slate-500">{groupLabelOf(s)}</div>
-                              <div className="font-bold text-slate-100 flex items-center gap-1 mt-0.5">
-                                <GenderMark gender={s.gender} className="size-3.5 text-[8px]" />
-                                {displayNameOf(s)}
-                              </div>
+                        <div className="flex items-start justify-between gap-1">
+                          <div className="min-w-0">
+                            <div className="truncate text-[9px] text-slate-500">{groupLabelOf(s)}</div>
+                            <div className="mt-0.5 flex items-center gap-1 font-bold text-slate-100">
+                              <GenderMark gender={s.gender} className="size-3.5 text-[8px] shrink-0" />
+                              <span className="truncate">{displayNameOf(s)}</span>
                             </div>
-                            <span className="text-[10px] font-mono text-neon-green font-bold shrink-0">{s.rp} RP</span>
                           </div>
-
-                          <div className="flex items-center gap-2">
-                            <TierBadge rp={s.rp} thresholds={thresholds} />
-                            <span className="text-[10px] text-slate-500">({s.wins}승 {s.losses}패)</span>
-                          </div>
-
-                          {cand.tags.length > 0 && (
-                            <div className="flex flex-wrap gap-1 pt-1">
-                              {cand.tags.map((tag) => (
-                                <span
-                                  key={tag.label}
-                                  className={cn("inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider border", tag.style)}
-                                  title={tag.desc}
-                                >
-                                  {tag.label}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-
-                          {/* Explaining tip - all tags list */}
-                          {cand.tags.length > 0 && (
-                            <div className="space-y-1.5 bg-slate-950/45 p-2 rounded border border-slate-800/40 mt-2">
-                              {cand.tags.map((tag) => (
-                                <div key={tag.label} className="text-[10px] text-slate-300 leading-relaxed">
-                                  • {tag.desc}
-                                </div>
-                              ))}
-                            </div>
-                          )}
+                          <span className="shrink-0 font-mono text-[10px] font-bold text-neon-green">{s.rp}</span>
                         </div>
 
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="mt-4 w-full h-8 text-[11px] font-black text-neon-green hover:bg-neon-green/10 bg-neon-green/5 border border-neon-green/20 group-hover:border-neon-green/40 gap-1 active:scale-95"
-                        >
-                          <UserPlus className="size-3.5" /> 파트너로 매칭
-                        </Button>
-                      </Card>
+                        <div className="mt-2 flex items-center gap-1.5">
+                          <TierBadge rp={s.rp} thresholds={thresholds} />
+                          <span className="text-[10px] text-slate-500">{s.wins}승 {s.losses}패</span>
+                        </div>
+
+                        {cand.tags.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {cand.tags.map((tag) => (
+                              <span
+                                key={tag.label}
+                                className={cn("inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-bold border", tag.style)}
+                                title={tag.desc}
+                              >
+                                {tag.label}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="mt-3 w-full rounded-lg border border-neon-green/20 bg-neon-green/5 py-1.5 text-center text-[11px] font-black text-neon-green transition-colors group-hover:border-neon-green/50 group-hover:bg-neon-green/10">
+                          팀원으로 선택
+                        </div>
+                      </button>
                     );
                   })
                 ) : (
-                  <Card className="col-span-3 flex flex-col items-center justify-center p-12 text-center border-dashed border-slate-850 bg-slate-950/20">
-                    <AlertCircle className="size-10 text-slate-500 mb-2" />
-                    <div className="text-sm font-bold text-slate-200">파트너 추천 후보가 없습니다.</div>
-                    <p className="text-xs text-slate-400 mt-1 max-w-sm">
-                      등록된 다른 회원 데이터가 비어 있습니다.
-                    </p>
-                  </Card>
+                  <div className="col-span-2 md:col-span-3 flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-800 bg-slate-950/20 p-10 text-center">
+                    <div className="text-sm font-bold text-slate-200">{teammateSearch.trim() ? "검색 결과가 없습니다." : "팀원 후보가 없습니다."}</div>
+                    <p className="mt-1 text-xs text-slate-400">{teammateSearch.trim() ? "다른 닉네임으로 검색해 보세요." : "등록된 다른 회원이 없습니다."}</p>
+                  </div>
                 )}
               </div>
             </div>
@@ -1122,17 +1121,7 @@ export function MatchRecommend({
 
               {/* Opponent list */}
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Swords className="size-5 text-neon-green animate-pulse" />
-                    <h4 className="font-black text-base text-slate-100">🤖 AI 엄선 상대팀 추천 (합산 밸런싱)</h4>
-                  </div>
-
-                  <div className="rounded-full bg-slate-900 border border-slate-800 px-3 py-1 text-[11px] text-slate-400 font-semibold flex items-center gap-1.5 shadow-sm">
-                    <span className="size-1.5 rounded-full bg-neon-green animate-ping" />
-                    추천 범위: <span className="font-bold text-slate-200">{scopeLabel}</span>
-                  </div>
-                </div>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">상대팀 추천</h4>
 
                 {showPromptToSelect ? (
                   <Card className="flex flex-col items-center justify-center p-12 text-center border-dashed border-slate-800 bg-slate-950/40">
@@ -1170,120 +1159,61 @@ export function MatchRecommend({
                             </div>
 
                             <div className="space-y-4">
-                              {/* Opponents profile */}
-                              <div className="space-y-3.5">
-                                <span className="inline-flex items-center rounded bg-neon-green/15 text-neon-green border border-neon-green/25 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider">
-                                  추천 매칭팀
-                                </span>
-
-                                <div className="space-y-2 border-b border-slate-800 pb-3">
-                                  {/* Opponent 1 */}
-                                  <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-1.5">
-                                      <GenderMark gender={pair.o1.gender} className="size-3.5 text-[8px]" />
-                                      <span className="text-xs font-bold text-slate-100">{displayNameOf(pair.o1)}</span>
-                                      <span className="text-[9px] text-slate-500">{groupLabelOf(pair.o1)}</span>
-                                    </div>
-                                    <div className="flex items-center gap-1.5">
-                                      <TierBadge rp={pair.o1.rp} thresholds={thresholds} />
-                                      <span className="font-mono text-[10px] text-slate-400 font-bold">{pair.o1.rp} RP</span>
-                                    </div>
-                                  </div>
-
-                                  {/* Opponent 2 */}
-                                  <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-1.5">
-                                      <GenderMark gender={pair.o2.gender} className="size-3.5 text-[8px]" />
-                                      <span className="text-xs font-bold text-slate-100">{displayNameOf(pair.o2)}</span>
-                                      <span className="text-[9px] text-slate-500">{groupLabelOf(pair.o2)}</span>
-                                    </div>
-                                    <div className="flex items-center gap-1.5">
-                                      <TierBadge rp={pair.o2.rp} thresholds={thresholds} />
-                                      <span className="font-mono text-[10px] text-slate-400 font-bold">{pair.o2.rp} RP</span>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* RP Summary */}
-                              <div className="flex items-center justify-between text-xs">
-                                <div>
-                                  <span className="text-[10px] text-slate-400 block">상대 합산 RP</span>
-                                  <span className="font-mono font-black text-slate-200">{pair.combinedRp} RP</span>
-                                </div>
-                                <div className="text-right">
-                                  <span className="text-[10px] text-slate-400 block">격차</span>
-                                  <span className={cn(
-                                    "font-mono font-black",
-                                    delta > 0 ? "text-rose-400" : "text-emerald-400"
-                                  )}>
-                                    {sign} RP
+                              {/* 키워드(추천 매칭팀 + 태그) — 클릭 시 아래에 설명 펼침 */}
+                              <TagAccordion
+                                leading={
+                                  <span className="inline-flex items-center rounded bg-neon-green/15 text-neon-green border border-neon-green/25 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider">
+                                    추천 매칭팀
                                   </span>
-                                </div>
+                                }
+                                tags={pair.tags ?? []}
+                              />
+
+                              {/* 상대팀 닉네임 1행 */}
+                              <div className="flex items-center gap-1.5 text-sm font-bold text-slate-100">
+                                <GenderMark gender={pair.o1.gender} className="size-3.5 text-[8px] shrink-0" />
+                                <span className="truncate">{displayNameOf(pair.o1)}</span>
+                                <span className="text-slate-600 shrink-0">&</span>
+                                <GenderMark gender={pair.o2.gender} className="size-3.5 text-[8px] shrink-0" />
+                                <span className="truncate">{displayNameOf(pair.o2)}</span>
                               </div>
 
-                              {/* Expected RP win/loss preview */}
+                              {/* RP 정보 1행: 합산 · 격차 · 예상 승/패(추정치) */}
                               {(() => {
                                 const expectedWin = getExpectedDelta(player, pair.o1, true, selectedTeammate, pair.o2);
                                 const expectedLoss = getExpectedDelta(player, pair.o1, false, selectedTeammate, pair.o2);
                                 return (
-                                  <div className="text-[11px] bg-slate-950/45 px-3 py-2 rounded-lg border border-slate-800/60 flex flex-col gap-1">
-                                    <div className="text-[10px] text-slate-400 font-bold">[예상 RP]</div>
-                                    <div className="font-mono text-xs font-black flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                                      <span className="text-blue-400">[승리 시 +{expectedWin}RP]</span>
-                                      <span className="text-red-400">[패배 시 {expectedLoss}RP]</span>
-                                    </div>
+                                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-slate-800/60 bg-slate-950/40 px-2.5 py-2 text-[11px]">
+                                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500">RP</span>
+                                    <span className="text-slate-400">상대합산 <span className="font-mono font-bold text-slate-200">{pair.combinedRp}</span></span>
+                                    <span className="text-slate-400">
+                                      {delta === 0 ? (
+                                        <span className="font-bold text-slate-300">우리와 동일</span>
+                                      ) : (
+                                        <>우리보다 <span className={cn("font-bold", delta > 0 ? "text-rose-400" : "text-emerald-400")}>{Math.abs(delta)} {delta > 0 ? "높음" : "낮음"}</span></>
+                                      )}
+                                    </span>
+                                    <RpPreview win={expectedWin} loss={expectedLoss} />
                                   </div>
                                 );
                               })()}
-
-                              {/* Smart tags list */}
-                              {pair.tags && pair.tags.length > 0 && (
-                                <div className="flex flex-wrap gap-1">
-                                  {pair.tags.map((tag) => (
-                                    <span
-                                      key={tag.label}
-                                      className={cn("inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider border", tag.style)}
-                                      title={tag.desc}
-                                    >
-                                      {tag.label}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-
-                              {/* Explaining tip - all tags list */}
-                              {pair.tags && pair.tags.length > 0 && (
-                                <div className="space-y-1.5 bg-slate-950/45 p-2 rounded border border-slate-800/40">
-                                  {pair.tags.map((tag) => (
-                                    <div key={tag.label} className="text-[10px] text-slate-300 leading-relaxed">
-                                      • {tag.desc}
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-
-                              {/* Analytical commentary */}
-                              <div className="text-[10px] text-slate-400 bg-slate-950/40 p-2.5 rounded border border-slate-800/40 leading-relaxed min-h-[50px]">
-                                {analysis}
-                              </div>
                             </div>
 
                             {/* Action Trigger */}
                             {isStudentView ? (
-                              <div className="mt-5 w-full text-center py-2 rounded-lg border border-neon-green/30 bg-neon-green/5 text-neon-green text-xs font-black tracking-wide flex items-center justify-center gap-1">
-                                <Swords className="size-3.5 animate-pulse" /> 추천 복식 라이벌
+                              <div className="mt-5 w-full text-center py-2 rounded-lg border border-neon-green/30 bg-neon-green/5 text-neon-green text-xs font-black tracking-wide">
+                                추천 복식 라이벌
                               </div>
                             ) : isReadOnly ? (
-                              <div className="mt-5 w-full text-center py-2 rounded-lg border border-slate-800 bg-slate-900/30 text-slate-500 text-xs font-bold tracking-wide flex items-center justify-center gap-1">
-                                <Swords className="size-3.5 opacity-50" /> 경기하기 (읽기 전용)
+                              <div className="mt-5 w-full text-center py-2 rounded-lg border border-slate-800 bg-slate-900/30 text-slate-500 text-xs font-bold tracking-wide">
+                                경기하기 (읽기 전용)
                               </div>
                             ) : (
                               <Button
                                 onClick={() => onSelectRecommendedMatch(player.id, pair.o1.id, selectedTeammate!.id, pair.o2.id, "double")}
-                                className="mt-5 w-full bg-gradient-to-r from-neon-green to-emerald-400 hover:from-neon-green hover:to-emerald-400 text-slate-950 font-bold active:scale-[0.98] transition-all gap-1 text-xs"
+                                className="mt-5 w-full bg-gradient-to-r from-neon-green to-emerald-400 hover:opacity-90 text-slate-950 font-bold active:scale-[0.98] transition-all text-xs"
                               >
-                                <Swords className="size-3.5" /> ⚔️ 이 팀들과 경기하기
+                                이 팀과 경기하기
                               </Button>
                             )}
                           </Card>
