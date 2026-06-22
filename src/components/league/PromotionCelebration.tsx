@@ -187,16 +187,16 @@ export function PromotionCelebration({ studentName, newTier, onConfirm }: Promot
           
           <div className="space-y-1">
             <h3 className="text-2xl font-black tracking-tight text-foreground">
-              {studentName ? `${studentName} 학생` : "축하합니다!"}
+              {studentName ? `${studentName} 선수` : "축하합니다!"}
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              {studentName ? "위 학생이 경기 후 높은 기량을 펼쳐" : "성공적으로 실력을 입증하여"} <br />
+              {studentName ? "위 선수이 경기 후 높은 기량을 펼쳐" : "성공적으로 실력을 입증하여"} <br />
               <span className={cn("font-black text-lg", details.color)}>{newTier}</span> 티어로 승급했습니다!
             </p>
           </div>
         </div>
 
-        {/* 3. 확인 버튼 (학생 '나의 기록' 탭으로 리다이렉트 유도) */}
+        {/* 3. 확인 버튼 (선수 '나의 기록' 탭으로 리다이렉트 유도) */}
         <div className="w-full mt-8">
           <Button
             onClick={onConfirm}

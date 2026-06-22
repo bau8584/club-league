@@ -47,19 +47,19 @@ export function Login() {
           <div className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-neon-blue/35 bg-neon-blue/5 mb-3">
             <Sparkles className="size-3 text-neon-blue" />
             <span className="text-[10px] font-black uppercase tracking-[0.2em] text-neon-blue">
-              ELEMENTARY SPORTS LEAGUE
+              CLUB SPORTS LEAGUE
             </span>
           </div>
 
           {/* Central Title */}
           <h1 className="text-2xl md:text-3xl font-black tracking-tight text-foreground bg-gradient-to-r from-foreground via-foreground to-muted-foreground bg-clip-text text-transparent">
-            학교 리그 관리 시스템
+            클럽 리그 관리 시스템
           </h1>
 
           {/* Description */}
           <p className="text-xs md:text-sm text-muted-foreground mt-3 max-w-sm leading-relaxed">
-            체육수업 및 반 대항전 리그를 간편하게 관리하고<br />
-            실시간 티어와 랭킹 시스템을 통해 동기를 부여하세요.
+            동호회 리그와 멤버를 간편하게 관리하고<br />
+            실시간 티어와 랭킹 시스템으로 즐거움을 더하세요.
           </p>
 
           {/* Spacer */}

@@ -118,15 +118,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "초등 스포츠 리그 · 티어 시스템" },
-      { name: "description", content: "초등학교 체육수업과 반 대항전을 위한 스포츠 리그 & 티어 랭킹 앱." },
+      { name: "description", content: "초등클럽 체육수업과 반 대항전을 위한 스포츠 리그 & 티어 랭킹 앱." },
       { name: "author", content: "Lovable" },
       { property: "og:title", content: "초등 스포츠 리그 · 티어 시스템" },
-      { property: "og:description", content: "초등학교 체육수업과 반 대항전을 위한 스포츠 리그 & 티어 랭킹 앱." },
+      { property: "og:description", content: "초등클럽 체육수업과 반 대항전을 위한 스포츠 리그 & 티어 랭킹 앱." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@Lovable" },
       { name: "twitter:title", content: "초등 스포츠 리그 · 티어 시스템" },
-      { name: "twitter:description", content: "초등학교 체육수업과 반 대항전을 위한 스포츠 리그 & 티어 랭킹 앱." },
+      { name: "twitter:description", content: "초등클럽 체육수업과 반 대항전을 위한 스포츠 리그 & 티어 랭킹 앱." },
       { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/e57697e9-090c-47b8-9098-36cb4863a462/id-preview-9856be04--c1d0bcbc-12c3-486c-b9d2-865bdef007a8.lovable.app-1779425665875.png" },
       { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/e57697e9-090c-47b8-9098-36cb4863a462/id-preview-9856be04--c1d0bcbc-12c3-486c-b9d2-865bdef007a8.lovable.app-1779425665875.png" },
     ],
@@ -162,14 +162,8 @@ function RootComponent() {
   const [supabaseSession, setSupabaseSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
-  const isViewRoute = router.state.location.pathname.startsWith("/view/");
 
   useEffect(() => {
-    if (isViewRoute) {
-      setLoading(false);
-      return;
-    }
-
     // 1. Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSupabaseSession(session);
@@ -184,7 +178,7 @@ function RootComponent() {
     return () => {
       subscription.unsubscribe();
     };
-  }, [isViewRoute]);
+  }, []);
 
   if (loading) {
     return (
@@ -201,7 +195,7 @@ function RootComponent() {
     <GlobalErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <LeagueStoreProvider>
-          {isViewRoute || supabaseSession ? <Outlet /> : <Login />}
+          {supabaseSession ? <Outlet /> : <Login />}
         </LeagueStoreProvider>
       </QueryClientProvider>
     </GlobalErrorBoundary>

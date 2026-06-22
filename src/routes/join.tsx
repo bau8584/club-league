@@ -51,41 +51,15 @@ function JoinRouteComponent() {
     if (joining) return;
     setJoining(true);
     try {
-      const user = supabaseSession.user;
-      
-      // 1. Fetch current class data
-      const { data: classData, error: fetchErr } = await supabase
-        .from("classes")
-        .select("scorekeeper_uids, owner_uid")
-        .eq("id", classId)
-        .single();
+      // 안전한 참가: RLS를 우회하는 join_league RPC로 본인만 멤버에 추가.
+      const { data, error: joinErr } = await supabase.rpc("join_league", { p_class_id: classId });
+      if (joinErr) throw joinErr;
 
-      if (fetchErr) throw fetchErr;
+      const row = Array.isArray(data) ? data[0] : data;
+      toast.success(row?.is_owner ? "이 리그의 개설자입니다. 대시보드로 이동합니다." : "리그에 참여했습니다!");
 
-      if (classData) {
-        if (classData.owner_uid === user.id) {
-          toast.info("이 리그의 소유자(개설자)입니다. 대시보드로 이동합니다.");
-          navigate({ to: `/class/${classId}` });
-          return;
-        }
-
-        const currentKeepers = classData.scorekeeper_uids || [];
-        if (!currentKeepers.includes(user.id)) {
-          const updatedKeepers = [...currentKeepers, user.id];
-          const { error: updateErr } = await supabase
-            .from("classes")
-            .update({ scorekeeper_uids: updatedKeepers })
-            .eq("id", classId);
-
-          if (updateErr) throw updateErr;
-          toast.success("기록원으로 등록되었습니다!");
-        } else {
-          toast.info("이미 이 리그의 기록원으로 가입되어 있습니다.");
-        }
-
-        // Navigate to the class dashboard
-        navigate({ to: `/class/${classId}` });
-      }
+      // Navigate to the class dashboard
+      navigate({ to: `/class/${classId}` });
     } catch (err: any) {
       console.error("Error joining league:", err.message);
       toast.error("초대 수락 중 오류가 발생했습니다: " + err.message);

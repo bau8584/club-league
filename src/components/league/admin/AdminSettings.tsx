@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Save, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { TierName, TierSettings, DynamicBonuses, DynamicPenalties, DecaySettingsRecord } from "@/lib/league-types";
+import type { TierName, TierSettings, DynamicBonuses, DynamicPenalties, DecaySettingsRecord, MatchInputMode } from "@/lib/league-types";
 import type { ActiveBonuses } from "@/lib/league-store";
 import {
   THRESHOLD_PRESETS, WINLOSS_PRESETS, BONUS_PRESETS, PENALTY_PRESETS,
@@ -242,6 +242,8 @@ export interface AdminSettingsProps {
   lockLeaderboard?: boolean;
   lockAdmin?: boolean;
   saveLockSetting?: (which: "leaderboard" | "admin", enabled: boolean) => Promise<void> | void;
+  matchInputMode?: MatchInputMode;
+  saveMatchInputMode?: (mode: MatchInputMode) => Promise<void> | void;
   accessCode?: string;
   isOwner?: boolean;
   tierSettings: TierSettings | null;
@@ -265,6 +267,8 @@ export function AdminSettings({
   lockLeaderboard = false,
   lockAdmin = false,
   saveLockSetting,
+  matchInputMode = "admin-only",
+  saveMatchInputMode,
   accessCode = "",
   isOwner = false,
   tierSettings,
@@ -644,13 +648,62 @@ export function AdminSettings({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200 max-w-4xl">
+      {/* 0-A. 경기 입력 방식 카드 — 소유자 전용 */}
+      {isOwner && (
+        <Card className="border border-neon-blue/40 bg-neon-blue/[0.06] p-6 backdrop-blur shadow-xl">
+          <div className="space-y-3">
+            <span className="text-xs font-bold text-neon-blue uppercase tracking-wider block">🏸 경기 입력 방식</span>
+            <p className="text-[11px] text-muted-foreground leading-relaxed max-w-md">
+              누가 경기 결과를 입력할 수 있는지 정합니다. <b>관리자만</b>은 클럽형(태블릿) 방식, <b>자율 입력</b>은 멤버 각자가 자기 경기를 기록하는 동호회 방식입니다.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {([
+                { value: "admin-only", label: "관리자만", desc: "관리자·기록원만 입력", disabled: false },
+                { value: "free", label: "자율 입력", desc: "모든 멤버가 자기 경기 입력", disabled: false },
+                { value: "peer-confirm", label: "상대 확인", desc: "상대가 확인해야 확정", disabled: true },
+                { value: "admin-approve", label: "관리자 승인", desc: "관리자가 승인해야 확정", disabled: true },
+              ] as const).map((opt) => {
+                const selected = matchInputMode === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    disabled={opt.disabled}
+                    onClick={() => !opt.disabled && saveMatchInputMode?.(opt.value)}
+                    className={
+                      "text-left rounded-lg border px-3 py-2.5 transition " +
+                      (opt.disabled
+                        ? "border-border/20 bg-background/20 opacity-50 cursor-not-allowed"
+                        : selected
+                          ? "border-neon-blue bg-neon-blue/15 ring-1 ring-neon-blue/50"
+                          : "border-border/30 bg-background/30 hover:border-neon-blue/50")
+                    }
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[12px] font-bold text-foreground">{opt.label}</span>
+                      {selected && !opt.disabled && <span className="text-neon-blue text-xs">✓</span>}
+                      {opt.disabled && <span className="text-[9px] font-bold text-muted-foreground bg-background/50 rounded px-1.5 py-0.5">준비 중</span>}
+                    </div>
+                    <span className="text-[10px] text-muted-foreground leading-snug block mt-0.5">{opt.desc}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[10px] text-muted-foreground/80 leading-snug bg-background/30 rounded-lg px-2.5 py-1.5 border border-border/20">
+              💡 <b>상대 확인</b>·<b>관리자 승인</b>은 계정 연동·승인 기능이 준비되면 활성화됩니다.
+            </p>
+          </div>
+        </Card>
+      )}
+
       {/* 0. 화면 잠금 설정 카드 — 소유자 전용 */}
       {isOwner && (
         <Card className="border border-amber-500/40 bg-amber-500/[0.06] p-6 backdrop-blur shadow-xl">
           <div className="space-y-3">
             <span className="text-xs font-bold text-amber-500 uppercase tracking-wider block">🔒 화면 잠금</span>
             <p className="text-[11px] text-muted-foreground leading-relaxed max-w-md">
-              태블릿을 학생에게 맡길 때 켜세요. 잠긴 화면은 <b>리그 코드(4자리)</b>를 입력해야 열리며, 경기 기록 입력 화면은 그대로 열려 있습니다.
+              태블릿을 선수에게 맡길 때 켜세요. 잠긴 화면은 <b>리그 코드(4자리)</b>를 입력해야 열리며, 경기 기록 입력 화면은 그대로 열려 있습니다.
             </p>
 
             <div className="flex items-center justify-between gap-3 rounded-lg border border-border/30 bg-background/30 px-3 py-2.5">
@@ -1094,7 +1147,7 @@ export function AdminSettings({
                 {/* 7. lossComfort */}
                 <BonusCardWrapper
                   title="🩹 꺾이지 않는 마음"
-                  desc="설정한 티어 이하 학생은 져도 위로 RP를 받습니다."
+                  desc="설정한 티어 이하 선수은 져도 위로 RP를 받습니다."
                   enabled={localDynamicBonuses.lossComfortEnabled}
                   onToggle={() => setLocalDynamicBonuses(prev => ({ ...prev, lossComfortEnabled: !prev.lossComfortEnabled }))}
                 >
@@ -1358,7 +1411,7 @@ export function AdminSettings({
                       </div>
                     </div>
                     <p className="text-[10px] text-muted-foreground leading-snug bg-muted/30 rounded-lg px-2.5 py-1.5 border border-border/20">
-                      💡 한 번 차감된 뒤 경기를 하지 않으면 <b>기준일수마다 다시 1회씩</b> 차감됩니다. 경기를 하면 카운트가 초기화됩니다. 학생 화면에는 “차감까지 며칠 남음”이 표시됩니다.
+                      💡 한 번 차감된 뒤 경기를 하지 않으면 <b>기준일수마다 다시 1회씩</b> 차감됩니다. 경기를 하면 카운트가 초기화됩니다. 선수 화면에는 “차감까지 며칠 남음”이 표시됩니다.
                     </p>
                     {/* 티어별 감점 적용 여부 + 1회 차감 RP */}
                     <div className="space-y-1.5">

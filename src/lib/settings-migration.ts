@@ -30,6 +30,9 @@ export function migrateSettings(rawSettings: any): any {
 
   const migrated = { ...rawSettings };
 
+  // 0. 경기 입력 방식 — 기존 리그는 클럽형(관리자만) 기본값
+  migrated.matchInputMode = rawSettings.matchInputMode ?? "admin-only";
+
   // 1. Migrate "tiers" (RP & thresholds)
   if (!migrated.tiers) {
     const th = migrated.tierThresholds || { Bronze: 0, Silver: 870, Gold: 1120, Platinum: 1400, Diamond: 1720 };

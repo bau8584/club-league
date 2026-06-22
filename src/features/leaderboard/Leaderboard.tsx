@@ -3,13 +3,12 @@ import { useLeagueStore } from "@/lib/league-store";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { TierBadge } from "./TierBadge";
-import { GenderMark } from "./GenderMark";
+import { TierBadge } from "@/components/league/TierBadge";
+import { GenderMark } from "@/components/league/GenderMark";
 import { cn } from "@/lib/utils";
 import { Search } from "lucide-react";
 import { getTier, TIER_ORDER, TIER_STYLES, type TierName, type Student } from "@/lib/league-types";
 
-const GRADES = [1, 2, 3, 4, 5, 6];
 type GenderFilter = "all" | "M" | "F";
 
 function getWinStreak(recent: ("W" | "L")[]): number {
@@ -28,8 +27,7 @@ export function Leaderboard({
   students: Student[]; 
   thresholds?: Record<TierName, number>;
 }) {
-  const [grade, setGrade] = useState<number | "all">("all");
-  const [classNum, setClassNum] = useState<number | "all">("all");
+  const [group, setGroup] = useState<string | "all">("all");
   const [tier, setTier] = useState<TierName | "all">("all");
   const [gender, setGender] = useState<GenderFilter>("all");
   const [query, setQuery] = useState("");
@@ -48,23 +46,23 @@ export function Leaderboard({
 
 
 
-  const availableClasses = useMemo(() => {
-    if (grade === "all") return [];
-    const set = new Set<number>();
-    students.filter((s) => s.grade === grade).forEach((s) => set.add(s.classNum));
-    return Array.from(set).sort((a, b) => a - b);
-  }, [students, grade]);
+  const availableGroups = useMemo(() => {
+    const set = new Set<string>();
+    students.forEach((s) => {
+      if (s.group) set.add(s.group);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [students]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return students
-      .filter((s) => (grade === "all" ? true : s.grade === grade))
-      .filter((s) => (classNum === "all" ? true : s.classNum === classNum))
+      .filter((s) => (group === "all" ? true : s.group === group))
       .filter((s) => (tier === "all" ? true : getTier(s.rp, thresholds) === tier))
       .filter((s) => (gender === "all" ? true : s.gender === gender))
-      .filter((s) => (q ? (s.realName || s.name).toLowerCase().includes(q) : true))
+      .filter((s) => (q ? (s.nickname || s.name).toLowerCase().includes(q) : true))
       .sort((a, b) => b.rp - a.rp);
-  }, [students, grade, classNum, tier, gender, query, thresholds]);
+  }, [students, group, tier, gender, query, thresholds]);
 
   return (
     <div className="space-y-5">
@@ -74,33 +72,21 @@ export function Leaderboard({
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="학생 이름으로 검색..."
+            placeholder="선수 이름으로 검색..."
             className="h-10 border-border/60 bg-card/60 pl-9 text-sm"
           />
         </div>
 
-        <div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">학년</p>
-          <div className="flex flex-wrap gap-2">
-            <FilterChip active={grade === "all"} onClick={() => { setGrade("all"); setClassNum("all"); }}>전체보기</FilterChip>
-            {GRADES.map((g) => (
-              <FilterChip key={g} active={grade === g} onClick={() => { setGrade(g); setClassNum("all"); }}>
-                {g}학년
-              </FilterChip>
-            ))}
-          </div>
-        </div>
-        {grade !== "all" && (
+        {availableGroups.length > 0 && (
           <div>
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">반</p>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">구분조</p>
             <div className="flex flex-wrap gap-2">
-              <FilterChip active={classNum === "all"} onClick={() => setClassNum("all")}>전체반</FilterChip>
-              {availableClasses.map((c) => (
-                <FilterChip key={c} active={classNum === c} onClick={() => setClassNum(c)}>{c}반</FilterChip>
+              <FilterChip active={group === "all"} onClick={() => setGroup("all")}>전체보기</FilterChip>
+              {availableGroups.map((g) => (
+                <FilterChip key={g} active={group === g} onClick={() => setGroup(g)}>
+                  {g}
+                </FilterChip>
               ))}
-              {availableClasses.length === 0 && (
-                <span className="text-sm text-muted-foreground">등록된 반이 없습니다</span>
-              )}
             </div>
           </div>
         )}
@@ -136,8 +122,7 @@ export function Leaderboard({
             <thead>
               <tr className="border-b border-border/60 bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
                 <th className="px-4 py-3 text-left w-12 sm:w-16">순위</th>
-                <th className="px-3 py-3 text-left hidden sm:table-cell">학년/반</th>
-                <th className="px-2 py-3 text-left hidden xs:table-cell">번호</th>
+                <th className="px-3 py-3 text-left hidden sm:table-cell">구분조</th>
                 <th className="px-4 py-3 text-left">이름</th>
                 <th className="px-4 py-3 text-left">티어</th>
                 <th className="px-4 py-3 text-right">RP</th>
@@ -154,16 +139,17 @@ export function Leaderboard({
                     <td className="px-4 py-3 font-bold tabular-nums w-12 sm:w-16">
                       <RankBadge rank={i + 1} />
                     </td>
-                    <td className="px-3 py-3 text-muted-foreground hidden sm:table-cell">{s.grade}-{s.classNum}</td>
-                    <td className="px-2 py-3 tabular-nums text-muted-foreground hidden xs:table-cell">{s.number}</td>
+                    <td className="px-3 py-3 text-muted-foreground hidden sm:table-cell">{s.group || "-"}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2 font-semibold">
                         <GenderMark gender={s.gender} />
                         <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2">
-                          <span>{s.realName || s.name}</span>
-                          <span className="text-[10px] text-muted-foreground sm:hidden">
-                            ({s.grade}-{s.classNum} · {s.number}번)
-                          </span>
+                          <span>{s.nickname || s.name}</span>
+                          {s.group && (
+                            <span className="text-[10px] text-muted-foreground sm:hidden">
+                              ({s.group})
+                            </span>
+                          )}
                         </div>
                         {getWinStreak(s.recent) >= 3 && (
                           <span
@@ -205,7 +191,7 @@ export function Leaderboard({
                 );
               })}
               {filtered.length === 0 && (
-                <tr><td colSpan={8} className="px-4 py-10 text-center text-muted-foreground animate-pulse">조건에 맞는 선수가 없습니다.</td></tr>
+                <tr><td colSpan={7} className="px-4 py-10 text-center text-muted-foreground animate-pulse">조건에 맞는 선수가 없습니다.</td></tr>
               )}
             </tbody>
           </table>

@@ -77,7 +77,7 @@ export function SeasonManagePanel() {
             </AlertDialogTitle>
             <AlertDialogDescription className="text-sm text-muted-foreground mt-2 leading-relaxed">
               {confirm?.type === "restore" ? (
-                <>현재 진행분은 먼저 보관되고, 학생 RP·전적이 <b className="text-foreground">{confirm?.season}</b> 시즌 값으로 복원됩니다. 그 사이 등록된 전학생은 1000 RP로 시작합니다. 이후 새 경기는 이 시즌에 이어서 쌓입니다.</>
+                <>현재 진행분은 먼저 보관되고, 선수 RP·전적이 <b className="text-foreground">{confirm?.season}</b> 시즌 값으로 복원됩니다. 그 사이 등록된 전선수은 1000 RP로 시작합니다. 이후 새 경기는 이 시즌에 이어서 쌓입니다.</>
               ) : (
                 <>이 시즌의 보관된 순위 기록이 삭제됩니다. 이 작업은 되돌릴 수 없습니다.</>
               )}

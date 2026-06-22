@@ -31,8 +31,8 @@ export function AdminMatchRecords({
   onDeleteMatch,
   onUpdateMatchScore,
 }: AdminMatchRecordsProps) {
-  // 교사 관리자 화면에서는 실명을 우선 표시 (교사 코드 보안으로 접근 통제 예정)
-  const displayName = (p: { name: string; realName?: string }) => p.realName || p.name;
+  // 관리자 화면에서는 별명을 우선 표시, 없으면 이름
+  const displayName = (p: { name: string; nickname?: string | null }) => p.nickname || p.name;
 
   // Score editor states
   const [editingMatchId, setEditingMatchId] = useState<string | null>(null);
@@ -42,14 +42,15 @@ export function AdminMatchRecords({
   // 경기 삭제 확인 다이얼로그 (window.confirm 대체)
   const [pendingDelete, setPendingDelete] = useState<{ id: string; desc: string } | null>(null);
 
-  const requestDeleteMatch = (m: Match, playerA: { name: string }, playerB: { name: string }, playerA2: { name: string } | null, playerB2: { name: string } | null, aWon: boolean) => {
+  type PlayerLike = { name: string; nickname?: string | null };
+  const requestDeleteMatch = (m: Match, playerA: PlayerLike, playerB: PlayerLike, playerA2: PlayerLike | null | undefined, playerB2: PlayerLike | null | undefined, aWon: boolean) => {
     const deltaWinner = aWon ? (m.rpDeltaA !== undefined ? Math.abs(m.rpDeltaA) : 25) : (m.rpDeltaB !== undefined ? Math.abs(m.rpDeltaB) : 25);
     const deltaLoser = !aWon ? (m.rpDeltaA !== undefined ? Math.abs(m.rpDeltaA) : 20) : (m.rpDeltaB !== undefined ? Math.abs(m.rpDeltaB) : 20);
     const playersA = playerA2 ? `${displayName(playerA)} & ${displayName(playerA2)}` : displayName(playerA);
     const playersB = playerB2 ? `${displayName(playerB)} & ${displayName(playerB2)}` : displayName(playerB);
     setPendingDelete({
       id: m.id,
-      desc: `이 경기 기록을 삭제하면 모든 참여 학생의 RP가 경기 이전 상태로 롤백 복원됩니다.\n· ${playersA}: RP ${aWon ? "-" : "+"}${deltaWinner}\n· ${playersB}: RP ${!aWon ? "-" : "+"}${deltaLoser}\n이 작업은 되돌릴 수 없습니다.`,
+      desc: `이 경기 기록을 삭제하면 모든 참여 선수의 RP가 경기 이전 상태로 롤백 복원됩니다.\n· ${playersA}: RP ${aWon ? "-" : "+"}${deltaWinner}\n· ${playersB}: RP ${!aWon ? "-" : "+"}${deltaLoser}\n이 작업은 되돌릴 수 없습니다.`,
     });
   };
 
@@ -78,7 +79,7 @@ export function AdminMatchRecords({
 
     onUpdateMatchScore(editingMatchId, sA, sB);
     setEditingMatchId(null);
-    toast.success("경기 점수가 수정되었으며 두 학생의 보너스 및 최종 RP가 오차 없이 즉시 재계산되어 덮어씌워졌습니다!");
+    toast.success("경기 점수가 수정되었으며 두 선수의 보너스 및 최종 RP가 오차 없이 즉시 재계산되어 덮어씌워졌습니다!");
   };
 
   // Filtered matches logic
@@ -149,57 +150,22 @@ export function AdminMatchRecords({
     }
 
     if (matchFilterType === "class") {
-      const query = appliedSearchGradeClass.trim();
+      const query = appliedSearchGradeClass.trim().toLowerCase();
       if (!query) return [];
 
-      // 1. Grade-Class format like "6-1", "6 1"
-      const parts = query.split(/[\-\s\/학년반]+/);
-      if (parts.length >= 2) {
-        const qGrade = parseInt(parts[0], 10);
-        const qClass = parseInt(parts[1], 10);
-        if (!isNaN(qGrade) && !isNaN(qClass)) {
-          return result.filter((m) => {
-            const playerA = students.find((s) => s.id === m.playerAId);
-            const playerB = students.find((s) => s.id === m.playerBId);
-            const playerA2 = m.playerA2Id ? students.find((s) => s.id === m.playerA2Id) : null;
-            const playerB2 = m.playerB2Id ? students.find((s) => s.id === m.playerB2Id) : null;
-            const aMatch = (playerA && playerA.grade === qGrade && playerA.classNum === qClass) ||
-                           (playerA2 && playerA2.grade === qGrade && playerA2.classNum === qClass);
-            const bMatch = (playerB && playerB.grade === qGrade && playerB.classNum === qClass) ||
-                           (playerB2 && playerB2.grade === qGrade && playerB2.classNum === qClass);
-            return aMatch || bMatch;
-          });
-        }
-      }
-
-      // 2. Just a single number -> match grade OR class
-      const qNum = parseInt(query, 10);
-      if (!isNaN(qNum)) {
-        return result.filter((m) => {
-          const playerA = students.find((s) => s.id === m.playerAId);
-          const playerB = students.find((s) => s.id === m.playerBId);
-          const playerA2 = m.playerA2Id ? students.find((s) => s.id === m.playerA2Id) : null;
-          const playerB2 = m.playerB2Id ? students.find((s) => s.id === m.playerB2Id) : null;
-          return (
-            (playerA && (playerA.grade === qNum || playerA.classNum === qNum)) ||
-            (playerB && (playerB.grade === qNum || playerB.classNum === qNum)) ||
-            (playerA2 && (playerA2.grade === qNum || playerA2.classNum === qNum)) ||
-            (playerB2 && (playerB2.grade === qNum || playerB2.classNum === qNum))
-          );
-        });
-      }
-
-      // 3. String representation
+      // 구분조(group) 문자열 부분 일치 검색
       return result.filter((m) => {
         const playerA = students.find((s) => s.id === m.playerAId);
         const playerB = students.find((s) => s.id === m.playerBId);
         const playerA2 = m.playerA2Id ? students.find((s) => s.id === m.playerA2Id) : null;
         const playerB2 = m.playerB2Id ? students.find((s) => s.id === m.playerB2Id) : null;
-        const aStr = playerA ? `${playerA.grade}-${playerA.classNum}` : "";
-        const a2Str = playerA2 ? `${playerA2.grade}-${playerA2.classNum}` : "";
-        const bStr = playerB ? `${playerB.grade}-${playerB.classNum}` : "";
-        const b2Str = playerB2 ? `${playerB2.grade}-${playerB2.classNum}` : "";
-        return aStr.includes(query) || a2Str.includes(query) || bStr.includes(query) || b2Str.includes(query);
+        const grp = (s: Student | null | undefined) => (s?.group ?? "").toLowerCase();
+        return (
+          (!!playerA && grp(playerA).includes(query)) ||
+          (!!playerB && grp(playerB).includes(query)) ||
+          (!!playerA2 && grp(playerA2).includes(query)) ||
+          (!!playerB2 && grp(playerB2).includes(query))
+        );
       });
     }
 
@@ -260,7 +226,7 @@ export function AdminMatchRecords({
               )}
             >
               <Search className="size-3.5" />
-              학생 이름 검색
+              선수 이름 검색
             </button>
             <button
               onClick={() => {
@@ -300,7 +266,7 @@ export function AdminMatchRecords({
               )}
             >
               <Users className="size-3.5" />
-              학년·반 검색 (6-1 등)
+              구분조 검색
             </button>
           </div>
 
@@ -311,7 +277,7 @@ export function AdminMatchRecords({
                 <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground/75" />
                 <Input
                   type="text"
-                  placeholder="조회할 학생 이름을 입력하세요..."
+                  placeholder="조회할 선수 이름을 입력하세요..."
                   value={matchSearchStudent}
                   onChange={(e) => setMatchSearchStudent(e.target.value)}
                   onKeyDown={(e) => {
@@ -385,7 +351,7 @@ export function AdminMatchRecords({
                 <Users className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground/75" />
                 <Input
                   type="text"
-                  placeholder="조회할 학년-반을 입력하세요 (예: 6-1, 6)..."
+                  placeholder="조회할 구분조를 입력하세요..."
                   value={matchSearchGradeClass}
                   onChange={(e) => setMatchSearchGradeClass(e.target.value)}
                   onKeyDown={(e) => {
@@ -423,9 +389,9 @@ export function AdminMatchRecords({
             <thead className="bg-muted/40 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border/30">
               <tr>
                 <th className="px-4 py-3">경기 일시</th>
-                <th className="px-4 py-3">대결 학생 A</th>
+                <th className="px-4 py-3">대결 선수 A</th>
                 <th className="px-4 py-3 text-center">점수</th>
-                <th className="px-4 py-3">대결 학생 B</th>
+                <th className="px-4 py-3">대결 선수 B</th>
                 <th className="px-4 py-3 text-right">관리 작업</th>
               </tr>
             </thead>
@@ -433,17 +399,13 @@ export function AdminMatchRecords({
               {filteredMatches && filteredMatches.length > 0 ? (
                 filteredMatches.map((m) => {
                   const playerA = students.find((s) => s.id === m.playerAId) ?? {
-                    name: "알 수 없는 학생",
-                    grade: 0,
-                    classNum: 0,
-                    number: 0,
+                    name: "알 수 없는 멤버",
+                    group: null,
                     gender: "U" as Gender
                   };
                   const playerB = students.find((s) => s.id === m.playerBId) ?? {
-                    name: "알 수 없는 학생",
-                    grade: 0,
-                    classNum: 0,
-                    number: 0,
+                    name: "알 수 없는 멤버",
+                    group: null,
                     gender: "U" as Gender
                   };
                   const playerA2 = m.playerA2Id ? students.find((s) => s.id === m.playerA2Id) : null;
@@ -465,13 +427,13 @@ export function AdminMatchRecords({
                           <div className="flex items-center gap-1.5">
                             <GenderMark gender={playerA.gender} className="size-3.5 text-[9px]" />
                             <span className={cn("font-bold", aWon && "text-neon-blue")}>{displayName(playerA)}</span>
-                            <span className="text-[10px] text-muted-foreground">({playerA.grade}-{playerA.classNum})</span>
+                            {playerA.group && <span className="text-[10px] text-muted-foreground">({playerA.group})</span>}
                           </div>
                           {playerA2 && (
                             <div className="flex items-center gap-1.5 border-t border-border/10 pt-1">
                               <GenderMark gender={playerA2.gender} className="size-3.5 text-[9px]" />
                               <span className={cn("font-bold", aWon && "text-neon-blue")}>{displayName(playerA2)}</span>
-                              <span className="text-[10px] text-muted-foreground">({playerA2.grade}-{playerA2.classNum})</span>
+                              {playerA2.group && <span className="text-[10px] text-muted-foreground">({playerA2.group})</span>}
                             </div>
                           )}
                         </div>
@@ -488,13 +450,13 @@ export function AdminMatchRecords({
                           <div className="flex items-center gap-1.5">
                             <GenderMark gender={playerB.gender} className="size-3.5 text-[9px]" />
                             <span className={cn("font-bold", !aWon && "text-neon-blue")}>{displayName(playerB)}</span>
-                            <span className="text-[10px] text-muted-foreground">({playerB.grade}-{playerB.classNum})</span>
+                            {playerB.group && <span className="text-[10px] text-muted-foreground">({playerB.group})</span>}
                           </div>
                           {playerB2 && (
                             <div className="flex items-center gap-1.5 border-t border-border/10 pt-1">
                               <GenderMark gender={playerB2.gender} className="size-3.5 text-[9px]" />
                               <span className={cn("font-bold", !aWon && "text-neon-blue")}>{displayName(playerB2)}</span>
-                              <span className="text-[10px] text-muted-foreground">({playerB2.grade}-{playerB2.classNum})</span>
+                              {playerB2.group && <span className="text-[10px] text-muted-foreground">({playerB2.group})</span>}
                             </div>
                           )}
                         </div>
@@ -561,8 +523,8 @@ export function AdminMatchRecords({
         <div className="lg:hidden space-y-2.5">
           {filteredMatches && filteredMatches.length > 0 ? (
             filteredMatches.map((m) => {
-              const playerA = students.find((s) => s.id === m.playerAId) ?? { name: "알 수 없는 학생", grade: 0, classNum: 0, number: 0, gender: "U" as Gender };
-              const playerB = students.find((s) => s.id === m.playerBId) ?? { name: "알 수 없는 학생", grade: 0, classNum: 0, number: 0, gender: "U" as Gender };
+              const playerA = students.find((s) => s.id === m.playerAId) ?? { name: "알 수 없는 멤버", group: null, gender: "U" as Gender };
+              const playerB = students.find((s) => s.id === m.playerBId) ?? { name: "알 수 없는 멤버", group: null, gender: "U" as Gender };
               const playerA2 = m.playerA2Id ? students.find((s) => s.id === m.playerA2Id) : null;
               const playerB2 = m.playerB2Id ? students.find((s) => s.id === m.playerB2Id) : null;
               const aWon = m.scoreA > m.scoreB;
@@ -653,7 +615,7 @@ export function AdminMatchRecords({
               <Pencil className="size-4.5 text-neon-blue" /> 경기 세부 점수 수정
             </h4>
             <p className="text-xs text-muted-foreground leading-relaxed mb-4">
-              경기 결과를 수정하면 바뀐 점수를 기반으로 점수차 비례 보상 등의 보너스 및 최종 RP가 오차 없이 다시 자동 계산되어 두 학생에게 즉시 덮어씌워집니다.
+              경기 결과를 수정하면 바뀐 점수를 기반으로 점수차 비례 보상 등의 보너스 및 최종 RP가 오차 없이 다시 자동 계산되어 두 선수에게 즉시 덮어씌워집니다.
             </p>
 
             <div className="grid grid-cols-2 gap-4 bg-muted/20 p-4 rounded-xl border border-border/30 mb-5">
@@ -724,7 +686,7 @@ export function AdminMatchRecords({
               onClick={() => {
                 if (pendingDelete) {
                   onDeleteMatch(pendingDelete.id);
-                  toast.success("경기 기록이 삭제되었으며 참여 학생들의 RP·전적이 경기 이전으로 롤백되었습니다!");
+                  toast.success("경기 기록이 삭제되었으며 참여 선수들의 RP·전적이 경기 이전으로 롤백되었습니다!");
                 }
               }}
               className="font-black bg-destructive hover:bg-destructive/80 active:scale-95 transition-all text-white rounded-xl h-11 px-5 shadow-[0_0_15px_rgba(239,68,68,0.2)]"

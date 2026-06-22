@@ -10,17 +10,17 @@ import { getTier, getTierSubdivision, TIER_ORDER, getFullTierLabel } from "@/lib
 import { toast } from "sonner";
 import { useLeagueStore } from "@/lib/league-store";
 
-const GRADES = [1, 2, 3, 4, 5, 6];
-const CLASSES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+type Selection = { group: string | null; studentId: string | null };
+const empty: Selection = { group: null, studentId: null };
 
-type Selection = { grade: number | null; classNum: number | null; studentId: string | null };
-const empty: Selection = { grade: null, classNum: null, studentId: null };
+// 선수 표시 이름: 별명 우선, 없으면 이름
+function playerLabel(s: Student): string {
+  return s.nickname || s.name;
+}
 
 type PlayerResult = {
   name: string;
-  grade: number;
-  classNum: number;
-  number: number;
+  group: string | null;
   gender: "M" | "F" | "U";
   prevRp: number;
   prevTier: string;
@@ -471,19 +471,19 @@ export function RecordMatch({
       if (studentA && studentB) {
         const type = initials.matchType || "single";
         setMatchType(type);
-        setA({ grade: studentA.grade, classNum: studentA.classNum, studentId: studentA.id });
-        setB({ grade: studentB.grade, classNum: studentB.classNum, studentId: studentB.id });
-        
+        setA({ group: studentA.group ?? null, studentId: studentA.id });
+        setB({ group: studentB.group ?? null, studentId: studentB.id });
+
         if (type === "double" && initials.playerA2Id && initials.playerB2Id) {
           const studentA2 = students.find((s) => s.id === initials.playerA2Id);
           const studentB2 = students.find((s) => s.id === initials.playerB2Id);
           if (studentA2) {
-            setA2({ grade: studentA2.grade, classNum: studentA2.classNum, studentId: studentA2.id });
+            setA2({ group: studentA2.group ?? null, studentId: studentA2.id });
           } else {
             setA2(empty);
           }
           if (studentB2) {
-            setB2({ grade: studentB2.grade, classNum: studentB2.classNum, studentId: studentB2.id });
+            setB2({ group: studentB2.group ?? null, studentId: studentB2.id });
           } else {
             setB2(empty);
           }
@@ -558,7 +558,7 @@ export function RecordMatch({
     const isPlayerB2Invalid = matchType === "double" ? (!playerB2 || isNaN(playerB2.rp) || typeof playerB2.rp !== "number") : false;
 
     if (isPlayerAInvalid || isPlayerBInvalid || isPlayerA2Invalid || isPlayerB2Invalid) {
-      return toast.error("학생 데이터가 완전히 동기화되지 않았습니다. 새로고침 후 다시 시도해주세요.");
+      return toast.error("선수 데이터가 완전히 동기화되지 않았습니다. 새로고침 후 다시 시도해주세요.");
     }
 
     const aWon = scoreA > scoreB;
@@ -577,9 +577,9 @@ export function RecordMatch({
     );
     if (!matchObj) return;
 
-    const winnerNameText = matchType === "double" 
-      ? `${aWon ? playerA.name : playerB.name} & ${aWon ? playerA2!.name : playerB2!.name}`
-      : `${aWon ? playerA.name : playerB.name}`;
+    const winnerNameText = matchType === "double"
+      ? `${playerLabel(aWon ? playerA : playerB)} & ${playerLabel(aWon ? playerA2! : playerB2!)}`
+      : `${playerLabel(aWon ? playerA : playerB)}`;
     toast.success(`${winnerNameText} 팀 승리! 결과가 등록되었습니다.`);
 
     // 3. Extract exact custom deltas & bonuses calculated in league-store
@@ -706,10 +706,8 @@ export function RecordMatch({
       const baseLoss = !won ? (-rpDelta + freshnessBonus + lossComfortBonus + greatMatchBonus - (arrogancePenalty + crushingPenalty + revengeAllowedPenalty + championPenalty + swampPenalty)) : 0;
 
       return {
-        name: student.realName || student.name,
-        grade: student.grade,
-        classNum: student.classNum,
-        number: student.number,
+        name: student.nickname || student.name,
+        group: student.group ?? null,
         gender: student.gender,
         prevRp,
         prevTier,
@@ -761,10 +759,10 @@ export function RecordMatch({
     setShowModal(true);
 
     // 6. Reset name selectors and scores but retain grade & class selections
-    setA({ grade: a.grade, classNum: a.classNum, studentId: null });
-    setA2({ grade: a2.grade, classNum: a2.classNum, studentId: null });
-    setB({ grade: b.grade, classNum: b.classNum, studentId: null });
-    setB2({ grade: b2.grade, classNum: b2.classNum, studentId: null });
+    setA({ group: a.group, studentId: null });
+    setA2({ group: a2.group, studentId: null });
+    setB({ group: b.group, studentId: null });
+    setB2({ group: b2.group, studentId: null });
     setScoreA(0); 
     setScoreB(0);
   };
@@ -827,7 +825,7 @@ export function RecordMatch({
               )}
             </div>
             <div className="text-[10px] text-muted-foreground mt-0.5">
-              {p.grade > 0 ? `${p.grade}학년 ${p.classNum}반` : "선수"}
+              {p.group ? p.group : "선수"}
             </div>
           </div>
           <div className="flex flex-col items-end shrink-0">
@@ -1091,20 +1089,20 @@ export function RecordMatch({
         <div className="mb-4 text-center text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground">스코어보드</div>
         <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-4">
           <ScorePad 
-            name={matchType === "double" 
-              ? "팀 A" 
-              : ((playerA?.realName || playerA?.name) ?? "선수 A")
-            } 
+            name={matchType === "double"
+              ? "팀 A"
+              : (playerA ? playerLabel(playerA) : "선수 A")
+            }
             value={scoreA} 
             onChange={setScoreA} 
             accent="blue" 
           />
           <div className="pt-12 text-center text-3xl font-black text-muted-foreground">VS</div>
           <ScorePad 
-            name={matchType === "double" 
-              ? "팀 B" 
-              : ((playerB?.realName || playerB?.name) ?? "선수 B")
-            } 
+            name={matchType === "double"
+              ? "팀 B"
+              : (playerB ? playerLabel(playerB) : "선수 B")
+            }
             value={scoreB} 
             onChange={setScoreB} 
             accent="green" 
@@ -1174,9 +1172,9 @@ export function RecordMatch({
                       <span className="text-sm font-extrabold text-white truncate">{p.name}</span>
                     </div>
                     
-                    {/* Class & Details */}
+                    {/* Group & Details */}
                     <div className="text-[9px] text-muted-foreground mt-0.5">
-                      {p.grade > 0 ? `${p.grade}학년 ${p.classNum}반` : "선수"} · {p.number}번
+                      {p.group ? p.group : "선수"}
                     </div>
 
                     {/* Rank Info (e.g. 실버 4 -> 실버 3) */}
@@ -1703,7 +1701,7 @@ export function RecordMatch({
               {/* Notice Footer */}
               <p className="relative z-10 text-[10px] text-muted-foreground mt-6 text-center leading-relaxed">
                 입력하신 성별 데이터는 로컬 브라우저 캐시는 물론,<br />
-                교사 전용 구글 스프레드시트 클라우드 데이터베이스에 실시간 영속 동기화됩니다.
+                관리자 전용 구글 스프레드시트 클라우드 데이터베이스에 실시간 영속 동기화됩니다.
               </p>
             </div>
           </div>
@@ -1730,27 +1728,31 @@ function PlayerSelector({
 
   const headerCls = accent === "blue" ? "text-neon-blue" : "text-neon-green";
 
-  const activeGrades = useMemo(() => {
-    const set = new Set<number>();
+  const [search, setSearch] = useState("");
+
+  // 활성화된 구분조 목록 (group 미지정 멤버는 "전체" 가상 그룹으로 처리)
+  const ALL_GROUP = "__ALL__";
+  const activeGroups = useMemo(() => {
+    const set = new Set<string>();
     students.forEach((s) => {
-      if (s.grade) set.add(s.grade);
+      if (s.group) set.add(s.group);
     });
-    return Array.from(set).sort((a, b) => a - b);
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "ko"));
   }, [students]);
 
-  const classes = useMemo(() => {
-    if (value.grade == null) return [];
-    const set = new Set<number>();
-    students.filter((s) => s.grade === value.grade).forEach((s) => set.add(s.classNum));
-    return Array.from(set).sort((a, b) => a - b);
-  }, [students, value.grade]);
-
   const roster = useMemo(() => {
-    if (value.grade == null || value.classNum == null) return [];
+    if (value.group == null) return [];
+    const q = search.trim().toLowerCase();
     return students
-      .filter((s) => s.grade === value.grade && s.classNum === value.classNum)
-      .sort((a, b) => a.number - b.number);
-  }, [students, value.grade, value.classNum]);
+      .filter((s) => (value.group === ALL_GROUP ? true : (s.group ?? null) === value.group))
+      .filter((s) => {
+        if (!q) return true;
+        const name = (s.name || "").toLowerCase();
+        const nick = (s.nickname || "").toLowerCase();
+        return name.includes(q) || nick.includes(q);
+      })
+      .sort((a, b) => (a.nickname || a.name).localeCompare(b.nickname || b.name, "ko"));
+  }, [students, value.group, search]);
 
   return (
     <Card className="border-border/60 bg-card/60 p-5 backdrop-blur h-auto">
@@ -1758,7 +1760,7 @@ function PlayerSelector({
         <h3 className={cn("text-sm font-bold uppercase tracking-wider", headerCls)}>{label}</h3>
         {player && (
           <button
-            onClick={() => onChange({ grade: value.grade, classNum: value.classNum, studentId: null })}
+            onClick={() => onChange({ group: value.group, studentId: null })}
             className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-black bg-rose-600 hover:bg-rose-700 text-white shadow-[0_0_12px_rgba(225,29,72,0.35)] transition-all active:scale-95 cursor-pointer"
           >
             <X className="size-3.5" /> 선수 다시 선택
@@ -1768,10 +1770,10 @@ function PlayerSelector({
 
       {player ? (
         <div className={cn("rounded-lg border p-4", accentCls)}>
-          <div className="text-xs opacity-80">{player.grade}학년 {player.classNum}반 · {player.number}번</div>
+          <div className="text-xs opacity-80">{player.group ? player.group : "구분조 없음"}</div>
           <div className="mt-1 flex items-center gap-2 text-xl sm:text-2xl font-black min-w-0">
             <GenderMark gender={player.gender} className="size-5 text-xs shrink-0" />
-            <span className="whitespace-nowrap truncate flex-1">{player.realName || player.name}</span>
+            <span className="whitespace-nowrap truncate flex-1">{playerLabel(player)}</span>
           </div>
           <div className="mt-2 flex items-center gap-2">
             <TierBadge rp={player.rp} thresholds={thresholds} />
@@ -1779,29 +1781,28 @@ function PlayerSelector({
         </div>
       ) : (
         <div className="space-y-4">
-          <Step n={1} title="학년">
+          <Step n={1} title="구분조">
             <div className="grid grid-cols-3 gap-2.5 mt-2 w-full">
-              {activeGrades.map((g) => (
-                <Chip key={g} active={value.grade === g} accent={accent} onClick={() => onChange({ grade: g, classNum: null, studentId: null })}>
-                  {g}학년
+              <Chip active={value.group === ALL_GROUP} accent={accent} onClick={() => onChange({ group: ALL_GROUP, studentId: null })}>
+                전체
+              </Chip>
+              {activeGroups.map((g) => (
+                <Chip key={g} active={value.group === g} accent={accent} onClick={() => onChange({ group: g, studentId: null })}>
+                  {g}
                 </Chip>
               ))}
             </div>
           </Step>
-          {value.grade != null && (
-            <Step n={2} title="반">
-              <div className="grid grid-cols-3 gap-2.5 mt-2 w-full">
-                {classes.map((c) => (
-                  <Chip key={c} active={value.classNum === c} accent={accent} onClick={() => onChange({ ...value, classNum: c, studentId: null })}>
-                    {c}반
-                  </Chip>
-                ))}
-                {classes.length === 0 && <span className="text-xs text-muted-foreground block py-2">학생이 없습니다</span>}
-              </div>
-            </Step>
-          )}
-          {value.classNum != null && (
-            <Step n={3} title="선수 선택">
+          {value.group != null && (
+            <Step n={2} title="선수 선택">
+              {/* 이름/별명 검색 */}
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="이름 또는 별명 검색"
+                className="mb-3 w-full rounded-lg border border-border/60 bg-[#0e1322]/80 px-3 py-2 text-sm text-white placeholder:text-muted-foreground focus:border-neon-blue/60 focus:outline-none"
+              />
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 {roster.map((s) => (
                   <button
@@ -1809,21 +1810,23 @@ function PlayerSelector({
                     onClick={() => onChange({ ...value, studentId: s.id })}
                     className="relative rounded-lg border border-border/60 bg-[#0e1322]/80 px-2 pt-6 pb-2.5 text-center transition-all hover:border-neon-blue/60 hover:bg-accent/40 flex flex-col items-center justify-between h-auto min-h-[4.75rem] w-full overflow-hidden cursor-pointer"
                   >
-                    {/* 1. 좌측 상단 번호 */}
-                    <span className="absolute top-1 left-1.5 text-[10px] text-gray-500 font-mono">
-                      {s.number}번
-                    </span>
+                    {/* 1. 좌측 상단 구분조 */}
+                    {s.group && (
+                      <span className="absolute top-1 left-1.5 text-[10px] text-gray-500 font-mono truncate max-w-[60%] text-left">
+                        {s.group}
+                      </span>
+                    )}
 
                     {/* 2. 우측 상단 성별 아이콘 */}
-                    <GenderMark 
-                      gender={s.gender} 
-                      className="absolute top-1 right-1.5 size-3.5 text-[9px] shrink-0" 
+                    <GenderMark
+                      gender={s.gender}
+                      className="absolute top-1 right-1.5 size-3.5 text-[9px] shrink-0"
                     />
-                    
-                    {/* 3. 정중앙 이름 배치 */}
+
+                    {/* 3. 정중앙 이름(별명) 배치 */}
                     <div className="flex-grow flex items-center justify-center w-full min-w-0">
                       <span className="text-base font-bold text-white break-keep text-center w-full">
-                        {s.realName || s.name}
+                        {playerLabel(s)}
                       </span>
                     </div>
 
@@ -1833,6 +1836,9 @@ function PlayerSelector({
                     </div>
                   </button>
                 ))}
+                {roster.length === 0 && (
+                  <span className="text-xs text-muted-foreground block py-2 col-span-full">선수가 없습니다</span>
+                )}
               </div>
             </Step>
           )}

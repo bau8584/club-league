@@ -45,8 +45,8 @@ type Row = { grade: number; classNum: number; number: number; name: string; gend
 // 관리자 패널의 하위 탭 목록 — PC 사이드바와 모바일 드롭다운이 공유한다.
 const ADMIN_MENU_ITEMS = [
   { id: "settings", label: "리그 글로벌 설정", icon: Settings, desc: "리그 이름, 티어, RP 규칙 설정" },
-  { id: "studentRegister", label: "학생 등록", icon: UserPlus, desc: "나이스 명렬표 대량 등록" },
-  { id: "studentManage", label: "학생 관리", icon: User, desc: "학급 명단, RP 수정 및 삭제" },
+  { id: "studentRegister", label: "선수 등록", icon: UserPlus, desc: "나이스 명렬표 대량 등록" },
+  { id: "studentManage", label: "선수 관리", icon: User, desc: "리그 명단, RP 수정 및 삭제" },
   { id: "matchRecords", label: "리그 기록 관리", icon: Swords, desc: "전체 경기 조회, 점수 수정/삭제" },
   { id: "dataManage", label: "데이터 관리", icon: Database, desc: "JSON 백업 다운로드 및 복원" },
   { id: "seasonManage", label: "시즌 관리", icon: Calendar, desc: "시즌 초기화 및 신규 시즌 생성" },
@@ -143,7 +143,7 @@ export function AdminPanel({
   ) => Promise<void>;
 }) {
   // Active Tab for dashboard split layout
-  // 소유자(개설자) 전용 탭 — 관리 교사(공동관리자/기록원)에게는 숨김
+  // 소유자(개설자) 전용 탭 — 관리 관리자(공동관리자/기록원)에게는 숨김
   const OWNER_ONLY_TABS = new Set(["settings", "dataManage", "seasonManage"]);
   const menuItems = ADMIN_MENU_ITEMS.filter((i) => isOwner || !OWNER_ONLY_TABS.has(i.id));
   const [activeTab, setActiveTab] = useState<string>(isOwner ? "settings" : "studentManage");
@@ -167,6 +167,8 @@ export function AdminPanel({
     lockLeaderboard,
     lockAdmin,
     saveLockSetting,
+    matchInputMode,
+    saveMatchInputMode,
     checkAndApplyAutomaticDecay,
     tierSettings,
     dynamicBonuses,
@@ -197,7 +199,7 @@ export function AdminPanel({
   const parsed = useMemo(() => parsePaste(text), [text]);
 
   const commit = async () => {
-    if (parsed.rows.length === 0) return toast.error("등록할 학생이 없습니다");
+    if (parsed.rows.length === 0) return toast.error("등록할 선수이 없습니다");
     const { added, kept } = await onUpsert(parsed.rows);
     setText("");
     toast.success(`신규 ${added}명 등록, 기존 ${kept}명 전적 유지`);
@@ -209,11 +211,8 @@ export function AdminPanel({
     const backupObj = {
       students: sortedStudents.map((s) => ({
         id: s.id,
-        grade: s.grade,
-        classNum: s.classNum,
-        number: s.number,
         name: s.name,
-        realName: s.realName ?? null,
+        group: s.group ?? null,
         nickname: s.nickname ?? null,
         gender: s.gender,
         rp: s.rp,
@@ -255,7 +254,7 @@ export function AdminPanel({
 
         const data = JSON.parse(jsonText);
         if (!data || !Array.isArray(data.students)) {
-          return toast.error("JSON 파일에 유효한 학생(students) 데이터 배열이 없습니다.");
+          return toast.error("JSON 파일에 유효한 선수(students) 데이터 배열이 없습니다.");
         }
 
         const parsedStudents: Student[] = data.students.map((s: any) => ({
@@ -316,14 +315,14 @@ export function AdminPanel({
         })) : [];
 
         if (parsedStudents.length === 0) {
-          return toast.error("파싱 가능한 유효한 학생 데이터가 없습니다.");
+          return toast.error("파싱 가능한 유효한 선수 데이터가 없습니다.");
         }
 
-        // 검증: 학생 id는 유효한 UUID여야 하고 RP는 숫자여야 한다 (안전한 복원 사전 점검)
+        // 검증: 선수 id는 유효한 UUID여야 하고 RP는 숫자여야 한다 (안전한 복원 사전 점검)
         const isUuid = (v: any) => typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
         const badStudent = parsedStudents.find((s) => !isUuid(s.id) || Number.isNaN(s.rp));
         if (badStudent) {
-          return toast.error("백업 파일이 손상되었거나 이 앱의 형식이 아닙니다 (학생 ID/RP 오류). 복원을 중단합니다.");
+          return toast.error("백업 파일이 손상되었거나 이 앱의 형식이 아닙니다 (선수 ID/RP 오류). 복원을 중단합니다.");
         }
         const badMatch = parsedMatches.find((m) => !isUuid(m.id) || !isUuid(m.playerAId) || !isUuid(m.playerBId));
         if (badMatch) {
@@ -348,7 +347,7 @@ export function AdminPanel({
       <div className="lg:hidden sticky top-0 z-30 -mx-1 px-1 pt-1">
         <div className="bg-card/95 border border-border/40 rounded-2xl p-3 backdrop-blur-md shadow-lg">
           <label htmlFor="admin-tab-select" className="text-[10px] font-black text-neon-blue tracking-tight block mb-1.5 px-0.5">
-            교사 관리자 패널
+            관리자 관리자 패널
           </label>
           <div className="relative">
             <select
@@ -371,8 +370,8 @@ export function AdminPanel({
       {/* Left Sidebar Menu (데스크톱·태블릿 가로 전용) */}
       <div className="hidden lg:flex w-full lg:w-64 shrink-0 flex-col gap-2 bg-card/45 border border-border/40 rounded-2xl p-4 backdrop-blur shadow-lg self-start sticky top-4">
         <div className="px-3 py-2">
-          <h2 className="text-lg font-black text-neon-blue tracking-tight">교사 관리자 패널</h2>
-          <p className="text-[10px] text-muted-foreground mt-0.5">리그 글로벌 설정 및 학생 데이터를 통제합니다.</p>
+          <h2 className="text-lg font-black text-neon-blue tracking-tight">관리자 관리자 패널</h2>
+          <p className="text-[10px] text-muted-foreground mt-0.5">리그 글로벌 설정 및 선수 데이터를 통제합니다.</p>
         </div>
         <div className="h-px bg-border/20 my-2" />
 
@@ -425,6 +424,8 @@ export function AdminPanel({
             lockLeaderboard={lockLeaderboard}
             lockAdmin={lockAdmin}
             saveLockSetting={saveLockSetting}
+            matchInputMode={matchInputMode}
+            saveMatchInputMode={saveMatchInputMode}
             accessCode={teacherAccessCode}
             isOwner={isOwner}
             tierSettings={tierSettings}
@@ -489,7 +490,7 @@ export function AdminPanel({
                   <h3 className="font-bold text-foreground">JSON 업로드하여 데이터 롤백</h3>
                 </div>
                 <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
-                  교사가 이전에 백업해 둔 JSON 파일을 업로드하면, 해당 파일을 기반으로 전체 학생 명단과 RP, 전적 및 매치 로그 데이터를 완벽하게 해당 시점의 데이터로 롤백 복원합니다.
+                  관리자가 이전에 백업해 둔 JSON 파일을 업로드하면, 해당 파일을 기반으로 전체 선수 명단과 RP, 전적 및 매치 로그 데이터를 완벽하게 해당 시점의 데이터로 롤백 복원합니다.
                 </p>
               </div>
               <div className="mt-5">
@@ -518,7 +519,7 @@ export function AdminPanel({
         {activeTab === "studentRegister" && (
           <Card className="border-border/60 bg-card/60 p-5 backdrop-blur shadow-lg animate-in fade-in slide-in-from-bottom-2 duration-300">
             <div className="mb-3">
-              <h3 className="font-bold text-sm">학생 등록</h3>
+              <h3 className="font-bold text-sm">선수 등록</h3>
               <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
                 엑셀이나 나이스(NEIS)의 명렬표에서 복사한 목록을 아래에 붙여넣으세요.<br />
                 형식: <code className="text-foreground bg-muted px-1 rounded">학년 반 번호 이름 (성별)</code> (예: 5 1 1 홍길동 남)<br />

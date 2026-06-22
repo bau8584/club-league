@@ -54,7 +54,7 @@ export function MyRecord({
   decayAppliedDates = {}
 }: MyRecordProps) {
   
-  // 1. 현재 접속한 학생 정보 매칭 (동명이인 처리 포함)
+  // 1. 현재 접속한 선수 정보 매칭 (동명이인 처리 포함)
   const me = useMemo(() => {
     if (!session || session.role !== "STUDENT") return null;
     if (session.studentId) {
@@ -182,9 +182,9 @@ export function MyRecord({
     return (
       <div className="flex flex-col items-center justify-center p-12 text-center border border-dashed border-border rounded-2xl bg-card/25 backdrop-blur-md">
         <Activity className="size-12 text-muted-foreground animate-pulse mb-3" />
-        <h3 className="text-lg font-bold text-foreground">학생 데이터를 불러올 수 없습니다</h3>
+        <h3 className="text-lg font-bold text-foreground">선수 데이터를 불러올 수 없습니다</h3>
         <p className="text-sm text-muted-foreground mt-1">
-          현재 로그인 세션에 일치하는 학생 정보가 명렬표에 없거나 로딩 중입니다. 교사에게 문의하세요.
+          현재 로그인 세션에 일치하는 선수 정보가 명렬표에 없거나 로딩 중입니다. 관리자에게 문의하세요.
         </p>
       </div>
     );
@@ -393,7 +393,7 @@ export function MyRecord({
             <div className="text-center py-16 px-4">
               <Calendar className="size-10 text-muted-foreground/60 mx-auto mb-3" />
               <p className="text-sm font-semibold text-muted-foreground">아직 참여한 경기 기록이 없습니다.</p>
-              <p className="text-xs text-muted-foreground/80 mt-1">교사가 매치 결과를 등록하면 여기에 실시간으로 전적이 나열됩니다!</p>
+              <p className="text-xs text-muted-foreground/80 mt-1">관리자가 매치 결과를 등록하면 여기에 실시간으로 전적이 나열됩니다!</p>
             </div>
           ) : (
             <div className="divide-y divide-border/30">
@@ -406,8 +406,8 @@ export function MyRecord({
                   ? [m.playerBId, m.playerB2Id].filter(Boolean) as string[]
                   : [m.playerAId, m.playerA2Id].filter(Boolean) as string[];
                 const oppPlayers = oppIds.map(id => students.find((s) => s.id === id)).filter(Boolean) as Student[];
-                const oppName = oppPlayers.map(o => o.name).join(" & ") || "탈퇴한 학생";
-                const oppClass = oppPlayers[0] ? `${oppPlayers[0].grade}학년 ${oppPlayers[0].classNum}반` : "기타 소속";
+                const oppName = oppPlayers.map(o => o.nickname || o.name).join(" & ") || "탈퇴한 회원";
+                const oppClass = oppPlayers[0]?.group || "기타 소속";
                 
                 // 내 파트너 검색 (복식일 경우)
                 const partnerId = isTeamA 

@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useCallback, useRef, createContext, useContext } from "react";
-import type { Student, Match, Gender, TierName, TierSettings, DynamicBonuses, DynamicPenalties, TiersRecord, DecaySettingsRecord, Achievement } from "./league-types";
+import type { Student, Match, Gender, TierName, TierSettings, DynamicBonuses, DynamicPenalties, TiersRecord, DecaySettingsRecord, Achievement, MatchInputMode } from "./league-types";
 import { studentKey, getTier, getTierSubdivision, getFullTierLabel, TIER_ORDER } from "./league-types";
 import { toast } from "sonner";
 import { supabase } from "../supabaseClient";
-import { calculateMatchResult } from "./match-calculator";
+import { calculateMatchResult } from "@/domain/match-calculator";
 import {
   apiGetUser,
   apiSignOut,
@@ -43,7 +43,7 @@ import {
   apiRestoreSeason,
   apiRenameSeason,
   apiDeleteSeason
-} from "./league-api";
+} from "@/services/league-api";
 import {
   DEFAULT_TIERS,
   DEFAULT_DECAY_SETTINGS,
@@ -93,12 +93,14 @@ function useLeagueStoreInternal() {
   const [title, setTitle] = useState<string>("2026 초등 리그전");
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [isClassOwner, setIsClassOwner] = useState<boolean>(false);
-  // 관리 권한자: 소유자/공동관리자/기록원 — 학생·경기 관리 가능 (리그 글로벌 설정·시즌·복원은 소유자 전용)
+  const isClassOwnerRef = useRef(false);
+  useEffect(() => { isClassOwnerRef.current = isClassOwner; }, [isClassOwner]);
+  // 관리 권한자: 소유자/공동관리자/기록원 — 선수·경기 관리 가능 (리그 글로벌 설정·시즌·복원은 소유자 전용)
   const [isClassManager, setIsClassManager] = useState<boolean>(false);
   const isClassManagerRef = useRef(false);
   useEffect(() => { isClassManagerRef.current = isClassManager; }, [isClassManager]);
   const [teacherAccessCode, setTeacherAccessCode] = useState<string>("");
-  // 화면 잠금: 태블릿을 학생에게 맡길 때 순위표/관리자 탭을 리그 코드로 잠근다. (독립 토글)
+  // 화면 잠금: 태블릿을 선수에게 맡길 때 순위표/관리자 탭을 리그 코드로 잠근다. (독립 토글)
   const [lockLeaderboard, setLockLeaderboard] = useState<boolean>(false);
   const [lockAdmin, setLockAdmin] = useState<boolean>(false);
   const lockLeaderboardRef = useRef(false);
@@ -126,7 +128,7 @@ function useLeagueStoreInternal() {
   useEffect(() => {
     currentClassIdRef.current = currentClassId;
   }, [currentClassId]);
-  // 교사 세션 여부(소유자/공동관리자) — 과거 시즌 조회 시 실명 포함 여부 결정에 사용
+  // 관리자 세션 여부(소유자/공동관리자) — 과거 시즌 조회 시 실명 포함 여부 결정에 사용
   const isTeacherRef = useRef(false);
   const channelRef = useRef<any>(null);
   const loadClassDataRef = useRef<any>(null);
@@ -152,24 +154,33 @@ function useLeagueStoreInternal() {
       // 권한 판별: 소유자(owner) / 관리자(owner|co_admin|scorekeeper)
       let isOwner = false;
       let isManager = false;
+      let authResolved = false;
       try {
         const { data: { user } } = await apiGetUser();
         if (user && classData) {
+          authResolved = true;
           const uid = user.id;
           isOwner = classData.owner_uid === uid;
           isManager = isOwner
-            || (Array.isArray(classData.co_admin_uids) && classData.co_admin_uids.includes(uid))
-            || (Array.isArray(classData.scorekeeper_uids) && classData.scorekeeper_uids.includes(uid));
+            || (Array.isArray(classData.admin_uids) && classData.admin_uids.includes(uid))
+            || (Array.isArray(classData.member_uids) && classData.member_uids.includes(uid));
         }
       } catch (err) {
         console.warn("Failed to check owner uid inside loadClassData:", err);
       }
+      // 백그라운드(실시간) 재로딩 중 인증이 일시적으로 실패(getUser 오류/유저 없음)하면
+      // 권한을 강등하지 말고 직전 권한을 유지한다. 강등 시 잠긴 관리자 탭이 튕기는 문제 방지.
+      if (!authResolved && isBackground) {
+        isOwner = isClassOwnerRef.current;
+        isManager = isClassManagerRef.current;
+      }
       setIsClassOwner(isOwner);
       setIsClassManager(isManager);
+      isClassOwnerRef.current = isOwner;
       isClassManagerRef.current = isManager;
 
       if (classData) {
-        setTitle(classData.class_name);
+        setTitle(classData.name);
         
         if (classData.settings) {
           const s = classData.settings;
@@ -192,6 +203,7 @@ function useLeagueStoreInternal() {
             if (migrated.dynamicBonuses !== undefined) setDynamicBonuses(migrated.dynamicBonuses);
              if (migrated.dynamicPenalties !== undefined) setDynamicPenalties(migrated.dynamicPenalties);
             if (migrated.activeBonuses !== undefined) setActiveBonuses(migrated.activeBonuses);
+            if (migrated.matchInputMode !== undefined) setMatchInputMode(migrated.matchInputMode);
           }
         }
       }
@@ -207,17 +219,19 @@ function useLeagueStoreInternal() {
         id: m.id,
         playerAId: m.winner_id,
         playerBId: m.loser_id,
-        scoreA: 21,
-        scoreB: 19,
+        playerA2Id: m.winner2_id ?? undefined,
+        playerB2Id: m.loser2_id ?? undefined,
+        scoreA: m.winner_score ?? 21,
+        scoreB: m.loser_score ?? 19,
         date: m.created_at || new Date().toISOString(),
-        matchType: "single"
+        matchType: m.winner2_id ? "double" : "single"
       }));
 
       // 3. Fetch students - 관리 권한자(소유자/공동관리자/기록원)는 실명 포함 조회
       const isTeacherSession = isManager;
       isTeacherRef.current = isTeacherSession;
 
-      // class_secrets 조회 추가 (교사 세션일 때만 RLS 우회하여 안전 조회)
+      // class_secrets 조회 추가 (관리자 세션일 때만 RLS 우회하여 안전 조회)
       let fetchedAccessCode = "";
       if (isTeacherSession) {
         try {
@@ -240,11 +254,9 @@ function useLeagueStoreInternal() {
 
       // Map Supabase students to frontend Student structure, computing stats on-the-fly
       const studentsList: Student[] = (dbStudents || []).map((s: any) => {
-        const grade = s.grade ?? 0;
-        const classNum = s.class_number ?? 0;
-        const number = s.student_no ?? 0;
-        // name은 display_name을 기본으로 하되, 없을 경우 fallback으로 포맷팅
-        const name = s.display_name || (s.nickname ?? `${grade}-${classNum}-${number}번`);
+        const group = s.group_label ?? null;
+        // name(표시)은 본명/닉네임/구분조 순으로 fallback
+        const name = s.name || s.display_name || s.nickname || "이름없음";
         const gender = (s.gender || "U") as Gender;
 
         // Find matches for this student to compute derived stats
@@ -275,12 +287,12 @@ function useLeagueStoreInternal() {
 
         return {
           id: s.id,
-          grade,
-          classNum,
-          number,
+          league_id: s.league_id,
+          userId: s.user_id ?? null,
           name,
-          realName: s.real_name ?? "",
           nickname: s.nickname ?? "",
+          group,
+          displayName: s.display_name ?? null,
           gender,
           rp: s.rp || 1000,
           wins,
@@ -325,14 +337,14 @@ function useLeagueStoreInternal() {
       const channel = supabase.channel(`class-realtime-${classId}`)
         .on(
           "postgres_changes",
-          { event: "*", schema: "public", table: "students", filter: `class_id=eq.${classId}` },
+          { event: "*", schema: "public", table: "players", filter: `league_id=eq.${classId}` },
           () => {
             loadClassDataRef.current?.(classId, true);
           }
         )
         .on(
           "postgres_changes",
-          { event: "*", schema: "public", table: "matches", filter: `class_id=eq.${classId}` },
+          { event: "*", schema: "public", table: "matches", filter: `league_id=eq.${classId}` },
           () => {
             loadClassDataRef.current?.(classId, true);
           }
@@ -392,8 +404,13 @@ function useLeagueStoreInternal() {
   const [decayAmount, setDecayAmount] = useState<number>(5);
   const [decayTiers, setDecayTiers] = useState<TierName[]>(["Gold", "Platinum", "Diamond"]);
   const [lastDecayDate, setLastDecayDate] = useState<string>("");
-  // 학생별 마지막 휴면 감점 적용일 (YYYY-MM-DD). 사이클당 1회 감점 판정의 기준 시점.
+  // 선수별 마지막 휴면 감점 적용일 (YYYY-MM-DD). 사이클당 1회 감점 판정의 기준 시점.
   const [decayAppliedDates, setDecayAppliedDates] = useState<Record<string, string>>({});
+
+  // 경기 입력 방식 (관리자 제어). 기존 리그는 클럽형(관리자만) 기본값.
+  const [matchInputMode, setMatchInputMode] = useState<MatchInputMode>("admin-only");
+  const matchInputModeRef = useRef<MatchInputMode>("admin-only");
+  useEffect(() => { matchInputModeRef.current = matchInputMode; }, [matchInputMode]);
 
   const [promotionQueue, setPromotionQueue] = useState<{ isPromoted: boolean; newTier: string; studentName?: string }[]>([]);
   const promotionEvent = promotionQueue[0] || null;
@@ -424,8 +441,8 @@ function useLeagueStoreInternal() {
           setSession({
             loginId: supabaseUser.id,
             role: "TEACHER",
-            schoolName: "우리 학교",
-            userName: supabaseUser.email?.split("@")[0] || "교사"
+            schoolName: "우리 클럽",
+            userName: supabaseUser.email?.split("@")[0] || "관리자"
           });
         } else {
           setSession(null);
@@ -478,6 +495,12 @@ function useLeagueStoreInternal() {
       toast.warning("데이터가 동기화 중입니다. 잠시 후 다시 시도해 주세요.");
       return;
     }
+    // 경기 입력 방식 게이트. admin-only면 관리자만 입력 가능.
+    // free/peer-confirm/admin-approve는 Phase 1에선 모두 통과(승인형은 Phase 2에서 구현).
+    if (matchInputModeRef.current === "admin-only" && !isClassManagerRef.current) {
+      toast.error("이 리그는 관리자만 경기를 입력할 수 있습니다.");
+      return;
+    }
     if (playerAId === playerBId) return;
 
     isSyncingRef.current = true;
@@ -495,7 +518,7 @@ function useLeagueStoreInternal() {
     const isPlayerB2Invalid = playerB2Id ? (!playerB2 || isNaN(playerB2.rp) || typeof playerB2.rp !== "number") : false;
 
     if (isPlayerAInvalid || isPlayerBInvalid || isPlayerA2Invalid || isPlayerB2Invalid) {
-      toast.error("학생 데이터가 완전히 동기화되지 않았습니다. 새로고침 후 다시 시도해주세요.", {
+      toast.error("선수 데이터가 완전히 동기화되지 않았습니다. 새로고침 후 다시 시도해주세요.", {
         id: "student-not-synced-error",
         duration: 5000
       });
@@ -553,6 +576,10 @@ function useLeagueStoreInternal() {
         try {
           const winnerId = aWon ? playerAId : playerBId;
           const loserId = aWon ? playerBId : playerAId;
+          const winner2Id = (aWon ? playerA2Id : playerB2Id) ?? null;
+          const loser2Id = (aWon ? playerB2Id : playerA2Id) ?? null;
+          const winnerScore = aWon ? scoreA : scoreB;
+          const loserScore = aWon ? scoreB : scoreA;
           const playerUpdates = nextStudents
             .filter(s => s.id === playerAId || s.id === playerBId || s.id === playerA2Id || s.id === playerB2Id)
             .map(s => ({ id: s.id, rp: s.rp }));
@@ -562,7 +589,11 @@ function useLeagueStoreInternal() {
             matchId,
             winnerId,
             loserId,
-            playerUpdates
+            playerUpdates,
+            winner2Id,
+            loser2Id,
+            winnerScore,
+            loserScore
           });
           toast.success("경기가 등록되었습니다!");
         } catch (err: any) {
@@ -591,7 +622,7 @@ function useLeagueStoreInternal() {
       return;
     }
     if (!isClassManagerRef.current) {
-      toast.error("권한이 없습니다. 학생·경기 관리 권한이 없습니다.");
+      toast.error("권한이 없습니다. 선수·경기 관리 권한이 없습니다.");
       return;
     }
     if (isSyncingRef.current) {
@@ -692,7 +723,7 @@ function useLeagueStoreInternal() {
     }
   }, [students, matches, rpVariables, currentClassId, isClassOwner]);
 
-  // 개별 학생 전적 리셋 및 동기화
+  // 개별 선수 전적 리셋 및 동기화
   const resetStudent = useCallback(async (studentId: string) => {
     if (currentViewSeasonRef.current !== "현재 시즌") {
       toast.error("과거 시즌 기록은 수정할 수 없습니다 (읽기 전용).");
@@ -850,7 +881,7 @@ function useLeagueStoreInternal() {
     }
   }, [students, matches, currentClassId, isClassOwner]);
 
-  // 교사 관리자 수동 RP 수정 및 동기화
+  // 관리자 관리자 수동 RP 수정 및 동기화
   const updateStudentRP = useCallback(async (studentId: string, nextRp: number) => {
     if (currentViewSeasonRef.current !== "현재 시즌") {
       toast.error("과거 시즌 기록은 수정할 수 없습니다 (읽기 전용).");
@@ -898,13 +929,13 @@ function useLeagueStoreInternal() {
 
   // 새로운 명렬표 대량 업서트 및 동기화
   const upsertStudents = useCallback(
-    async (rows: { grade: number; classNum: number; number: number; name: string; gender?: Gender }[]) => {
+    async (rows: { name: string; nickname?: string | null; gender?: Gender; group?: string | null }[]) => {
       if (currentViewSeasonRef.current !== "현재 시즌") {
         toast.error("과거 시즌 기록은 수정할 수 없습니다 (읽기 전용).");
         return { added: 0, kept: 0 };
       }
       if (!isClassManagerRef.current) {
-        toast.error("권한이 없습니다. 학생·경기 관리 권한이 없습니다.");
+        toast.error("권한이 없습니다. 선수·경기 관리 권한이 없습니다.");
         return { added: 0, kept: 0 };
       }
       if (isSyncingRef.current) {
@@ -915,11 +946,12 @@ function useLeagueStoreInternal() {
       setIsSyncing(true);
 
       let added = 0, kept = 0;
-      const byKey = new Map(students.map((s) => [studentKey(s), s]));
+      const keyOf = (x: { name?: string | null; group?: string | null }) => `${x.group ?? ""}|${x.name ?? ""}`;
+      const byKey = new Map(students.map((s) => [keyOf(s), s]));
       const next: Student[] = [];
       const seenKeys = new Set<string>();
       for (const r of rows) {
-        const k = studentKey({ grade: r.grade, classNum: r.classNum, number: r.number, name: r.name, realName: r.name });
+        const k = keyOf({ name: r.name, group: r.group });
         if (seenKeys.has(k)) continue;
         seenKeys.add(k);
         const exists = byKey.get(k);
@@ -930,11 +962,9 @@ function useLeagueStoreInternal() {
           added++;
           next.push({
             id: uid(),
-            grade: r.grade,
-            classNum: r.classNum,
-            number: r.number,
-            name: `${r.grade}-${r.classNum}-${r.number}번`,
-            realName: r.name,
+            name: r.name,
+            nickname: r.nickname ?? null,
+            group: r.group ?? null,
             gender: r.gender ?? "U",
             rp: 1000,
             recent: [],
@@ -957,29 +987,27 @@ function useLeagueStoreInternal() {
           setIsSyncing(true);
           // Perform upserts into Supabase students table
           for (const r of rows) {
-            const key = studentKey({ grade: r.grade, classNum: r.classNum, number: r.number, name: r.name, realName: r.name });
+            const key = keyOf({ name: r.name, group: r.group });
             const exists = byKey.get(key);
             if (exists) {
               await apiUpdateStudentFields(exists.id, {
-                grade: r.grade,
-                class_number: r.classNum,
-                student_no: r.number,
-                real_name: r.name,
+                name: r.name,
+                nickname: r.nickname ?? null,
+                group_label: r.group ?? null,
                 gender: r.gender || 'U'
               });
             } else {
               const { data: insertedData, error: insertErr } = await apiInsertStudent(currentClassId, {
-                grade: r.grade,
-                class_number: r.classNum,
-                student_no: r.number,
-                real_name: r.name,
+                name: r.name,
+                nickname: r.nickname ?? null,
+                group_label: r.group ?? null,
                 gender: r.gender || 'U',
                 rp: 1000
               });
-              
+
               if (insertErr) throw insertErr;
               if (insertedData) {
-                const idx = next.findIndex(s => studentKey(s) === key);
+                const idx = next.findIndex(s => keyOf(s) === key);
                 if (idx !== -1) {
                   next[idx].id = insertedData.id;
                 }
@@ -1085,7 +1113,7 @@ function useLeagueStoreInternal() {
     }
   }, [students, tierSettings, currentClassId, isClassOwner]);
 
-  // 특정 학생의 성별 변경 및 구글 시트 동기화
+  // 특정 선수의 성별 변경 및 구글 시트 동기화
   const updateStudentGender = useCallback(async (studentId: string, gender: Gender) => {
     if (currentViewSeasonRef.current !== "현재 시즌") {
       toast.error("과거 시즌 기록은 수정할 수 없습니다 (읽기 전용).");
@@ -1127,7 +1155,7 @@ function useLeagueStoreInternal() {
     }
   }, [students, currentClassId, isClassOwner]);
 
-  // 개별 학생 삭제 및 연쇄 삭제 & 전적 복구 롤백
+  // 개별 선수 삭제 및 연쇄 삭제 & 전적 복구 롤백
   const deleteStudent = useCallback(async (studentId: string) => {
     if (currentViewSeasonRef.current !== "현재 시즌") {
       toast.error("과거 시즌 기록은 수정할 수 없습니다 (읽기 전용).");
@@ -1147,7 +1175,7 @@ function useLeagueStoreInternal() {
     const matchesToRemove = matches.filter((m) => m.playerAId === studentId || m.playerBId === studentId || m.playerA2Id === studentId || m.playerB2Id === studentId);
     const nextMatches = matches.filter((m) => m.playerAId !== studentId && m.playerBId !== studentId && m.playerA2Id !== studentId && m.playerB2Id !== studentId);
 
-    // 1. 삭제할 학생 제외
+    // 1. 삭제할 선수 제외
     let nextStudents = students.filter((s) => s.id !== studentId);
 
     // 2. 삭제되는 경기들의 상대방 & 아군 파트너 전적 복구
@@ -1255,10 +1283,10 @@ function useLeagueStoreInternal() {
     }
   }, [students, matches, rpVariables, currentClassId, isClassOwner]);
 
-  // 특정 학생 정보 전체 수정 및 동기화
+  // 특정 선수 정보 전체 수정 및 동기화
   const updateStudentInfo = useCallback(async (
     studentId: string,
-    info: { grade: number; classNum: number; number: number; name: string; gender: Gender; rp?: number }
+    info: { name: string; nickname?: string | null; group?: string | null; gender: Gender; rp?: number }
   ) => {
     if (currentViewSeasonRef.current !== "현재 시즌") {
       toast.error("과거 시즌 기록은 수정할 수 없습니다 (읽기 전용).");
@@ -1278,14 +1306,11 @@ function useLeagueStoreInternal() {
     // Update local state first (Optimistic)
     const nextStudents = students.map((s) => {
       if (s.id !== studentId) return s;
-      const display_name = s.nickname || `${info.grade}-${info.classNum}-${info.number}번`;
       return {
         ...s,
-        grade: info.grade,
-        classNum: info.classNum,
-        number: info.number,
-        name: display_name,
-        realName: info.name, // info.name is real name input
+        name: info.name,
+        nickname: info.nickname ?? s.nickname,
+        group: info.group ?? s.group,
         gender: info.gender,
         rp: info.rp !== undefined ? info.rp : s.rp
       };
@@ -1296,10 +1321,9 @@ function useLeagueStoreInternal() {
     if (currentClassId) {
       try {
         const updatePayload: any = {
-          grade: info.grade,
-          class_number: info.classNum,
-          student_no: info.number,
-          real_name: info.name,
+          name: info.name,
+          nickname: info.nickname ?? null,
+          group_label: info.group ?? null,
           gender: info.gender
         };
         if (info.rp !== undefined) {
@@ -1307,10 +1331,10 @@ function useLeagueStoreInternal() {
         }
         const { error } = await apiUpdateStudentInfo(studentId, updatePayload);
         if (error) throw error;
-        toast.success("학생 정보가 수정되었습니다.");
+        toast.success("선수 정보가 수정되었습니다.");
       } catch (err: any) {
         console.error("Failed to update student info in Supabase:", err.message);
-        toast.error("학생 정보 수정에 실패했습니다: " + err.message);
+        toast.error("선수 정보 수정에 실패했습니다: " + err.message);
         setStudents(previousStudents);
       } finally {
         isSyncingRef.current = false;
@@ -1322,16 +1346,16 @@ function useLeagueStoreInternal() {
     }
   }, [students, currentClassId, isClassOwner]);
 
-  // 일괄 학생 정보 수정 (엑셀형 편집 저장) — 한 번의 낙관적 갱신 + 병렬 저장
+  // 일괄 선수 정보 수정 (엑셀형 편집 저장) — 한 번의 낙관적 갱신 + 병렬 저장
   const bulkUpdateStudents = useCallback(async (
-    updates: { id: string; real_name?: string; student_no?: number; gender?: Gender; rp?: number }[]
+    updates: { id: string; name?: string; nickname?: string | null; group?: string | null; gender?: Gender; rp?: number }[]
   ): Promise<boolean> => {
     if (currentViewSeasonRef.current !== "현재 시즌") {
       toast.error("과거 시즌 기록은 수정할 수 없습니다 (읽기 전용).");
       return false;
     }
     if (!isClassManagerRef.current) {
-      toast.error("권한이 없습니다. 학생·경기 관리 권한이 없습니다.");
+      toast.error("권한이 없습니다. 선수·경기 관리 권한이 없습니다.");
       return false;
     }
     if (isSyncingRef.current) {
@@ -1347,14 +1371,13 @@ function useLeagueStoreInternal() {
     const next = students.map((s) => {
       const u = byId.get(s.id);
       if (!u) return s;
-      const number = u.student_no ?? s.number;
       return {
         ...s,
-        number,
-        realName: u.real_name ?? s.realName,
+        name: u.name ?? s.name,
+        nickname: u.nickname ?? s.nickname,
+        group: u.group ?? s.group,
         gender: u.gender ?? s.gender,
         rp: u.rp ?? s.rp,
-        name: s.nickname || `${s.grade}-${s.classNum}-${number}번`,
       };
     });
     setStudents(next);
@@ -1362,8 +1385,9 @@ function useLeagueStoreInternal() {
     try {
       const results = await Promise.all(updates.map((u) => {
         const payload: any = {};
-        if (u.real_name !== undefined) payload.real_name = u.real_name;
-        if (u.student_no !== undefined) payload.student_no = u.student_no;
+        if (u.name !== undefined) payload.name = u.name;
+        if (u.nickname !== undefined) payload.nickname = u.nickname;
+        if (u.group !== undefined) payload.group_label = u.group;
         if (u.gender !== undefined) payload.gender = u.gender;
         if (u.rp !== undefined) payload.rp = u.rp;
         return apiUpdateStudentInfo(u.id, payload);
@@ -1383,8 +1407,8 @@ function useLeagueStoreInternal() {
     }
   }, [students, currentClassId, isClassOwner]);
 
-  // 휴지통: 삭제된 학생 목록 조회
-  const fetchDeletedStudents = useCallback(async (): Promise<{ id: string; realName: string; nickname: string; grade: number; classNum: number; number: number; rp: number }[]> => {
+  // 휴지통: 삭제된 선수 목록 조회
+  const fetchDeletedStudents = useCallback(async (): Promise<{ id: string; name: string; nickname: string; group: string | null; rp: number }[]> => {
     const classId = currentClassIdRef.current;
     if (!classId) return [];
     const { data, error } = await apiFetchDeletedStudents(classId);
@@ -1394,23 +1418,21 @@ function useLeagueStoreInternal() {
     }
     return ((data as any[]) || []).map((s) => ({
       id: s.id,
-      realName: s.real_name ?? "",
+      name: s.name ?? "",
       nickname: s.nickname ?? "",
-      grade: s.grade ?? 0,
-      classNum: s.class_number ?? 0,
-      number: s.student_no ?? 0,
+      group: s.group_label ?? null,
       rp: s.rp ?? 1000,
     }));
   }, []);
 
-  // 휴지통: 학생 복원
+  // 휴지통: 선수 복원
   const restoreDeletedStudent = useCallback(async (studentId: string): Promise<boolean> => {
     if (!isClassManagerRef.current) { toast.error("권한이 없습니다."); return false; }
     const classId = currentClassIdRef.current;
     if (!classId) return false;
     const { error } = await apiRestoreStudent(studentId);
     if (error) { toast.error("복원에 실패했습니다: " + error.message); return false; }
-    toast.success("학생을 복원했습니다. (과거 경기 기록은 복구되지 않습니다)");
+    toast.success("선수을 복원했습니다. (과거 경기 기록은 복구되지 않습니다)");
     await loadClassDataRef.current?.(classId);
     return true;
   }, [isClassOwner]);
@@ -1420,7 +1442,7 @@ function useLeagueStoreInternal() {
     if (!isClassManagerRef.current) { toast.error("권한이 없습니다."); return false; }
     const { error } = await apiHardDeleteStudent(studentId);
     if (error) { toast.error("영구 삭제에 실패했습니다: " + error.message); return false; }
-    toast.success("학생을 영구 삭제했습니다.");
+    toast.success("선수을 영구 삭제했습니다.");
     return true;
   }, [isClassOwner]);
 
@@ -1453,7 +1475,7 @@ function useLeagueStoreInternal() {
         if (error) throw error;
 
         const counts = (data as any) || {};
-        toast.success(`복원 완료! (학생 ${counts.students ?? 0}명, 경기 ${counts.matches ?? 0}건)`);
+        toast.success(`복원 완료! (선수 ${counts.students ?? 0}명, 경기 ${counts.matches ?? 0}건)`);
         // 서버 기준으로 다시 로딩하여 화면과 DB를 일치시킨다.
         await loadClassDataRef.current?.(currentClassId);
       } catch (err: any) {
@@ -1471,7 +1493,7 @@ function useLeagueStoreInternal() {
     }
   }, [students, matches, currentClassId, isClassOwner]);
 
-  // 교사 통제형 휴면 강등 일괄 RP 차감 액션
+  // 관리자 통제형 휴면 강등 일괄 RP 차감 액션
   const bulkDecayRP = useCallback(async (inactiveDays: number, decayAmount: number) => {
     if (currentViewSeasonRef.current !== "현재 시즌") {
       toast.error("과거 시즌 기록은 수정할 수 없습니다 (읽기 전용).");
@@ -2166,8 +2188,14 @@ function useLeagueStoreInternal() {
         const nextAWon = nextScoreA > nextScoreB;
         const winnerId = nextAWon ? playerAId : playerBId;
         const loserId = nextAWon ? playerBId : playerAId;
+        const winner2Id = (nextAWon ? match.playerA2Id : match.playerB2Id) ?? null;
+        const loser2Id = (nextAWon ? match.playerB2Id : match.playerA2Id) ?? null;
+        const winnerScore = nextAWon ? nextScoreA : nextScoreB;
+        const loserScore = nextAWon ? nextScoreB : nextScoreA;
 
-        const { error: updateErr } = await apiUpdateMatchWinnerLoser(matchId, winnerId, loserId);
+        const { error: updateErr } = await apiUpdateMatchWinnerLoser(matchId, winnerId, loserId, {
+          winner2Id, loser2Id, winnerScore, loserScore
+        });
         if (updateErr) throw updateErr;
 
         for (const s of nextStudentsList) {
@@ -2351,6 +2379,33 @@ function useLeagueStoreInternal() {
     }
   }, [currentClassId, isClassOwner]);
 
+  // 경기 입력 방식 저장 (소유자 전용).
+  const saveMatchInputMode = useCallback(async (mode: MatchInputMode) => {
+    if (!isClassOwner) {
+      toast.error("권한이 없습니다. 클래스 개설자만 이 작업을 수행할 수 있습니다.");
+      return;
+    }
+    const prev = matchInputModeRef.current;
+    setMatchInputMode(mode);
+
+    if (currentClassId) {
+      try {
+        const { data: currentClass } = await apiFetchClassSettings(currentClassId);
+        const newSettings = {
+          ...(currentClass?.settings || {}),
+          matchInputMode: mode
+        };
+        const { error: updateErr } = await apiUpdateClassSettings(currentClassId, newSettings);
+        if (updateErr) throw updateErr;
+        toast.success("경기 입력 방식이 저장되었습니다.");
+      } catch (err: any) {
+        console.error("Failed to save match input mode:", err.message);
+        toast.error("경기 입력 방식 저장에 실패했습니다: " + err.message);
+        setMatchInputMode(prev); // 롤백
+      }
+    }
+  }, [currentClassId, isClassOwner]);
+
   // Decay settings save function
   const saveDecaySettings = useCallback(async (enabled: boolean, days: number, amount: number, tiers: TierName[], perTierRp?: Partial<Record<TierName, number>>) => {
     if (currentViewSeasonRef.current !== "현재 시즌") {
@@ -2476,7 +2531,7 @@ function useLeagueStoreInternal() {
 
     try {
       setIsSyncing(true);
-      // Apply decay in Supabase + 학생별 감점일(decayApplied) 기록
+      // Apply decay in Supabase + 선수별 감점일(decayApplied) 기록
       const nextApplied = { ...decayAppliedDates };
       for (const id of targetIds) {
         const s = students.find((st) => st.id === id);
@@ -2488,7 +2543,7 @@ function useLeagueStoreInternal() {
         }
       }
 
-      // 로컬 학생 RP 즉시 반영 (리로드 전에도 카운트다운/리더보드 정합)
+      // 로컬 선수 RP 즉시 반영 (리로드 전에도 카운트다운/리더보드 정합)
       setStudents((prev) => prev.map((s) =>
         targetIds.includes(s.id) ? { ...s, rp: Math.max(0, s.rp - (decayDeltas[s.id] || 5)) } : s
       ));
@@ -2507,7 +2562,7 @@ function useLeagueStoreInternal() {
 
       setLastDecayDate(todayStr);
 
-      toast.success(`자동 휴면 차감 완료: 총 ${targetIds.length}명의 학생 RP가 각각 차감되었습니다.`, { duration: 5000 });
+      toast.success(`자동 휴면 차감 완료: 총 ${targetIds.length}명의 선수 RP가 각각 차감되었습니다.`, { duration: 5000 });
     } catch (e) {
       console.error("Failed executing automatic RP decay in Supabase:", e);
     } finally {
@@ -2515,12 +2570,12 @@ function useLeagueStoreInternal() {
     }
   }, [students, decaySettings, lastDecayDate, decayAppliedDates, currentClassId, tierThresholds]);
 
-  // 학생용 '나의 업적' 자동 연산 함수 (Derived State)
+  // 선수용 '나의 업적' 자동 연산 함수 (Derived State)
   const calculateAchievements = useCallback((studentId: string): Achievement[] => {
     return calculateAchievementsPure(students, matches, tierThresholds, studentId);
   }, [students, matches, tierThresholds]);
 
-  // 학생용 티어 승격 실시간 감지 감시자
+  // 선수용 티어 승격 실시간 감지 감시자
   useEffect(() => {
     if (hydrated && session && session.role === "STUDENT" && session.studentId) {
       const student = students.find((s) => s.id === session.studentId);
@@ -2572,13 +2627,13 @@ function useLeagueStoreInternal() {
     setIsSyncing(true);
 
     if (!currentClassId) {
-      toast.error("학급 정보가 없습니다.");
+      toast.error("리그 정보가 없습니다.");
       isSyncingRef.current = false;
       setIsSyncing(false);
       return { success: false, message: "No classId" };
     }
     try {
-      // 서버 RPC: 현재 순위 스냅샷 → 학생 RP/전적 초기화 → 시즌 라벨 변경 (한 트랜잭션)
+      // 서버 RPC: 현재 순위 스냅샷 → 선수 RP/전적 초기화 → 시즌 라벨 변경 (한 트랜잭션)
       const { error: rpcErr } = await apiStartNewSeason(currentClassId, seasonName);
       if (rpcErr) throw rpcErr;
 
@@ -2614,7 +2669,7 @@ function useLeagueStoreInternal() {
     setIsSyncing(true);
     try {
       // 과거 시즌: 보관된 최종 순위 + 해당 시즌 경기 조회 (읽기 전용으로 표시)
-      // 교사면 실명 포함(season_standings), 학생/익명이면 공개 RPC(실명 제외)
+      // 관리자면 실명 포함(season_standings), 선수/익명이면 공개 RPC(실명 제외)
       const standingsPromise = isTeacherRef.current
         ? apiFetchSeasonStandings(classId, seasonName)
         : apiFetchSeasonStandingsPublic(classId, seasonName);
@@ -2627,34 +2682,33 @@ function useLeagueStoreInternal() {
         id: m.id,
         playerAId: m.winner_id,
         playerBId: m.loser_id,
-        scoreA: 21,
-        scoreB: 19,
+        playerA2Id: m.winner2_id ?? undefined,
+        playerB2Id: m.loser2_id ?? undefined,
+        scoreA: m.winner_score ?? 21,
+        scoreB: m.loser_score ?? 19,
         date: m.created_at || new Date().toISOString(),
-        matchType: "single" as const,
+        matchType: (m.winner2_id ? "double" : "single") as "single" | "double",
       }));
 
       const studentsList: Student[] = (standings || []).map((s: any) => {
-        const grade = s.grade ?? 0;
-        const classNum = s.class_number ?? 0;
-        const number = s.student_no ?? 0;
-        const name = s.display_name || (s.nickname ?? `${grade}-${classNum}-${number}번`);
+        const pid = s.player_id ?? s.student_id;
+        const group = s.group_label ?? null;
+        const name = s.name || s.display_name || s.nickname || "이름없음";
 
         // 승패는 그 시즌 경기 기록에서 계산 (win_count 컬럼은 앱에서 갱신되지 않아 신뢰 불가)
         const myMatches = matchesList
-          .filter((m) => m.playerAId === s.student_id || m.playerBId === s.student_id)
+          .filter((m) => m.playerAId === pid || m.playerBId === pid)
           .sort((x, y) => new Date(y.date).getTime() - new Date(x.date).getTime());
-        const wins = myMatches.filter((m) => m.playerAId === s.student_id).length;
-        const losses = myMatches.filter((m) => m.playerBId === s.student_id).length;
-        const recent = myMatches.slice(0, 5).map((m) => (m.playerAId === s.student_id ? "W" : "L"));
+        const wins = myMatches.filter((m) => m.playerAId === pid).length;
+        const losses = myMatches.filter((m) => m.playerBId === pid).length;
+        const recent = myMatches.slice(0, 5).map((m) => (m.playerAId === pid ? "W" : "L"));
 
         return {
-          id: s.student_id,
-          grade,
-          classNum,
-          number,
+          id: pid,
           name,
-          realName: s.real_name ?? "",
           nickname: s.nickname ?? "",
+          group,
+          displayName: s.display_name ?? null,
           gender: (s.gender || "U") as Gender,
           rp: s.rp ?? 1000,
           wins,
@@ -2676,7 +2730,7 @@ function useLeagueStoreInternal() {
     }
   }, []);
 
-  // 7. 과거 시즌 관리 (교사 전용) — 복귀 / 이름변경 / 삭제 / 명예의 전당
+  // 7. 과거 시즌 관리 (관리자 전용) — 복귀 / 이름변경 / 삭제 / 명예의 전당
   const restoreSeason = useCallback(async (targetSeason: string) => {
     const classId = currentClassIdRef.current;
     if (!classId) return { success: false };
@@ -2736,6 +2790,8 @@ function useLeagueStoreInternal() {
     lockLeaderboard,
     lockAdmin,
     saveLockSetting,
+    matchInputMode,
+    saveMatchInputMode,
     recordMatch,
     upsertStudents,
     deleteMatch,

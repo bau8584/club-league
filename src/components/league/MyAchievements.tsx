@@ -115,7 +115,7 @@ export function MyAchievements({ studentId }: { studentId: string }) {
   if (!student) {
     return (
       <Card className="border-border/60 bg-card/60 p-8 text-center backdrop-blur">
-        <p className="text-muted-foreground">로그인 세션이 만료되었거나 학생 정보를 찾을 수 없습니다.</p>
+        <p className="text-muted-foreground">로그인 세션이 만료되었거나 선수 정보를 찾을 수 없습니다.</p>
       </Card>
     );
   }
@@ -140,7 +140,7 @@ export function MyAchievements({ studentId }: { studentId: string }) {
             <h3 className="font-black text-xl tracking-tight text-foreground">나의 스포츠 업적 명예회랑</h3>
           </div>
           <p className="text-sm text-muted-foreground leading-relaxed max-w-xl">
-            {student.grade}학년 {student.classNum}반 <span className="font-bold text-foreground">{student.name}</span> 학생의 경기 기록을 분석한 실시간 자동 업적 판정입니다. 실패를 두려워하지 않고, 더 높은 점수와 기록에 도전해 보세요!
+            {student.group ? `${student.group} · ` : ""}<span className="font-bold text-foreground">{student.nickname || student.name}</span> 님의 경기 기록을 분석한 실시간 자동 업적 판정입니다. 실패를 두려워하지 않고, 더 높은 점수와 기록에 도전해 보세요!
           </p>
         </div>
 

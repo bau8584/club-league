@@ -1,5 +1,5 @@
-import type { Student, Match, TierName, TiersRecord, DynamicBonuses, DynamicPenalties } from "./league-types";
-import { getTier, getTierSubdivision, getFullTierLabel, TIER_ORDER } from "./league-types";
+import type { Student, Match, TierName, TiersRecord, DynamicBonuses, DynamicPenalties } from "@/lib/league-types";
+import { getTier, getTierSubdivision, getFullTierLabel, TIER_ORDER } from "@/lib/league-types";
 
 const TIER_RANKING: Record<TierName, number> = {
   Bronze: 1,
@@ -170,7 +170,7 @@ export function calculateMatchResult(input: CalculateMatchResultInput): Calculat
     });
   });
 
-  // 각 참가 학생별로 개별 RP 변동 및 보너스 계산
+  // 각 참가 선수별로 개별 RP 변동 및 보너스 계산
   const playerStats = activePlayers.map((p) => {
     const student = students.find((s) => s.id === p.id);
     if (!student) return null;

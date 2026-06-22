@@ -21,7 +21,7 @@ function tierOf(rp: number, thresholds?: Record<TierName, number>): TierName {
   return "Bronze";
 }
 
-const nameOf = (s: Student) => s.realName || s.name;
+const nameOf = (s: Student) => s.nickname || s.name;
 
 export function SeasonSummary({
   season,
@@ -34,29 +34,24 @@ export function SeasonSummary({
   matches: Match[];
   thresholds?: Record<TierName, number>;
 }) {
-  const [filterGrade, setFilterGrade] = useState<number | null>(null);
-  const [filterClass, setFilterClass] = useState<number | null>(null);
+  const [filterGroup, setFilterGroup] = useState<string | null>(null);
 
-  // 필터 옵션: 데이터에 존재하는 학년/반만
-  const availableGrades = useMemo(
-    () => Array.from(new Set(students.map((s) => s.grade))).filter((g) => g > 0).sort((a, b) => a - b),
+  // 필터 옵션: 데이터에 존재하는 구분조만
+  const availableGroups = useMemo(
+    () => Array.from(new Set(students.map((s) => s.group || "").filter((g) => g))).sort((a, b) => a.localeCompare(b, "ko")),
     [students]
   );
-  const availableClasses = useMemo(
-    () => filterGrade == null ? [] : Array.from(new Set(students.filter((s) => s.grade === filterGrade).map((s) => s.classNum))).filter((c) => c > 0).sort((a, b) => a - b),
-    [students, filterGrade]
-  );
 
-  // 전체/학년/반으로 좁힌 학생·경기 집합
+  // 전체/구분조로 좁힌 선수·경기 집합
   const filtered = useMemo(() => {
     const fStudents = students.filter(
-      (s) => (filterGrade == null || s.grade === filterGrade) && (filterClass == null || s.classNum === filterClass)
+      (s) => filterGroup == null || (s.group || "") === filterGroup
     );
     const ids = new Set(fStudents.map((s) => s.id));
     // 그룹이 참여한 경기 (한 명이라도 그룹에 속하면 포함)
     const fMatches = matches.filter((m) => ids.has(m.playerAId) || ids.has(m.playerBId));
     return { fStudents, fMatches };
-  }, [students, matches, filterGrade, filterClass]);
+  }, [students, matches, filterGroup]);
 
   const stats = useMemo(() => {
     const group = filtered.fStudents;
@@ -77,7 +72,7 @@ export function SeasonSummary({
       .filter((s) => games(s) >= 3)
       .sort((a, b) => winRate(b) - winRate(a) || b.wins - a.wins)[0] || null;
 
-    // 최장 연승: 그룹 학생만, 경기 기록(시간순)으로 최대 연승 계산
+    // 최장 연승: 그룹 선수만, 경기 기록(시간순)으로 최대 연승 계산
     const byPlayer = new Map<string, { won: boolean; t: number }[]>();
     for (const m of involvingMatches) {
       const t = new Date(m.date).getTime();
@@ -102,7 +97,7 @@ export function SeasonSummary({
     }
     const longestStreakStudent = group.find((s) => s.id === longestStreak.id) || null;
 
-    // 최다 맞대결 라이벌 페어 (그룹 내 두 학생 간)
+    // 최다 맞대결 라이벌 페어 (그룹 내 두 선수 간)
     const pairCount = new Map<string, number>();
     for (const m of involvingMatches) {
       if (groupIds.has(m.playerAId) && groupIds.has(m.playerBId)) {
@@ -151,29 +146,20 @@ export function SeasonSummary({
         <h3 className="text-lg font-black tracking-tight">시즌 요약 · {season}</h3>
       </div>
 
-      {/* 전체 / 학년 / 반 필터 */}
-      <Card className="border border-border/60 bg-card/60 p-3 backdrop-blur shadow-md space-y-2">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[10px] font-bold text-muted-foreground mr-1">범위</span>
-          <FilterChip active={filterGrade == null} onClick={() => { setFilterGrade(null); setFilterClass(null); }}>전체</FilterChip>
-          {availableGrades.map((g) => (
-            <FilterChip key={g} active={filterGrade === g} onClick={() => { setFilterGrade(g); setFilterClass(null); }}>
-              {g}학년
-            </FilterChip>
-          ))}
-        </div>
-        {filterGrade != null && availableClasses.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-border/20">
-            <span className="text-[10px] font-bold text-muted-foreground mr-1">반</span>
-            <FilterChip active={filterClass == null} onClick={() => setFilterClass(null)} accent="green">전체</FilterChip>
-            {availableClasses.map((c) => (
-              <FilterChip key={c} active={filterClass === c} onClick={() => setFilterClass(c)} accent="green">
-                {c}반
+      {/* 전체 / 구분조 필터 */}
+      {availableGroups.length > 0 && (
+        <Card className="border border-border/60 bg-card/60 p-3 backdrop-blur shadow-md space-y-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] font-bold text-muted-foreground mr-1">구분조</span>
+            <FilterChip active={filterGroup == null} onClick={() => setFilterGroup(null)}>전체</FilterChip>
+            {availableGroups.map((g) => (
+              <FilterChip key={g} active={filterGroup === g} onClick={() => setFilterGroup(g)}>
+                {g}
               </FilterChip>
             ))}
           </div>
-        )}
-      </Card>
+        </Card>
+      )}
 
       {/* 시상대 (Top 3) */}
       <Card className="border border-border/60 bg-card/60 p-5 backdrop-blur shadow-xl">

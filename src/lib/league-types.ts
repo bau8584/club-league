@@ -1,23 +1,31 @@
 export type Gender = "M" | "F" | "U"; // M: 남, F: 여, U: 미지정
 
 /**
+ * 경기결과 입력 방식 (관리자가 리그별로 제어)
+ * - admin-only: 관리자(방장/공동관리/기록원)만 입력
+ * - free: 모든 멤버 자율 입력
+ * - peer-confirm: 멤버 입력 후 상대가 확인해야 확정 (Phase 2 — DB 필요)
+ * - admin-approve: 멤버 입력 후 관리자가 승인해야 확정 (Phase 2 — DB 필요)
+ */
+export type MatchInputMode = "admin-only" | "free" | "peer-confirm" | "admin-approve";
+
+/**
  * Student 인터페이스 - Supabase 'students' 테이블 스키마와 대응
  */
 export type Student = {
-  // --- Supabase DB 테이블 스키마 속성 ---
+  // --- Supabase DB 테이블 스키마 속성 (players) ---
   id: string; // UUID (Primary Key)
   rp: number; // 랭킹 포인트
-  class_id?: string; // 반 식별용 UUID (Foreign Key)
-  
-  // --- 데이터베이스 정규화 컬럼 매핑 ---
-  grade: number; // 학년 (1-6)
-  classNum: number; // 반 (1-10) -> DB: class_number
-  number: number; // 번호 (출석 번호) -> DB: student_no
-  name: string; // 표시용 이름 (리더보드 노출용: nickname ?? "학년-반-번호번")
-  realName?: string; // 학생 실명 -> DB: real_name (교사만 접근)
-  nickname?: string | null; // 학생 별명 -> DB: nickname (기본값 NULL)
+  league_id?: string; // 리그 식별용 UUID (Foreign Key) -> DB: league_id
+  userId?: string | null; // 계정 연결 -> DB: user_id (동호회: 본인 계정)
+
+  // --- 동호회 프로필 ---
+  name: string; // 이름 -> DB: name
+  nickname?: string | null; // 별명 -> DB: nickname
   gender: Gender; // 성별 -> DB: gender
-  
+  group?: string | null; // 구분조 -> DB: group_label
+  displayName?: string | null; // 표시 이름 -> DB: display_name
+
   // 경기 전적(matches) 데이터를 기반으로 실시간 계산되는 속성들
   recent: ("W" | "L")[]; // 최근 5경기 결과 (가장 최근이 첫 요소)
   wins: number; // 승리 횟수
@@ -129,17 +137,18 @@ export type Match = {
 };
 
 /**
- * Class 인터페이스 - Supabase 'classes' 테이블 스키마와 1:1 매핑
+ * Class 인터페이스 - Supabase 'leagues' 테이블 스키마와 1:1 매핑 (동호회 리그)
  */
 export type Class = {
   id: string; // UUID (Primary Key)
   season_id?: string | null; // 시즌 외래키
-  owner_uid: string; // 방장 교사 UID
-  co_admin_uids: string[] | null; // 공동 관리 교사 UID 목록
-  scorekeeper_uids: string[] | null; // 기록원(학생 등) UID 목록
-  class_name: string; // 학급/리그명
+  owner_uid: string; // 방장 UID
+  admin_uids: string[] | null; // 공동 관리자 UID 목록 -> DB: admin_uids
+  member_uids: string[] | null; // 멤버(동호인) UID 목록 -> DB: member_uids
+  name: string; // 리그명 -> DB: name
   settings: {
     season?: string; // 시즌 텍스트 정보 (예: "2026-1")
+    matchInputMode?: MatchInputMode; // 경기결과 입력 방식 (관리자 제어)
     schoolName?: string;
     sport?: string;
     adminCode?: string;
@@ -237,9 +246,10 @@ export const TIER_STYLES: Record<TierName, { bg: string; text: string; ring: str
   Diamond:  { bg: "bg-tier-diamond/15",  text: "text-tier-diamond",  ring: "ring-tier-diamond/40",  label: "다이아몬드" },
 };
 
-export function studentKey(s: { grade: number; classNum: number; number: number; name: string; realName?: string }) {
-  const studentName = s.realName || s.name;
-  return `${s.grade}-${s.classNum}-${s.number}-${studentName}`;
+export function studentKey(s: { id?: string; name?: string; nickname?: string | null; group?: string | null }) {
+  // 동호회: 안정적 식별은 id 우선, 없으면 이름/구분조 조합.
+  if (s.id) return s.id;
+  return `${s.group ?? ""}-${s.name ?? s.nickname ?? ""}`;
 }
 
 export type TierSettings = Record<"Bronze" | "Silver" | "Gold" | "Platinum", {

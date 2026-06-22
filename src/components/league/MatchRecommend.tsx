@@ -4,32 +4,31 @@ import { Card } from "@/components/ui/card";
 import { TierBadge } from "./TierBadge";
 import { GenderMark } from "./GenderMark";
 import { cn } from "@/lib/utils";
-import { 
-  Swords, 
-  Target, 
-  Sparkles, 
-  AlertCircle, 
-  X, 
-  Dices, 
-  Award, 
-  Building2, 
-  Flame, 
-  ArrowRight, 
-  Users, 
-  RotateCcw, 
-  Trophy,
+import {
+  Swords,
+  Target,
+  Sparkles,
+  AlertCircle,
+  X,
+  Dices,
+  Building2,
+  ArrowRight,
+  Users,
+  RotateCcw,
   UserCheck,
   UserPlus
 } from "lucide-react";
-import type { Student, Match, TierName } from "@/lib/league-types";
+import type { Student, Match } from "@/lib/league-types";
 import { getTier } from "@/lib/league-types";
 import { useLeagueStore } from "@/lib/league-store";
 import { toast } from "sonner";
 
-const GRADES = [1, 2, 3, 4, 5, 6];
-const CLASSES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-
 type Selection = { grade: number | null; classNum: number | null; studentId: string | null };
+
+// 표시 이름 헬퍼: 별명 > 표시이름 > 본명
+const displayNameOf = (s: Student) => s.displayName || s.nickname || s.name;
+// 구분조 라벨 헬퍼 (미지정 시 표기)
+const groupLabelOf = (s: Student) => s.group || "구분조 미지정";
 
 const TIER_RANK_MAP: Record<string, number> = {
   Bronze: 1,
@@ -47,10 +46,6 @@ export function MatchRecommend({
   onSelChange,
   mode,
   onModeChange,
-  targetGrade,
-  onTargetGradeChange,
-  targetClass,
-  onTargetClassChange,
   thresholds,
   onUpdateGender,
   isStudentView = false,
@@ -67,22 +62,31 @@ export function MatchRecommend({
   ) => void;
   sel: Selection;
   onSelChange: (s: Selection) => void;
+  // 동호회: "class" = 같은 구분조, "otherClass" = 다른 구분조 (기존 prop 시그니처 호환 유지)
   mode: "class" | "otherClass" | "otherGrade";
   onModeChange: (m: "class" | "otherClass" | "otherGrade") => void;
-  targetGrade: number | null;
-  onTargetGradeChange: (g: number | null) => void;
-  targetClass: number | null;
-  onTargetClassChange: (c: number | null) => void;
+  targetGrade?: number | null;
+  onTargetGradeChange?: (g: number | null) => void;
+  targetClass?: number | null;
+  onTargetClassChange?: (c: number | null) => void;
   thresholds?: Record<string, number>;
   onUpdateGender?: (studentId: string, gender: "M" | "F" | "U") => void;
   isStudentView?: boolean;
   isReadOnly?: boolean;
 }) {
   const { dynamicBonuses, dynamicPenalties, tiers } = useLeagueStore();
-  
+
   // Local states for MatchRecommend 2.0
   const [gameType, setGameType] = useState<"single" | "double">("single");
   const [selectedTeammateId, setSelectedTeammateId] = useState<string | null>(null);
+
+  // 동호회: 다른 구분조 매칭 시 대상 구분조(문자열). 학년/반 숫자 prop 대신 로컬 상태로 관리.
+  const [targetGroup, setTargetGroup] = useState<string | null>(null);
+
+  // "다른 구분조"가 아닐 땐 대상 구분조 선택 해제
+  useEffect(() => {
+    if (mode !== "otherClass") setTargetGroup(null);
+  }, [mode]);
 
   // Active analysis player profile
   const player = students.find((s) => s.id === sel.studentId) ?? null;
@@ -136,78 +140,39 @@ export function MatchRecommend({
     toast.warning("성별을 입력하지 않아 선수 선택이 취소되었습니다.");
   };
 
-  // 1. Grade & Class options for dropdowns
-  const classesForSel = useMemo(() => {
-    if (sel.grade == null) return [];
-    const set = new Set<number>();
-    students.filter((s) => s.grade === sel.grade).forEach((s) => set.add(s.classNum));
-    return Array.from(set).sort((a, b) => a - b);
-  }, [students, sel.grade]);
-
-  const rosterForSel = useMemo(() => {
-    if (sel.grade == null || sel.classNum == null) return [];
-    return students
-      .filter((s) => s.grade === sel.grade && s.classNum === sel.classNum)
-      .sort((a, b) => a.number - b.number);
-  }, [students, sel.grade, sel.classNum]);
-
-  // Options for matching scopes
-  const availableClassesForGrade = useMemo(() => {
-    if (!player) return [];
-    const set = new Set<number>();
-    students.filter((s) => s.grade === player.grade).forEach((s) => set.add(s.classNum));
-    return Array.from(set).sort((a, b) => a - b);
-  }, [students, player]);
-
-  const availableGrades = useMemo(() => {
-    const set = new Set<number>();
-    students.forEach((s) => set.add(s.grade));
-    return Array.from(set).sort((a, b) => a - b);
+  // 1. 구분조(group) 옵션 목록 — 선수 명단에 존재하는 distinct group 값
+  const availableGroups = useMemo(() => {
+    const set = new Set<string>();
+    students.forEach((s) => {
+      if (s.group) set.add(s.group);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [students]);
 
-  const availableClassesForTargetGrade = useMemo(() => {
-    if (targetGrade == null) return [];
-    const set = new Set<number>();
-    students.filter((s) => s.grade === targetGrade).forEach((s) => set.add(s.classNum));
-    return Array.from(set).sort((a, b) => a - b);
-  }, [students, targetGrade]);
+  // 선택 단계: 구분조별 선수 목록
+  const groupsForSel = availableGroups;
 
-  // Dice Rolls
-  const handleRandomClass = () => {
+  // 선택 UI용 로컬 구분조 상태 (선수 선택 마법사 2단계)
+  const [pickGroup, setPickGroup] = useState<string | null>(null);
+
+  const rosterForPickGroup = useMemo(() => {
+    if (pickGroup == null) return [];
+    return students
+      .filter((s) => (s.group || null) === pickGroup)
+      .sort((a, b) => b.rp - a.rp);
+  }, [students, pickGroup]);
+
+  // 랜덤 구분조 선택 (다른 구분조 도전)
+  const handleRandomGroup = () => {
     if (!player) return;
-    const otherClasses = availableClassesForGrade.filter((c) => c !== player.classNum);
-    if (otherClasses.length === 0) {
-      toast.warning("동일 학년 내에 대결할 다른 학급 데이터가 명렬표에 없습니다.");
+    const otherGroups = availableGroups.filter((g) => g !== (player.group || null));
+    if (otherGroups.length === 0) {
+      toast.warning("도전할 수 있는 다른 구분조 데이터가 명단에 없습니다.");
       return;
     }
-    const rand = otherClasses[Math.floor(Math.random() * otherClasses.length)];
-    onTargetClassChange(rand);
-    toast.success(`🎲 주사위를 굴려 [${player.grade}학년 ${rand}반]을(를) 매칭 범위로 선택했습니다!`);
-  };
-
-  const handleRandomGradeClass = () => {
-    if (!player) return;
-    const pairs: { grade: number; classNum: number }[] = [];
-    const seen = new Set<string>();
-
-    students.forEach((s) => {
-      if (s.grade === player.grade && s.classNum === player.classNum) return;
-      const key = `${s.grade}-${s.classNum}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        pairs.push({ grade: s.grade, classNum: s.classNum });
-      }
-    });
-
-    if (pairs.length === 0) {
-      toast.warning("도전할 수 있는 다른 학년/반 데이터가 명렬표에 없습니다.");
-      return;
-    }
-
-    const rand = pairs[Math.floor(Math.random() * pairs.length)];
-    onTargetGradeChange(rand.grade);
-    onTargetClassChange(rand.classNum);
-    toast.success(`🎲 주사위를 굴려 [${rand.grade}학년 ${rand.classNum}반]을(를) 매칭 범위로 선택했습니다!`);
+    const rand = otherGroups[Math.floor(Math.random() * otherGroups.length)];
+    setTargetGroup(rand);
+    toast.success(`🎲 주사위를 굴려 [${rand}] 구분조를 매칭 범위로 선택했습니다!`);
   };
 
   // Compile player matches histories
@@ -224,8 +189,8 @@ export function MatchRecommend({
     if (!player) return set;
     playerMatches.slice(0, 5).forEach((m) => {
       const isOnTeamA = m.playerAId === player.id || m.playerA2Id === player.id;
-      const oppIds = isOnTeamA 
-        ? [m.playerBId, m.playerB2Id].filter(Boolean) as string[] 
+      const oppIds = isOnTeamA
+        ? [m.playerBId, m.playerB2Id].filter(Boolean) as string[]
         : [m.playerAId, m.playerA2Id].filter(Boolean) as string[];
       oppIds.forEach(id => set.add(id));
     });
@@ -239,8 +204,8 @@ export function MatchRecommend({
     set.add(player.id);
     playerMatches.slice(0, 2).forEach((m) => {
       const isOnTeamA = m.playerAId === player.id || m.playerA2Id === player.id;
-      const oppIds = isOnTeamA 
-        ? [m.playerBId, m.playerB2Id].filter(Boolean) as string[] 
+      const oppIds = isOnTeamA
+        ? [m.playerBId, m.playerB2Id].filter(Boolean) as string[]
         : [m.playerAId, m.playerA2Id].filter(Boolean) as string[];
       oppIds.forEach(id => set.add(id));
     });
@@ -258,7 +223,7 @@ export function MatchRecommend({
     const isDouble = partner !== null && opp2 !== null;
     const playerTier = getTier(subject.rp, thresholds);
     const tierKey = playerTier.toLowerCase() as 'bronze'|'silver'|'gold'|'platinum'|'diamond';
-    
+
     const baseWin = tiers?.[tierKey]?.winRp ?? 10;
     const baseLoss = tiers?.[tierKey]?.loseRp ?? 20;
 
@@ -313,7 +278,7 @@ export function MatchRecommend({
           const mTeamA = [m.playerAId, m.playerA2Id].filter(Boolean) as string[];
           const mTeamB = [m.playerBId, m.playerB2Id].filter(Boolean) as string[];
           const mAWon = m.scoreA > m.scoreB;
-          
+
           const sIsOnA = mTeamA.includes(subject.id);
           const sIsOnB = mTeamB.includes(subject.id);
           const lost = (sIsOnA && !mAWon) || (sIsOnB && mAWon);
@@ -424,7 +389,7 @@ export function MatchRecommend({
           const mTeamA = [m.playerAId, m.playerA2Id].filter(Boolean) as string[];
           const mTeamB = [m.playerBId, m.playerB2Id].filter(Boolean) as string[];
           const mAWon = m.scoreA > m.scoreB;
-          
+
           const sIsOnA = mTeamA.includes(subject.id);
           const sIsOnB = mTeamB.includes(subject.id);
           const subjectWon = (sIsOnA && mAWon) || (sIsOnB && !mAWon);
@@ -457,28 +422,24 @@ export function MatchRecommend({
 
     let candidates = students.filter((s) => !strictExcludedIds.has(s.id));
 
-    // Filter by scope
+    // 구분조(group) 기준 매칭 범위 필터
     if (mode === "class") {
-      candidates = candidates.filter(
-        (c) => c.grade === player.grade && c.classNum === player.classNum
-      );
+      // 같은 구분조
+      candidates = candidates.filter((c) => (c.group || null) === (player.group || null));
     } else if (mode === "otherClass") {
-      if (targetClass == null) return [];
-      candidates = candidates.filter(
-        (c) => c.grade === player.grade && c.classNum === targetClass
-      );
-    } else if (mode === "otherGrade") {
-      if (targetGrade == null || targetClass == null) return [];
-      candidates = candidates.filter(
-        (c) => c.grade === targetGrade && c.classNum === targetClass
-      );
+      // 다른 구분조 (대상 구분조 지정 시 해당 조만, 미지정 시 내 조 외 전체)
+      if (targetGroup != null) {
+        candidates = candidates.filter((c) => (c.group || null) === targetGroup);
+      } else {
+        candidates = candidates.filter((c) => (c.group || null) !== (player.group || null));
+      }
     }
 
     const scored = candidates.map((candidate) => {
       let score = 100;
 
       const rpGap = Math.abs(candidate.rp - player.rp);
-      
+
       // 1. RP proximity
       if (rpGap <= 150) {
         score += (150 - rpGap);
@@ -486,9 +447,8 @@ export function MatchRecommend({
         score -= (rpGap - 150) * 0.5;
       }
 
-      // 2. Same grade/class boosts
-      if (candidate.grade === player.grade) score += 50;
-      if (candidate.classNum === player.classNum) score += 30;
+      // 2. 같은 구분조 가산점
+      if ((candidate.group || null) === (player.group || null)) score += 50;
 
       // 3. Upward challenge incentive
       const rpDelta = candidate.rp - player.rp;
@@ -507,35 +467,35 @@ export function MatchRecommend({
       const candidateTier = getTier(candidate.rp, thresholds);
       const playerTierIdx = TIER_RANK_MAP[playerTier] ?? 1;
       const candidateTierIdx = TIER_RANK_MAP[candidateTier] ?? 1;
-      
+
       const tags: { label: string; style: string; desc: string }[] = [];
-      
+
       if (!isRecentOpp) {
-        tags.push({ 
-          label: "🤝 새로운 인연", 
+        tags.push({
+          label: "🤝 새로운 인연",
           style: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
-          desc: "최근 5경기 동안 만난 적이 없습니다. 승패 무관하게 신선도 보너스를 받습니다." 
+          desc: "최근 5경기 동안 만난 적이 없습니다. 승패 무관하게 신선도 보너스를 받습니다."
         });
       }
       if (candidateTierIdx - playerTierIdx >= 2) {
-        tags.push({ 
-          label: "🔥 언더독의 반란", 
+        tags.push({
+          label: "🔥 언더독의 반란",
           style: "bg-rose-500/15 text-rose-400 border-rose-500/30",
-          desc: "상대가 2티어 높습니다. 승리 시 막대한 보너스를 얻습니다." 
+          desc: "상대가 2티어 높습니다. 승리 시 막대한 보너스를 얻습니다."
         });
       }
       if (rpGap <= 80) {
-        tags.push({ 
-          label: "⚔️ 명승부 예상", 
+        tags.push({
+          label: "⚔️ 명승부 예상",
           style: "bg-neon-blue/15 text-neon-blue border-neon-blue/30",
-          desc: "RP가 비슷하여 1~2점 차 접전이 예상됩니다." 
+          desc: "RP가 비슷하여 1~2점 차 접전이 예상됩니다."
         });
       }
       if (totalMatches < 5) {
-        tags.push({ 
-          label: "🌱 교류 환영", 
+        tags.push({
+          label: "🌱 교류 환영",
           style: "bg-purple-500/15 text-purple-400 border-purple-500/30",
-          desc: "최근 경기 수가 적은 학생입니다. 함께 플레이하며 리그를 활성화해주세요." 
+          desc: "최근 경기 수가 적은 회원입니다. 함께 플레이하며 리그를 활성화해주세요."
         });
       }
 
@@ -549,7 +509,7 @@ export function MatchRecommend({
     return scored
       .sort((a, b) => b.score - a.score)
       .slice(0, 6);
-  }, [player, students, gameType, strictExcludedIds, mode, targetClass, targetGrade, thresholds, recentOpponentIds]);
+  }, [player, students, gameType, strictExcludedIds, mode, targetGroup, thresholds, recentOpponentIds]);
 
   // ----------------------------------------------------
   // [복식 1단계: 팀원 추천 엔진]
@@ -557,14 +517,13 @@ export function MatchRecommend({
   const partnerRecommendations = useMemo(() => {
     if (!player || gameType !== "double") return [];
 
-    // Partner candidates must be from the same grade (or class, but same class/grade is normal)
-    // Exclude self
-    let candidates = students.filter((s) => s.id !== player.id && s.grade === player.grade);
+    // 파트너 후보: 같은 구분조 우선, 없으면 전체. 본인 제외.
+    let candidates = students.filter((s) => s.id !== player.id);
 
-    // Prefer classmates
-    const classmates = candidates.filter((c) => c.classNum === player.classNum);
-    if (classmates.length > 0) {
-      candidates = classmates;
+    // 같은 구분조 선호
+    const sameGroup = candidates.filter((c) => (c.group || null) === (player.group || null));
+    if (sameGroup.length > 0) {
+      candidates = sameGroup;
     }
 
     // Partner history (last 5 double matches)
@@ -572,7 +531,7 @@ export function MatchRecommend({
     const doubleMatches = playerMatches.filter(m => m.matchType === "double");
     doubleMatches.slice(0, 5).forEach((m) => {
       const isOnTeamA = m.playerAId === player.id || m.playerA2Id === player.id;
-      const partnerId = isOnTeamA 
+      const partnerId = isOnTeamA
         ? (m.playerAId === player.id ? m.playerA2Id : m.playerAId)
         : (m.playerBId === player.id ? m.playerB2Id : m.playerBId);
       if (partnerId) recentPartnerIds.add(partnerId);
@@ -633,7 +592,7 @@ export function MatchRecommend({
   // ----------------------------------------------------
   const doubleOpponentRecommendations = useMemo(() => {
     if (!player || !selectedTeammateId || gameType !== "double") return [];
-    
+
     const partner = students.find((s) => s.id === selectedTeammateId);
     if (!partner) return [];
 
@@ -642,21 +601,15 @@ export function MatchRecommend({
     // Opponent candidates pool
     let oppCandidates = students.filter((s) => s.id !== player.id && s.id !== partner.id);
 
-    // Apply matching scope filter
+    // 구분조(group) 기준 매칭 범위 필터
     if (mode === "class") {
-      oppCandidates = oppCandidates.filter(
-        (c) => c.grade === player.grade && c.classNum === player.classNum
-      );
+      oppCandidates = oppCandidates.filter((c) => (c.group || null) === (player.group || null));
     } else if (mode === "otherClass") {
-      if (targetClass == null) return [];
-      oppCandidates = oppCandidates.filter(
-        (c) => c.grade === player.grade && c.classNum === targetClass
-      );
-    } else if (mode === "otherGrade") {
-      if (targetGrade == null || targetClass == null) return [];
-      oppCandidates = oppCandidates.filter(
-        (c) => c.grade === targetGrade && c.classNum === targetClass
-      );
+      if (targetGroup != null) {
+        oppCandidates = oppCandidates.filter((c) => (c.group || null) === targetGroup);
+      } else {
+        oppCandidates = oppCandidates.filter((c) => (c.group || null) !== (player.group || null));
+      }
     }
 
     if (oppCandidates.length < 2) return [];
@@ -673,7 +626,7 @@ export function MatchRecommend({
         const rpGap = Math.abs(ourCombinedRp - combinedRp);
 
         let score = 100;
-        
+
         // RP gap penalty
         score -= rpGap * 1.5;
 
@@ -724,7 +677,7 @@ export function MatchRecommend({
           tags.push({
             label: "🌱 교류 환영",
             style: "bg-purple-500/15 text-purple-400 border-purple-500/30",
-            desc: "최근 경기 수가 적은 학생이 포함된 팀입니다. 함께 플레이하며 리그를 활성화해주세요."
+            desc: "최근 경기 수가 적은 회원이 포함된 팀입니다. 함께 플레이하며 리그를 활성화해주세요."
           });
         }
 
@@ -742,28 +695,34 @@ export function MatchRecommend({
     return pairs
       .sort((a, b) => b.score - a.score)
       .slice(0, 3);
-  }, [player, selectedTeammateId, students, gameType, mode, targetClass, targetGrade, playerMatches, thresholds, recentOpponentIds, dynamicBonuses]);
+  }, [player, selectedTeammateId, students, gameType, mode, targetGroup, playerMatches, thresholds, recentOpponentIds, dynamicBonuses]);
 
   const showPromptToSelect = useMemo(() => {
     if (!player) return false;
-    if (mode === "otherClass" && targetClass == null) return true;
-    if (mode === "otherGrade" && (targetGrade == null || targetClass == null)) return true;
     return false;
-  }, [player, mode, targetGrade, targetClass]);
+  }, [player]);
 
   const selectedTeammate = useMemo(() => {
     return students.find((s) => s.id === selectedTeammateId) ?? null;
   }, [selectedTeammateId, students]);
 
+  // 매칭 범위 라벨 (구분조 기준)
+  const scopeLabel = useMemo(() => {
+    if (!player) return "";
+    if (mode === "class") return `같은 구분조 (${groupLabelOf(player)})`;
+    if (mode === "otherClass") return targetGroup != null ? `${targetGroup} 구분조` : "다른 구분조 전체";
+    return "전체";
+  }, [player, mode, targetGroup]);
+
   return (
     <div className="space-y-6">
-      
+
       {/* 1. Selector Section */}
       <Card className="border-slate-800 bg-slate-950 p-5 shadow-2xl relative overflow-hidden">
         <div className="absolute right-0 top-0 opacity-5 pointer-events-none">
           <Target className="size-48 text-neon-blue" />
         </div>
-        
+
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-2 text-neon-blue">
             <Target className="size-5 animate-pulse" />
@@ -782,103 +741,75 @@ export function MatchRecommend({
           )}
         </div>
 
-        {/* Compact Button Grid selectors (only visible if not student view) */}
+        {/* Compact selectors (only visible if not student view) */}
         {!isStudentView && !player && (
           <div className="flex flex-col gap-4 bg-slate-900/60 p-4 rounded-xl border border-slate-800/80">
-            <div className="text-xs text-slate-450 font-bold uppercase tracking-wider">매치 추천 대상 학생을 선택하세요</div>
-            
-            {/* 1. Grade Select Button Grid */}
+            <div className="text-xs text-slate-450 font-bold uppercase tracking-wider">매치 추천 대상 회원을 선택하세요</div>
+
+            {/* 1. 구분조 선택 */}
             <div className="space-y-2">
-              <label className="text-[11px] font-bold text-slate-400 block">1. 학년 선택</label>
+              <label className="text-[11px] font-bold text-slate-400 block">1. 구분조 선택</label>
               <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                {availableGrades.map((g) => (
+                {groupsForSel.map((g) => (
                   <button
                     key={g}
                     type="button"
                     onClick={() => {
-                      onSelChange({ grade: g, classNum: null, studentId: null });
+                      setPickGroup(g);
+                      onSelChange({ ...sel, studentId: null });
                       setSelectedTeammateId(null);
                     }}
                     className={cn(
                       "h-10 rounded-lg border text-xs font-black transition-all active:scale-95 flex items-center justify-center cursor-pointer",
-                      sel.grade === g
+                      pickGroup === g
                         ? "border-neon-blue bg-neon-blue/20 text-neon-blue shadow-[0_0_12px_rgba(0,180,216,0.2)]"
                         : "border-slate-800 bg-slate-950 text-slate-400 hover:text-slate-200"
                     )}
                   >
-                    {g}학년
+                    {g}
                   </button>
                 ))}
+                {groupsForSel.length === 0 && (
+                  <span className="text-xs text-slate-500 py-1 col-span-full">등록된 구분조가 없습니다. 전체 회원에서 선택하세요.</span>
+                )}
               </div>
             </div>
-            
-            {/* 2. Class Select Button Grid */}
-            {sel.grade != null && (
-              <div className="space-y-2 animate-in slide-in-from-top-1 duration-200">
-                <label className="text-[11px] font-bold text-slate-400 block">2. 반 선택</label>
-                <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
-                  {classesForSel.map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      onClick={() => {
-                        onSelChange({ ...sel, classNum: c, studentId: null });
-                        setSelectedTeammateId(null);
-                      }}
-                      className={cn(
-                        "h-10 rounded-lg border text-xs font-black transition-all active:scale-95 flex items-center justify-center cursor-pointer",
-                        sel.classNum === c
-                          ? "border-neon-blue bg-neon-blue/20 text-neon-blue shadow-[0_0_12px_rgba(0,180,216,0.2)]"
-                          : "border-slate-800 bg-slate-950 text-slate-400 hover:text-slate-200"
-                      )}
-                    >
-                      {c}반
-                    </button>
-                  ))}
-                  {classesForSel.length === 0 && (
-                    <span className="text-xs text-slate-500 py-1 col-span-full">등록된 반이 없습니다.</span>
-                  )}
-                </div>
-              </div>
-            )}
 
-            {/* 3. Student Select Button Grid */}
-            {sel.classNum != null && (
-              <div className="space-y-2 animate-in slide-in-from-top-1 duration-200">
-                <label className="text-[11px] font-bold text-slate-400 block">3. 학생 선택</label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {rosterForSel.map((s) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => onSelChange({ ...sel, studentId: s.id })}
-                      className={cn(
-                        "relative rounded-lg border p-3 flex flex-col justify-between items-center text-center transition-all h-20 hover:border-neon-blue/60 hover:bg-slate-900/60 cursor-pointer w-full overflow-hidden",
-                        sel.studentId === s.id
-                          ? "border-neon-blue bg-neon-blue/10 text-neon-blue shadow-[0_0_12px_rgba(0,180,216,0.15)]"
-                          : "border-slate-800 bg-slate-950/85 text-slate-300"
-                      )}
-                    >
-                      <span className="absolute top-1 left-1.5 text-[9px] text-slate-500 font-mono">
-                        {s.number}번
-                      </span>
-                      <GenderMark 
-                        gender={s.gender} 
-                        className="absolute top-1 right-1.5 size-3 text-[8px]" 
-                      />
-                      <span className="text-xs font-black mt-2 text-slate-100">{s.name}</span>
-                      <div className="mt-1 flex items-center gap-1">
-                        <span className="text-[9px] text-slate-450 font-mono font-bold">{s.rp} RP</span>
-                        <TierBadge rp={s.rp} thresholds={thresholds} />
-                      </div>
-                    </button>
-                  ))}
-                  {rosterForSel.length === 0 && (
-                    <span className="text-xs text-slate-500 py-1 col-span-full">반에 학생이 없습니다.</span>
-                  )}
-                </div>
+            {/* 2. 회원 선택 */}
+            <div className="space-y-2 animate-in slide-in-from-top-1 duration-200">
+              <label className="text-[11px] font-bold text-slate-400 block">2. 회원 선택</label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {(pickGroup != null ? rosterForPickGroup : [...students].sort((a, b) => b.rp - a.rp)).map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => onSelChange({ ...sel, studentId: s.id })}
+                    className={cn(
+                      "relative rounded-lg border p-3 flex flex-col justify-between items-center text-center transition-all h-20 hover:border-neon-blue/60 hover:bg-slate-900/60 cursor-pointer w-full overflow-hidden",
+                      sel.studentId === s.id
+                        ? "border-neon-blue bg-neon-blue/10 text-neon-blue shadow-[0_0_12px_rgba(0,180,216,0.15)]"
+                        : "border-slate-800 bg-slate-950/85 text-slate-300"
+                    )}
+                  >
+                    <span className="absolute top-1 left-1.5 text-[9px] text-slate-500 font-mono">
+                      {groupLabelOf(s)}
+                    </span>
+                    <GenderMark
+                      gender={s.gender}
+                      className="absolute top-1 right-1.5 size-3 text-[8px]"
+                    />
+                    <span className="text-xs font-black mt-2 text-slate-100">{displayNameOf(s)}</span>
+                    <div className="mt-1 flex items-center gap-1">
+                      <span className="text-[9px] text-slate-450 font-mono font-bold">{s.rp} RP</span>
+                      <TierBadge rp={s.rp} thresholds={thresholds} />
+                    </div>
+                  </button>
+                ))}
+                {students.length === 0 && (
+                  <span className="text-xs text-slate-500 py-1 col-span-full">등록된 회원이 없습니다.</span>
+                )}
               </div>
-            )}
+            </div>
           </div>
         )}
 
@@ -888,11 +819,11 @@ export function MatchRecommend({
           <div className="rounded-xl border border-neon-blue/40 bg-slate-900/60 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <div className="text-[10px] text-slate-400 font-semibold tracking-wider uppercase">
-                {player.grade}학년 {player.classNum}반 · {player.number}번 선수
+                {groupLabelOf(player)} · 회원
               </div>
               <div className="mt-1 flex items-center gap-2 text-xl font-black text-slate-100">
                 <GenderMark gender={player.gender} className="size-5 text-[10px]" />
-                {player.name}
+                {displayNameOf(player)}
               </div>
               <div className="mt-2 flex items-center gap-2.5">
                 <TierBadge rp={player.rp} thresholds={thresholds} />
@@ -941,10 +872,10 @@ export function MatchRecommend({
         <Card className="border-slate-800 bg-slate-950 p-5 shadow-xl relative">
           <div className="mb-4 flex items-center gap-2 text-neon-blue">
             <Building2 className="size-5" />
-            <h3 className="font-black text-base">🏢 매칭 범위 선택</h3>
+            <h3 className="font-black text-base">🏢 매칭 범위 선택 (구분조)</h3>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <button
               onClick={() => onModeChange("class")}
               className={cn(
@@ -956,10 +887,10 @@ export function MatchRecommend({
             >
               <div>
                 <div className="flex items-center gap-1.5 font-black text-sm text-slate-200">
-                  <span className="text-lg">🏢</span> 우리 반 매칭
+                  <span className="text-lg">🏢</span> 같은 구분조 매칭
                 </div>
                 <p className="mt-1.5 text-[10px] text-slate-400 leading-relaxed">
-                  내 학년/반 학생들을 대상으로 라이벌을 추천합니다.
+                  나와 같은 구분조 회원들을 대상으로 라이벌을 추천합니다.
                 </p>
               </div>
             </button>
@@ -967,9 +898,9 @@ export function MatchRecommend({
             <button
               onClick={() => {
                 onModeChange("otherClass");
-                const diffClasses = availableClassesForGrade.filter((c) => c !== player.classNum);
-                if (diffClasses.length > 0 && targetClass === null) {
-                  onTargetClassChange(diffClasses[0]);
+                const otherGroups = availableGroups.filter((g) => g !== (player.group || null));
+                if (otherGroups.length > 0 && targetGroup === null) {
+                  setTargetGroup(otherGroups[0]);
                 }
               }}
               className={cn(
@@ -981,37 +912,10 @@ export function MatchRecommend({
             >
               <div>
                 <div className="flex items-center gap-1.5 font-black text-sm text-slate-200">
-                  <span className="text-lg">⚔️</span> 다른 반 도전
+                  <span className="text-lg">⚔️</span> 다른 구분조 도전
                 </div>
                 <p className="mt-1.5 text-[10px] text-slate-400 leading-relaxed">
-                  학년 내 다른 반 친구들을 타겟으로 삼아 매칭합니다.
-                </p>
-              </div>
-            </button>
-
-            <button
-              onClick={() => {
-                onModeChange("otherGrade");
-                const diffGrades = availableGrades.filter((g) => g !== player.grade);
-                if (diffGrades.length > 0) {
-                  if (targetGrade === null) onTargetGradeChange(diffGrades[0]);
-                  const cl = students.find((s) => s.grade === diffGrades[0])?.classNum ?? null;
-                  if (cl !== null && targetClass === null) onTargetClassChange(cl);
-                }
-              }}
-              className={cn(
-                "rounded-xl border p-4 text-left transition-all flex flex-col justify-between h-[105px] active:scale-[0.98]",
-                mode === "otherGrade"
-                  ? "border-purple-500 bg-purple-500/5 shadow-[0_0_15px_rgba(168,85,247,0.1)]"
-                  : "border-slate-800 bg-slate-900/30 hover:border-slate-700 hover:bg-slate-900/50"
-              )}
-            >
-              <div>
-                <div className="flex items-center gap-1.5 font-black text-sm text-slate-200">
-                  <span className="text-lg">🚀</span> 다른 학년 레이드
-                </div>
-                <p className="mt-1.5 text-[10px] text-slate-400 leading-relaxed">
-                  학년과 반을 자유롭게 지정해 선배/후배 팀에게 도전합니다.
+                  다른 구분조 회원들을 타겟으로 삼아 매칭합니다.
                 </p>
               </div>
             </button>
@@ -1020,99 +924,48 @@ export function MatchRecommend({
           {mode === "otherClass" && (
             <div className="mt-4 p-4 rounded-xl border border-neon-green/30 bg-slate-900/50 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="text-xs font-bold text-neon-green">⚔️ 대결할 학급(반) 지정</div>
+                <div className="text-xs font-bold text-neon-green">⚔️ 대결할 구분조 지정</div>
                 <Button
-                  onClick={handleRandomClass}
+                  onClick={handleRandomGroup}
                   variant="outline"
                   size="sm"
                   className="h-8 border-neon-green/40 text-neon-green bg-transparent hover:bg-neon-green hover:text-slate-950 font-black text-xs gap-1 active:scale-95"
                 >
-                  <Dices className="size-3.5" /> 🎲 랜덤 반
+                  <Dices className="size-3.5" /> 🎲 랜덤 구분조
                 </Button>
               </div>
               <div className="flex flex-wrap gap-2">
-                {availableClassesForGrade
-                  .filter((c) => c !== player.classNum)
-                  .map((c) => (
+                <button
+                  onClick={() => setTargetGroup(null)}
+                  className={cn(
+                    "rounded-full border px-3.5 py-1 text-xs font-bold transition-all active:scale-95",
+                    targetGroup === null
+                      ? "border-neon-green bg-neon-green/20 text-neon-green"
+                      : "border-slate-800 bg-slate-950 text-slate-400 hover:text-slate-200"
+                  )}
+                >
+                  다른 구분조 전체
+                </button>
+                {availableGroups
+                  .filter((g) => g !== (player.group || null))
+                  .map((g) => (
                     <button
-                      key={c}
-                      onClick={() => onTargetClassChange(c)}
+                      key={g}
+                      onClick={() => setTargetGroup(g)}
                       className={cn(
                         "rounded-full border px-3.5 py-1 text-xs font-bold transition-all active:scale-95",
-                        targetClass === c
+                        targetGroup === g
                           ? "border-neon-green bg-neon-green/20 text-neon-green"
                           : "border-slate-800 bg-slate-950 text-slate-400 hover:text-slate-200"
                       )}
                     >
-                      {c}반
+                      {g}
                     </button>
                   ))}
-                {availableClassesForGrade.filter((c) => c !== player.classNum).length === 0 && (
-                  <span className="text-xs text-slate-500 py-1">다른 학급이 등록되지 않았습니다.</span>
+                {availableGroups.filter((g) => g !== (player.group || null)).length === 0 && (
+                  <span className="text-xs text-slate-500 py-1">다른 구분조가 등록되지 않았습니다.</span>
                 )}
               </div>
-            </div>
-          )}
-
-          {mode === "otherGrade" && (
-            <div className="mt-4 p-4 rounded-xl border border-purple-500/30 bg-slate-900/50 space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-2">
-                <div className="text-xs font-bold text-purple-400">🚀 대결할 학년 및 반 지정</div>
-                <Button
-                  onClick={handleRandomGradeClass}
-                  variant="outline"
-                  size="sm"
-                  className="h-8 border-purple-500/40 text-purple-400 bg-transparent hover:bg-purple-500 hover:text-slate-950 font-black text-xs gap-1 active:scale-95"
-                >
-                  <Dices className="size-3.5" /> 🎲 랜덤 학년/반
-                </Button>
-              </div>
-
-              <div className="space-y-1.5">
-                <div className="text-[10px] text-slate-400 font-bold uppercase">1. 학년 선택</div>
-                <div className="flex flex-wrap gap-1.5">
-                  {availableGrades.map((g) => (
-                    <button
-                      key={g}
-                      onClick={() => {
-                        onTargetGradeChange(g);
-                        const firstClass = students.find((s) => s.grade === g)?.classNum ?? null;
-                        onTargetClassChange(firstClass);
-                      }}
-                      className={cn(
-                        "rounded-full border px-3 py-1 text-xs font-bold transition-all active:scale-95",
-                        targetGrade === g
-                          ? "border-purple-500 bg-purple-500/20 text-purple-400"
-                          : "border-slate-800 bg-slate-950 text-slate-400 hover:text-slate-200"
-                      )}
-                    >
-                      {g}학년 {player.grade === g && <span className="text-[9px] text-slate-500">(내 학년)</span>}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {targetGrade != null && (
-                <div className="space-y-1.5">
-                  <div className="text-[10px] text-slate-400 font-bold uppercase">2. 반 선택</div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {availableClassesForTargetGrade.map((c) => (
-                      <button
-                        key={c}
-                        onClick={() => onTargetClassChange(c)}
-                        className={cn(
-                          "rounded-full border px-3 py-1 text-xs font-bold transition-all active:scale-95",
-                          targetClass === c
-                            ? "border-purple-500 bg-purple-500/20 text-purple-400"
-                            : "border-slate-800 bg-slate-950 text-slate-400 hover:text-slate-200"
-                        )}
-                      >
-                        {c}반 {player.grade === targetGrade && player.classNum === c && <span className="text-[9px] text-slate-500">(내 반)</span>}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </Card>
@@ -1126,14 +979,10 @@ export function MatchRecommend({
               <Sparkles className="size-5 text-amber-500 animate-pulse" />
               <h4 className="font-black text-base text-slate-100">🤖 AI 추천 단식 라이벌</h4>
             </div>
-            
+
             <div className="rounded-full bg-slate-900 border border-slate-800 px-3 py-1 text-[11px] text-slate-400 font-semibold flex items-center gap-1.5 shadow-sm">
               <span className="size-1.5 rounded-full bg-neon-blue animate-ping" />
-              추천 범위: <span className="font-bold text-slate-200">
-                {mode === "class" && `${player.grade}학년 ${player.classNum}반`}
-                {mode === "otherClass" && `${player.grade}학년 ${targetClass ?? "?"}반`}
-                {mode === "otherGrade" && `${targetGrade ?? "?"}학년 ${targetClass ?? "?"}반`}
-              </span>
+              추천 범위: <span className="font-bold text-slate-200">{scopeLabel}</span>
             </div>
           </div>
 
@@ -1142,7 +991,7 @@ export function MatchRecommend({
               <AlertCircle className="size-10 text-slate-500 mb-2" />
               <div className="text-sm font-bold text-slate-200">도전 타겟이 완벽히 설정되지 않았습니다.</div>
               <p className="text-xs text-slate-400 mt-1 max-w-sm">
-                상단 범위 필터에서 반이나 학년을 클릭하거나 🎲 랜덤 버튼을 눌러 지정해 주세요.
+                상단 범위 필터에서 구분조를 선택하거나 🎲 랜덤 버튼을 눌러 지정해 주세요.
               </p>
             </Card>
           ) : (
@@ -1151,8 +1000,8 @@ export function MatchRecommend({
                 singleRecommendations.map((rival, index) => {
                   const s = rival.student;
                   return (
-                    <Card 
-                      key={s.id} 
+                    <Card
+                      key={s.id}
                       className="relative overflow-hidden border-slate-800 bg-slate-900/40 p-5 backdrop-blur flex flex-col justify-between hover:border-neon-blue/50 hover:shadow-[0_0_20px_rgba(0,180,216,0.06)] hover:scale-[1.01] transition-all duration-300 group"
                     >
                       {/* Top Ranking Badge */}
@@ -1164,11 +1013,11 @@ export function MatchRecommend({
                         {/* Opponent Profile */}
                         <div>
                           <div className="text-[10px] text-slate-400 font-medium">
-                            {s.grade}학년 {s.classNum}반 · {s.number}번
+                            {groupLabelOf(s)}
                           </div>
                           <div className="mt-0.5 flex items-center gap-1.5 text-lg font-black text-slate-100">
                             <GenderMark gender={s.gender} className="size-4.5 text-[9px]" />
-                            {s.name}
+                            {displayNameOf(s)}
                           </div>
                         </div>
 
@@ -1198,8 +1047,8 @@ export function MatchRecommend({
                         {rival.tags.length > 0 && (
                           <div className="flex flex-wrap gap-1">
                             {rival.tags.map((tag) => (
-                              <span 
-                                key={tag.label} 
+                              <span
+                                key={tag.label}
                                 className={cn("inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider border", tag.style)}
                                 title={tag.desc}
                               >
@@ -1235,7 +1084,7 @@ export function MatchRecommend({
                           onClick={() => onSelectRecommendedMatch(player.id, s.id, undefined, undefined, "single")}
                           className="mt-5 w-full bg-gradient-to-r from-neon-blue to-tier-diamond hover:from-neon-blue hover:to-tier-diamond text-slate-950 font-bold active:scale-[0.98] transition-all gap-1 text-xs"
                         >
-                          <Swords className="size-3.5" /> ⚔️ 이 선수와 경기하기
+                          <Swords className="size-3.5" /> ⚔️ 이 회원과 경기하기
                         </Button>
                       )}
                     </Card>
@@ -1246,7 +1095,7 @@ export function MatchRecommend({
                   <AlertCircle className="size-10 text-slate-500 mb-2" />
                   <div className="text-sm font-bold text-slate-200">추천할 수 있는 대전 상대가 없습니다.</div>
                   <p className="text-xs text-slate-400 mt-1 max-w-sm">
-                    지정된 범위에 등록된 다른 선수가 없거나 최근 2경기 이내에 치른 대결자 중복방지 필터링으로 인해 후보군이 비어 있습니다.
+                    지정된 범위에 등록된 다른 회원이 없거나 최근 2경기 이내에 치른 대결자 중복방지 필터링으로 인해 후보군이 비어 있습니다.
                   </p>
                 </Card>
               )}
@@ -1258,13 +1107,13 @@ export function MatchRecommend({
       {/* 3. Double match wizard flow */}
       {player && gameType === "double" && (
         <div className="space-y-6">
-          
+
           {/* Stage Progress bar */}
           <div className="flex items-center justify-center gap-2 max-w-md mx-auto py-2 bg-slate-900/30 rounded-full border border-slate-800/60 shadow-sm">
             <span className={cn(
               "px-3 py-1.5 rounded-full text-xs font-black transition-all flex items-center gap-1",
-              selectedTeammateId == null 
-                ? "bg-neon-green/15 text-neon-green border border-neon-green/30" 
+              selectedTeammateId == null
+                ? "bg-neon-green/15 text-neon-green border border-neon-green/30"
                 : "text-slate-500"
             )}>
               <span className="flex size-4 items-center justify-center rounded-full bg-slate-800 text-[10px]">1</span>
@@ -1273,8 +1122,8 @@ export function MatchRecommend({
             <ArrowRight className="size-4 text-slate-700" />
             <span className={cn(
               "px-3 py-1.5 rounded-full text-xs font-black transition-all flex items-center gap-1",
-              selectedTeammateId != null 
-                ? "bg-neon-green/15 text-neon-green border border-neon-green/30" 
+              selectedTeammateId != null
+                ? "bg-neon-green/15 text-neon-green border border-neon-green/30"
                 : "text-slate-500"
             )}>
               <span className="flex size-4 items-center justify-center rounded-full bg-slate-800 text-[10px]">2</span>
@@ -1295,7 +1144,7 @@ export function MatchRecommend({
                   partnerRecommendations.map((cand) => {
                     const s = cand.student;
                     return (
-                      <Card 
+                      <Card
                         key={s.id}
                         onClick={() => setSelectedTeammateId(s.id)}
                         className="border-slate-800 bg-slate-900/30 p-4 hover:border-neon-green/60 hover:bg-slate-900/60 active:scale-[0.98] transition-all cursor-pointer flex flex-col justify-between group"
@@ -1303,10 +1152,10 @@ export function MatchRecommend({
                         <div className="space-y-3">
                           <div className="flex items-center justify-between">
                             <div>
-                              <div className="text-[9px] text-slate-500">{s.grade}학년 {s.classNum}반 · {s.number}번</div>
+                              <div className="text-[9px] text-slate-500">{groupLabelOf(s)}</div>
                               <div className="font-bold text-slate-100 flex items-center gap-1 mt-0.5">
                                 <GenderMark gender={s.gender} className="size-3.5 text-[8px]" />
-                                {s.name}
+                                {displayNameOf(s)}
                               </div>
                             </div>
                             <span className="text-[10px] font-mono text-neon-green font-bold shrink-0">{s.rp} RP</span>
@@ -1320,8 +1169,8 @@ export function MatchRecommend({
                           {cand.tags.length > 0 && (
                             <div className="flex flex-wrap gap-1 pt-1">
                               {cand.tags.map((tag) => (
-                                <span 
-                                  key={tag.label} 
+                                <span
+                                  key={tag.label}
                                   className={cn("inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider border", tag.style)}
                                   title={tag.desc}
                                 >
@@ -1343,7 +1192,7 @@ export function MatchRecommend({
                           )}
                         </div>
 
-                        <Button 
+                        <Button
                           size="sm"
                           variant="ghost"
                           className="mt-4 w-full h-8 text-[11px] font-black text-neon-green hover:bg-neon-green/10 bg-neon-green/5 border border-neon-green/20 group-hover:border-neon-green/40 gap-1 active:scale-95"
@@ -1358,7 +1207,7 @@ export function MatchRecommend({
                     <AlertCircle className="size-10 text-slate-500 mb-2" />
                     <div className="text-sm font-bold text-slate-200">파트너 추천 후보가 없습니다.</div>
                     <p className="text-xs text-slate-400 mt-1 max-w-sm">
-                      현재 학년 또는 학급에 등록된 다른 학생 데이터가 비어 있습니다.
+                      등록된 다른 회원 데이터가 비어 있습니다.
                     </p>
                   </Card>
                 )}
@@ -1367,7 +1216,7 @@ export function MatchRecommend({
           ) : (
             // Stage 2 Opponent team auto matching view
             <div className="space-y-5">
-              
+
               {/* Selected Teammate profile */}
               {selectedTeammate && (
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl border border-neon-green/40 bg-neon-green/5 animate-in slide-in-from-top-2 duration-300">
@@ -1378,14 +1227,14 @@ export function MatchRecommend({
                     <div>
                       <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">우리의 복식 팀원 확정</div>
                       <div className="text-sm font-black text-slate-100 flex items-center gap-1.5 mt-0.5">
-                        {player.name} & {selectedTeammate.name}
+                        {displayNameOf(player)} & {displayNameOf(selectedTeammate)}
                       </div>
                       <div className="mt-1 flex items-center gap-2">
                         <span className="text-[10px] text-slate-500">팀 합산 RP:</span>
                         <span className="font-mono text-xs text-neon-green font-bold">{player.rp + selectedTeammate.rp} RP</span>
                         <span className="text-slate-600">|</span>
                         <TierBadge rp={selectedTeammate.rp} thresholds={thresholds} />
-                        <span className="text-[10px] text-slate-500">({selectedTeammate.name})</span>
+                        <span className="text-[10px] text-slate-500">({displayNameOf(selectedTeammate)})</span>
                       </div>
                     </div>
                   </div>
@@ -1406,14 +1255,10 @@ export function MatchRecommend({
                     <Swords className="size-5 text-neon-green animate-pulse" />
                     <h4 className="font-black text-base text-slate-100">🤖 AI 엄선 상대팀 추천 (합산 밸런싱)</h4>
                   </div>
-                  
+
                   <div className="rounded-full bg-slate-900 border border-slate-800 px-3 py-1 text-[11px] text-slate-400 font-semibold flex items-center gap-1.5 shadow-sm">
                     <span className="size-1.5 rounded-full bg-neon-green animate-ping" />
-                    추천 범위: <span className="font-bold text-slate-200">
-                      {mode === "class" && `${player.grade}학년 ${player.classNum}반`}
-                      {mode === "otherClass" && `${player.grade}학년 ${targetClass ?? "?"}반`}
-                      {mode === "otherGrade" && `${targetGrade ?? "?"}학년 ${targetClass ?? "?"}반`}
-                    </span>
+                    추천 범위: <span className="font-bold text-slate-200">{scopeLabel}</span>
                   </div>
                 </div>
 
@@ -1422,7 +1267,7 @@ export function MatchRecommend({
                     <AlertCircle className="size-10 text-slate-500 mb-2" />
                     <div className="text-sm font-bold text-slate-200">도전 타겟이 완벽히 설정되지 않았습니다.</div>
                     <p className="text-xs text-slate-400 mt-1 max-w-sm">
-                      상단 범위 필터에서 반이나 학년을 지정해 주세요.
+                      상단 범위 필터에서 구분조를 지정해 주세요.
                     </p>
                   </Card>
                 ) : (
@@ -1432,7 +1277,7 @@ export function MatchRecommend({
                         const ourCombined = player.rp + selectedTeammate!.rp;
                         const delta = pair.combinedRp - ourCombined;
                         const sign = delta > 0 ? `+${delta}` : `${delta}`;
-                        
+
                         // Analysis message
                         let analysis = "";
                         if (Math.abs(delta) <= 30) {
@@ -1444,7 +1289,7 @@ export function MatchRecommend({
                         }
 
                         return (
-                          <Card 
+                          <Card
                             key={`${pair.o1.id}-${pair.o2.id}`}
                             className="relative overflow-hidden border-slate-800 bg-slate-900/40 p-5 backdrop-blur flex flex-col justify-between hover:border-neon-green/50 hover:shadow-[0_0_20px_rgba(34,197,94,0.06)] hover:scale-[1.01] transition-all duration-300 group"
                           >
@@ -1458,14 +1303,14 @@ export function MatchRecommend({
                                 <span className="inline-flex items-center rounded bg-neon-green/15 text-neon-green border border-neon-green/25 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider">
                                   추천 매칭팀
                                 </span>
-                                
+
                                 <div className="space-y-2 border-b border-slate-800 pb-3">
                                   {/* Opponent 1 */}
                                   <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-1.5">
                                       <GenderMark gender={pair.o1.gender} className="size-3.5 text-[8px]" />
-                                      <span className="text-xs font-bold text-slate-100">{pair.o1.name}</span>
-                                      <span className="text-[9px] text-slate-500">{pair.o1.grade}학년 {pair.o1.classNum}반</span>
+                                      <span className="text-xs font-bold text-slate-100">{displayNameOf(pair.o1)}</span>
+                                      <span className="text-[9px] text-slate-500">{groupLabelOf(pair.o1)}</span>
                                     </div>
                                     <div className="flex items-center gap-1.5">
                                       <TierBadge rp={pair.o1.rp} thresholds={thresholds} />
@@ -1477,8 +1322,8 @@ export function MatchRecommend({
                                   <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-1.5">
                                       <GenderMark gender={pair.o2.gender} className="size-3.5 text-[8px]" />
-                                      <span className="text-xs font-bold text-slate-100">{pair.o2.name}</span>
-                                      <span className="text-[9px] text-slate-500">{pair.o2.grade}학년 {pair.o2.classNum}반</span>
+                                      <span className="text-xs font-bold text-slate-100">{displayNameOf(pair.o2)}</span>
+                                      <span className="text-[9px] text-slate-500">{groupLabelOf(pair.o2)}</span>
                                     </div>
                                     <div className="flex items-center gap-1.5">
                                       <TierBadge rp={pair.o2.rp} thresholds={thresholds} />
@@ -1524,8 +1369,8 @@ export function MatchRecommend({
                               {pair.tags && pair.tags.length > 0 && (
                                 <div className="flex flex-wrap gap-1">
                                   {pair.tags.map((tag) => (
-                                    <span 
-                                      key={tag.label} 
+                                    <span
+                                      key={tag.label}
                                       className={cn("inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider border", tag.style)}
                                       title={tag.desc}
                                     >
@@ -1577,7 +1422,7 @@ export function MatchRecommend({
                         <AlertCircle className="size-10 text-slate-500 mb-2" />
                         <div className="text-sm font-bold text-slate-200">매칭 가능한 상대 팀이 없습니다.</div>
                         <p className="text-xs text-slate-400 mt-1 max-w-sm">
-                          지정 범위 내에 등록된 학생이 부족하거나 팀원과 아군을 제외한 선수 데이터가 모자랍니다.
+                          지정 범위 내에 등록된 회원이 부족하거나 팀원과 아군을 제외한 선수 데이터가 모자랍니다.
                         </p>
                       </Card>
                     )}
@@ -1597,8 +1442,8 @@ export function MatchRecommend({
           <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-in fade-in duration-300">
             <div className="relative w-full max-w-md overflow-hidden border border-neon-blue/30 bg-background/95 rounded-2xl p-6 md:p-8 shadow-[0_0_50px_rgba(0,180,216,0.2)] flex flex-col items-center animate-in zoom-in duration-300">
               <div className="absolute inset-0 bg-[linear-gradient(rgba(18,18,18,0.2)_1px,transparent_1px),linear-gradient(90deg,rgba(18,18,18,0.2)_1px,transparent_1px)] bg-[size:20px_20px] pointer-events-none opacity-20" />
-              
-              <button 
+
+              <button
                 onClick={handleCancelGender}
                 className="absolute right-4 top-4 text-slate-400 hover:text-slate-100 hover:bg-slate-900 p-1.5 rounded-lg transition-all"
                 title="취소 및 뒤로가기"
@@ -1614,7 +1459,7 @@ export function MatchRecommend({
                   선수 성별 정보 보완
                 </h3>
                 <p className="text-xs text-slate-400 max-w-sm mb-6 leading-relaxed">
-                  <span className="font-bold text-slate-200">[{targetStudent.name}]</span> 선수의 성별 정보(M/F)가 지정되지 않았습니다.<br />
+                  <span className="font-bold text-slate-200">[{displayNameOf(targetStudent)}]</span> 회원의 성별 정보(M/F)가 지정되지 않았습니다.<br />
                   매치를 정확하게 추천하기 위해 성별을 입력해주세요.
                 </p>
               </div>

@@ -54,7 +54,7 @@ export function CurrentSeasonPanel() {
         </div>
         <div className="grid grid-cols-3 gap-2.5">
           <Metric icon={<Swords className="size-4" />} label="경기 수" value={`${matches.length}`} />
-          <Metric icon={<Users className="size-4" />} label="참여 학생" value={`${students.length}명`} />
+          <Metric icon={<Users className="size-4" />} label="참여 선수" value={`${students.length}명`} />
           <Metric icon={<CalendarDays className="size-4" />} label="기간"
             value={period ? `${period.from}` : "-"} sub={period ? `~ ${period.to}` : "경기 없음"} />
         </div>
@@ -68,7 +68,7 @@ export function CurrentSeasonPanel() {
               <RotateCcw className="size-4 text-amber-500" /> 새 시즌 시작
             </h4>
             <p className="mt-1 text-xs text-muted-foreground">
-              현재 시즌 순위를 보관한 뒤, 학생을 1000 RP·0승 0패로 초기화합니다. (명단·별명은 유지)
+              현재 시즌 순위를 보관한 뒤, 선수을 1000 RP·0승 0패로 초기화합니다. (명단·별명은 유지)
             </p>
           </div>
           <Button onClick={openNew}
@@ -115,7 +115,7 @@ export function CurrentSeasonPanel() {
               <RotateCcw className="size-5 text-amber-500" /> 새 시즌 시작
             </AlertDialogTitle>
             <AlertDialogDescription className="text-sm text-muted-foreground mt-2 leading-relaxed">
-              현재 시즌 <b className="text-foreground">{currentSeason}</b>의 순위가 보관되고, 모든 학생이 1000 RP·0승 0패로 초기화됩니다. 명단·별명·개인 코드는 그대로 유지됩니다.
+              현재 시즌 <b className="text-foreground">{currentSeason}</b>의 순위가 보관되고, 모든 선수이 1000 RP·0승 0패로 초기화됩니다. 명단·별명·개인 코드는 그대로 유지됩니다.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="mt-1 space-y-1.5">

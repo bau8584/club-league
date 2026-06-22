@@ -18,7 +18,7 @@ export function calculateAchievements(
   const student = students.find((s) => s.id === studentId);
   if (!student) return [];
 
-  // 해당 학생이 참여한 모든 경기 필터링 (단식 및 복식 파트너 참여분 포함)
+  // 해당 선수이 참여한 모든 경기 필터링 (단식 및 복식 파트너 참여분 포함)
   const studentMatches = matches.filter(
     (m) => m.playerAId === studentId || m.playerBId === studentId || m.playerA2Id === studentId || m.playerB2Id === studentId
   );
@@ -237,7 +237,7 @@ export function calculateAchievements(
     {
       id: "true_champion",
       name: "진정한 챔피언",
-      description: "누적 경기 수 120회 달성 (한 학기 동안 가장 성실하게 참여한 학생)",
+      description: "누적 경기 수 120회 달성 (한 학기 동안 가장 성실하게 참여한 선수)",
       tier: "Legendary",
       currentValue: totalGames,
       targetValue: 120,

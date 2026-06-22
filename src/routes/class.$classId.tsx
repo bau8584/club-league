@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { useLeagueStore } from "@/lib/league-store";
 import { toast } from "sonner";
-import { Leaderboard } from "@/components/league/Leaderboard";
+import { Leaderboard } from "@/features/leaderboard/Leaderboard";
 import { RecordMatch } from "@/components/league/RecordMatch";
 import { AdminPanel } from "@/components/league/AdminPanel";
 import { MatchRecommend } from "@/components/league/MatchRecommend";
@@ -19,7 +19,7 @@ export const Route = createFileRoute("/class/$classId")({
   head: () => ({
     meta: [
       { title: "초등 스포츠 리그 · 티어 시스템" },
-      { name: "description", content: "전국 초등학교 체육 수업과 반 대항전을 위한 스포츠 리그 & 티어 랭킹 시스템." },
+      { name: "description", content: "전국 초등클럽 체육 수업과 반 대항전을 위한 스포츠 리그 & 티어 랭킹 시스템." },
     ],
   }),
   component: Index,
@@ -103,9 +103,9 @@ function Index() {
   useEffect(() => {
     if (session) {
       if (session.role === "STUDENT") {
-        setTab("myRecord"); // 학생의 경우 첫 탭인 나의 기록으로 진입
+        setTab("myRecord"); // 선수의 경우 첫 탭인 나의 기록으로 진입
       } else {
-        setTab("record"); // 교사의 경우 첫 탭인 경기 기록 입력으로 진입
+        setTab("record"); // 관리자의 경우 첫 탭인 경기 기록 입력으로 진입
       }
     }
   }, [session]);
@@ -119,7 +119,7 @@ function Index() {
     }
   }, [currentViewSeason, tab]);
 
-  // 학생 탭 접근 통제 보안 가드 (오직 myRecord, recommend, myAchievements 탭만 허용)
+  // 선수 탭 접근 통제 보안 가드 (오직 myRecord, recommend, myAchievements 탭만 허용)
   useEffect(() => {
     if (session && session.role === "STUDENT") {
       if (tab !== "recommend" && tab !== "myRecord" && tab !== "myAchievements") {
@@ -136,14 +136,14 @@ function Index() {
     }
   }, [session, isClassManager, tab]);
 
-  // 학생 로그인 시 AI 매치메이킹 타겟(recommendSel)을 본인 정보로 즉시 고정
+  // 선수 로그인 시 AI 매치메이킹 타겟(recommendSel)을 본인 정보로 즉시 고정
   useEffect(() => {
     if (session && session.role === "STUDENT" && session.studentId) {
       const student = students.find((s) => s.id === session.studentId);
       if (student) {
         setRecommendSel({
-          grade: student.grade,
-          classNum: student.classNum,
+          grade: null,
+          classNum: null,
           studentId: student.id
         });
       }
@@ -155,7 +155,7 @@ function Index() {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (isSyncing) {
         e.preventDefault();
-        e.returnValue = "학생 데이터 동기화 중입니다. 페이지를 종료하시겠습니까?";
+        e.returnValue = "선수 데이터 동기화 중입니다. 페이지를 종료하시겠습니까?";
         return e.returnValue;
       }
     };
@@ -241,12 +241,12 @@ function Index() {
                 {session.role === "TEACHER" ? (
                   <>
                     <School className="size-3.5" />
-                    <span>🏫 {session.schoolName} · {session.userName} 교사</span>
+                    <span>🏫 {session.schoolName} · {session.userName} 관리자</span>
                   </>
                 ) : (
                   <>
                     <Users className="size-3.5" />
-                    <span>🏆 {session.schoolName} · {session.userName} 학생</span>
+                    <span>🏆 {session.schoolName} · {session.userName} 선수</span>
                   </>
                 )}
               </div>
@@ -274,22 +274,6 @@ function Index() {
                 <span className="font-mono text-muted-foreground">등록 선수</span>
                 <span className="font-bold text-neon-green">{students.length}</span>
               </div>
-
-              {/* 학생 열람 링크 (교사 전용) — 기록원 초대는 로비로 이동 */}
-              {session.role === "TEACHER" && (
-                <button
-                  onClick={() => {
-                    const viewUrl = `${window.location.origin}/view/${classId}`;
-                    navigator.clipboard.writeText(viewUrl);
-                    toast.success("학생용 실시간 열람 링크가 클립보드에 복사되었습니다!");
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border/60 bg-card/60 text-muted-foreground hover:text-neon-green hover:border-neon-green/40 active:scale-95 transition-all text-xs font-bold cursor-pointer"
-                  title="학생 실시간 열람 링크 복사"
-                >
-                  <Trophy className="size-3.5 text-neon-green" />
-                  <span>학생 열람 링크</span>
-                </button>
-              )}
 
               {/* 다시 잠그기 (잠금이 켜져 있고 현재 해제된 상태일 때) */}
               {session.role === "TEACHER" && anyLockEnabled && unlocked && (
@@ -330,17 +314,17 @@ function Index() {
           <nav className="mt-5 flex gap-1 overflow-x-auto">
             {session.role === "STUDENT" ? (
               <>
-                {/* 1. 나의 기록 (학생 - 신규) */}
+                {/* 1. 나의 기록 (선수 - 신규) */}
                 <TabButton active={tab === "myRecord"} onClick={() => setTab("myRecord")} icon={<Trophy className="size-4" />}>
                   나의 기록
                 </TabButton>
 
-                {/* 2. 매치 추천 (학생) */}
+                {/* 2. 매치 추천 (선수) */}
                 <TabButton active={tab === "recommend"} onClick={() => setTab("recommend")} icon={<Target className="size-4" />}>
                   매치 추천
                 </TabButton>
 
-                {/* 3. 나의 업적 (학생 - 신규) */}
+                {/* 3. 나의 업적 (선수 - 신규) */}
                 <TabButton active={tab === "myAchievements"} onClick={() => setTab("myAchievements")} icon={<Award className="size-4" />}>
                   나의 업적
                 </TabButton>
@@ -354,29 +338,29 @@ function Index() {
                   </TabButton>
                 )}
 
-                {/* 1. 경기 기록 입력 (교사 전용) */}
+                {/* 1. 경기 기록 입력 (관리자 전용) */}
                 {currentViewSeason === "현재 시즌" && (
                   <TabButton active={tab === "record"} onClick={() => setTab("record")} icon={<Swords className="size-4" />}>
                     경기 기록 입력
                   </TabButton>
                 )}
 
-                {/* 2. 매치 추천 (교사) — 과거 시즌 열람 시 숨김 */}
+                {/* 2. 매치 추천 (관리자) — 과거 시즌 열람 시 숨김 */}
                 {currentViewSeason === "현재 시즌" && (
                   <TabButton active={tab === "recommend"} onClick={() => setTab("recommend")} icon={<Target className="size-4" />}>
                     매치 추천
                   </TabButton>
                 )}
 
-                {/* 3. 티어 순위표 (교사) */}
+                {/* 3. 티어 순위표 (관리자) */}
                 <TabButton active={tab === "leaderboard"} onClick={() => setTab("leaderboard")} icon={<Trophy className="size-4" />}>
                   티어 순위표
                 </TabButton>
                 
-                {/* 4. 교사 관리자 (교사 전용) */}
+                {/* 4. 관리자 관리자 (관리자 전용) */}
                 {currentViewSeason === "현재 시즌" && isClassManager && (
                   <TabButton active={tab === "admin"} onClick={() => setTab("admin")} icon={<Users className="size-4" />}>
-                    교사 관리자
+                    관리자 관리자
                   </TabButton>
                 )}
               </>
@@ -515,7 +499,7 @@ function Index() {
               <Swords className="size-6 text-neon-blue animate-pulse" />
             </div>
             <div className="text-center">
-              <h3 className="text-lg font-bold text-foreground">학생 데이터 동기화 중...</h3>
+              <h3 className="text-lg font-bold text-foreground">선수 데이터 동기화 중...</h3>
               <p className="text-xs text-muted-foreground mt-1">서버에 데이터를 안전하게 저장하고 있습니다.<br/>창을 닫거나 새로고침하지 마세요.</p>
             </div>
           </div>

@@ -17,12 +17,12 @@ import {
   apiClaimStudent,
   apiUpdateStudentNickname,
   apiChangeStudentCode,
-} from "@/lib/league-api";
+} from "@/services/league-api";
 
 type Notice = { type: "ok" | "err"; text: string } | null;
 
 /**
- * 학생 본인 카드 설정 모달.
+ * 선수 본인 카드 설정 모달.
  * - 코드가 없으면: 별명(선택) + 새 코드로 "내 카드 설정"(최초 1회)
  * - 코드가 있으면: ① 현재 코드 입력해 잠금 해제 → ② 별명 변경 / 코드 변경
  * 보기(대시보드)는 잠그지 않으며, 편집만 코드로 보호한다.
