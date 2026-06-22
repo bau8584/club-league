@@ -24,6 +24,7 @@ export type Student = {
   nickname?: string | null; // 별명 -> DB: nickname
   gender: Gender; // 성별 -> DB: gender
   group?: string | null; // 구분조 -> DB: group_label
+  birthYear?: number | null; // 연생 -> DB: birth_year
   displayName?: string | null; // 표시 이름 -> DB: display_name
 
   // 경기 전적(matches) 데이터를 기반으로 실시간 계산되는 속성들

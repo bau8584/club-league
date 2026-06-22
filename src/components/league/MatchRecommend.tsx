@@ -77,7 +77,7 @@ export function MatchRecommend({
   const { dynamicBonuses, dynamicPenalties, tiers } = useLeagueStore();
 
   // Local states for MatchRecommend 2.0
-  const [gameType, setGameType] = useState<"single" | "double">("single");
+  const [gameType, setGameType] = useState<"single" | "double">("double");
   const [selectedTeammateId, setSelectedTeammateId] = useState<string | null>(null);
 
   // 동호회: 다른 구분조 매칭 시 대상 구분조(문자열). 학년/반 숫자 prop 대신 로컬 상태로 관리.
@@ -152,8 +152,9 @@ export function MatchRecommend({
   // 선택 단계: 구분조별 선수 목록
   const groupsForSel = availableGroups;
 
-  // 선택 UI용 로컬 구분조 상태 (선수 선택 마법사 2단계)
+  // 선택 UI용 로컬 구분조 상태 (null = 전체)
   const [pickGroup, setPickGroup] = useState<string | null>(null);
+  const [pickSearch, setPickSearch] = useState("");
 
   const rosterForPickGroup = useMemo(() => {
     if (pickGroup == null) return [];
@@ -161,6 +162,20 @@ export function MatchRecommend({
       .filter((s) => (s.group || null) === pickGroup)
       .sort((a, b) => b.rp - a.rp);
   }, [students, pickGroup]);
+
+  // 경기기록 입력과 동일한 선택 UI용: 구분조(null=전체) + 닉네임 검색으로 필터
+  const pickRoster = useMemo(() => {
+    const q = pickSearch.trim().toLowerCase();
+    return students
+      .filter((s) => (pickGroup == null ? true : (s.group || null) === pickGroup))
+      .filter((s) => {
+        if (!q) return true;
+        const n = (s.name || "").toLowerCase();
+        const nk = (s.nickname || "").toLowerCase();
+        return n.includes(q) || nk.includes(q);
+      })
+      .sort((a, b) => (a.nickname || a.name).localeCompare(b.nickname || b.name, "ko"));
+  }, [students, pickGroup, pickSearch]);
 
   // 랜덤 구분조 선택 (다른 구분조 도전)
   const handleRandomGroup = () => {
@@ -420,20 +435,8 @@ export function MatchRecommend({
   const singleRecommendations = useMemo(() => {
     if (!player || gameType !== "single") return [];
 
-    let candidates = students.filter((s) => !strictExcludedIds.has(s.id));
-
-    // 구분조(group) 기준 매칭 범위 필터
-    if (mode === "class") {
-      // 같은 구분조
-      candidates = candidates.filter((c) => (c.group || null) === (player.group || null));
-    } else if (mode === "otherClass") {
-      // 다른 구분조 (대상 구분조 지정 시 해당 조만, 미지정 시 내 조 외 전체)
-      if (targetGroup != null) {
-        candidates = candidates.filter((c) => (c.group || null) === targetGroup);
-      } else {
-        candidates = candidates.filter((c) => (c.group || null) !== (player.group || null));
-      }
-    }
+    // 매칭 범위는 구분조와 무관하게 전체 회원 대상 (본인/제외 대상만 제외)
+    const candidates = students.filter((s) => !strictExcludedIds.has(s.id));
 
     const scored = candidates.map((candidate) => {
       let score = 100;
@@ -446,9 +449,6 @@ export function MatchRecommend({
       } else {
         score -= (rpGap - 150) * 0.5;
       }
-
-      // 2. 같은 구분조 가산점
-      if ((candidate.group || null) === (player.group || null)) score += 50;
 
       // 3. Upward challenge incentive
       const rpDelta = candidate.rp - player.rp;
@@ -598,19 +598,8 @@ export function MatchRecommend({
 
     const ourCombinedRp = player.rp + partner.rp;
 
-    // Opponent candidates pool
-    let oppCandidates = students.filter((s) => s.id !== player.id && s.id !== partner.id);
-
-    // 구분조(group) 기준 매칭 범위 필터
-    if (mode === "class") {
-      oppCandidates = oppCandidates.filter((c) => (c.group || null) === (player.group || null));
-    } else if (mode === "otherClass") {
-      if (targetGroup != null) {
-        oppCandidates = oppCandidates.filter((c) => (c.group || null) === targetGroup);
-      } else {
-        oppCandidates = oppCandidates.filter((c) => (c.group || null) !== (player.group || null));
-      }
-    }
+    // Opponent candidates pool — 구분조와 무관하게 전체 (본인/파트너 제외)
+    const oppCandidates = students.filter((s) => s.id !== player.id && s.id !== partner.id);
 
     if (oppCandidates.length < 2) return [];
 
@@ -706,29 +695,16 @@ export function MatchRecommend({
     return students.find((s) => s.id === selectedTeammateId) ?? null;
   }, [selectedTeammateId, students]);
 
-  // 매칭 범위 라벨 (구분조 기준)
-  const scopeLabel = useMemo(() => {
-    if (!player) return "";
-    if (mode === "class") return `같은 구분조 (${groupLabelOf(player)})`;
-    if (mode === "otherClass") return targetGroup != null ? `${targetGroup} 구분조` : "다른 구분조 전체";
-    return "전체";
-  }, [player, mode, targetGroup]);
+  // 매칭 범위는 구분조와 무관하게 전체 회원
+  const scopeLabel = "전체 회원";
 
   return (
     <div className="space-y-6">
 
-      {/* 1. Selector Section */}
-      <Card className="border-slate-800 bg-slate-950 p-5 shadow-2xl relative overflow-hidden">
-        <div className="absolute right-0 top-0 opacity-5 pointer-events-none">
-          <Target className="size-48 text-neon-blue" />
-        </div>
-
-        <div className="mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-neon-blue">
-            <Target className="size-5 animate-pulse" />
-            <h3 className="font-black text-lg">AI 매치 추천</h3>
-          </div>
-          {player && !isStudentView && (
+      {/* 1. 회원 선택 (외곽 박스/제목 제거) */}
+      <div className="space-y-4">
+        {player && !isStudentView && (
+          <div className="flex justify-end">
             <button
               onClick={() => {
                 onSelChange({ grade: sel.grade, classNum: sel.classNum, studentId: null });
@@ -738,77 +714,77 @@ export function MatchRecommend({
             >
               <RotateCcw className="size-3" /> 선수 초기화
             </button>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Compact selectors (only visible if not student view) */}
         {!isStudentView && !player && (
-          <div className="flex flex-col gap-4 bg-slate-900/60 p-4 rounded-xl border border-slate-800/80">
+          <div className="flex flex-col gap-3 bg-slate-900/60 p-3 sm:p-4 rounded-xl border border-slate-800/80">
             <div className="text-xs text-slate-450 font-bold uppercase tracking-wider">매치 추천 대상 회원을 선택하세요</div>
 
-            {/* 1. 구분조 선택 */}
-            <div className="space-y-2">
-              <label className="text-[11px] font-bold text-slate-400 block">1. 구분조 선택</label>
-              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                {groupsForSel.map((g) => (
-                  <button
-                    key={g}
-                    type="button"
-                    onClick={() => {
-                      setPickGroup(g);
-                      onSelChange({ ...sel, studentId: null });
-                      setSelectedTeammateId(null);
-                    }}
-                    className={cn(
-                      "h-10 rounded-lg border text-xs font-black transition-all active:scale-95 flex items-center justify-center cursor-pointer",
-                      pickGroup === g
-                        ? "border-neon-blue bg-neon-blue/20 text-neon-blue shadow-[0_0_12px_rgba(0,180,216,0.2)]"
-                        : "border-slate-800 bg-slate-950 text-slate-400 hover:text-slate-200"
-                    )}
-                  >
-                    {g}
-                  </button>
-                ))}
-                {groupsForSel.length === 0 && (
-                  <span className="text-xs text-slate-500 py-1 col-span-full">등록된 구분조가 없습니다. 전체 회원에서 선택하세요.</span>
+            {/* 검색 (구분조 위) */}
+            <input
+              type="text"
+              value={pickSearch}
+              onChange={(e) => setPickSearch(e.target.value)}
+              placeholder="닉네임 검색"
+              className="w-full rounded-lg border border-border/60 bg-[#0e1322]/80 px-3 py-2 text-sm text-white placeholder:text-muted-foreground focus:border-neon-blue/60 focus:outline-none"
+            />
+
+            {/* 구분조 칩 (null = 전체) */}
+            <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
+              <button
+                type="button"
+                onClick={() => { setPickGroup(null); onSelChange({ ...sel, studentId: null }); setSelectedTeammateId(null); }}
+                className={cn(
+                  "h-11 rounded-xl border text-sm font-black transition-all active:scale-95 flex items-center justify-center cursor-pointer",
+                  pickGroup === null
+                    ? "border-neon-blue bg-neon-blue/20 text-neon-blue shadow-[0_0_14px_rgba(0,180,216,0.3)]"
+                    : "border-slate-800 bg-slate-950 text-slate-400 hover:text-slate-200"
                 )}
-              </div>
+              >전체</button>
+              {groupsForSel.map((g) => (
+                <button
+                  key={g}
+                  type="button"
+                  onClick={() => { setPickGroup(g); onSelChange({ ...sel, studentId: null }); setSelectedTeammateId(null); }}
+                  className={cn(
+                    "h-11 rounded-xl border text-sm font-black transition-all active:scale-95 flex items-center justify-center cursor-pointer",
+                    pickGroup === g
+                      ? "border-neon-blue bg-neon-blue/20 text-neon-blue shadow-[0_0_14px_rgba(0,180,216,0.3)]"
+                      : "border-slate-800 bg-slate-950 text-slate-400 hover:text-slate-200"
+                  )}
+                >{g}</button>
+              ))}
             </div>
 
-            {/* 2. 회원 선택 */}
-            <div className="space-y-2 animate-in slide-in-from-top-1 duration-200">
-              <label className="text-[11px] font-bold text-slate-400 block">2. 회원 선택</label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {(pickGroup != null ? rosterForPickGroup : [...students].sort((a, b) => b.rp - a.rp)).map((s) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => onSelChange({ ...sel, studentId: s.id })}
-                    className={cn(
-                      "relative rounded-lg border p-3 flex flex-col justify-between items-center text-center transition-all h-20 hover:border-neon-blue/60 hover:bg-slate-900/60 cursor-pointer w-full overflow-hidden",
-                      sel.studentId === s.id
-                        ? "border-neon-blue bg-neon-blue/10 text-neon-blue shadow-[0_0_12px_rgba(0,180,216,0.15)]"
-                        : "border-slate-800 bg-slate-950/85 text-slate-300"
-                    )}
-                  >
-                    <span className="absolute top-1 left-1.5 text-[9px] text-slate-500 font-mono">
-                      {groupLabelOf(s)}
-                    </span>
-                    <GenderMark
-                      gender={s.gender}
-                      className="absolute top-1 right-1.5 size-3 text-[8px]"
-                    />
-                    <span className="text-xs font-black mt-2 text-slate-100">{displayNameOf(s)}</span>
-                    <div className="mt-1 flex items-center gap-1">
-                      <span className="text-[9px] text-slate-450 font-mono font-bold">{s.rp} RP</span>
-                      <TierBadge rp={s.rp} thresholds={thresholds} />
-                    </div>
-                  </button>
-                ))}
-                {students.length === 0 && (
-                  <span className="text-xs text-slate-500 py-1 col-span-full">등록된 회원이 없습니다.</span>
-                )}
-              </div>
+            {/* 선수 타일 */}
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
+              {pickRoster.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => onSelChange({ ...sel, studentId: s.id })}
+                  className={cn(
+                    "relative flex min-h-[4.75rem] w-full flex-col items-center justify-between overflow-hidden rounded-lg border px-2 pt-6 pb-2.5 text-center transition-all cursor-pointer",
+                    sel.studentId === s.id
+                      ? "border-neon-blue bg-neon-blue/10 shadow-[0_0_12px_rgba(0,180,216,0.15)]"
+                      : "border-border/60 bg-[#0e1322]/80 hover:border-neon-blue/60 hover:bg-accent/40"
+                  )}
+                >
+                  {s.group && (
+                    <span className="absolute top-1 left-1.5 max-w-[60%] truncate text-left font-mono text-[10px] text-gray-500">{s.group}</span>
+                  )}
+                  <GenderMark gender={s.gender} className="absolute top-1 right-1.5 size-3.5 text-[9px] shrink-0" />
+                  <div className="flex w-full min-w-0 flex-grow items-center justify-center">
+                    <span className="w-full break-keep text-center text-sm font-bold text-white">{displayNameOf(s)}</span>
+                  </div>
+                  <div className="mt-1.5 flex w-full shrink-0 justify-center"><TierBadge rp={s.rp} thresholds={thresholds} /></div>
+                </button>
+              ))}
+              {pickRoster.length === 0 && (
+                <span className="col-span-full block py-2 text-xs text-slate-500">선수가 없습니다</span>
+              )}
             </div>
           </div>
         )}
@@ -865,111 +841,7 @@ export function MatchRecommend({
             </div>
           </div>
         )}
-      </Card>
-
-      {/* Scope Selector Card */}
-      {player && (
-        <Card className="border-slate-800 bg-slate-950 p-5 shadow-xl relative">
-          <div className="mb-4 flex items-center gap-2 text-neon-blue">
-            <Building2 className="size-5" />
-            <h3 className="font-black text-base">🏢 매칭 범위 선택 (구분조)</h3>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <button
-              onClick={() => onModeChange("class")}
-              className={cn(
-                "rounded-xl border p-4 text-left transition-all flex flex-col justify-between h-[105px] active:scale-[0.98]",
-                mode === "class"
-                  ? "border-neon-blue bg-neon-blue/5 shadow-[0_0_15px_rgba(0,180,216,0.1)]"
-                  : "border-slate-800 bg-slate-900/30 hover:border-slate-700 hover:bg-slate-900/50"
-              )}
-            >
-              <div>
-                <div className="flex items-center gap-1.5 font-black text-sm text-slate-200">
-                  <span className="text-lg">🏢</span> 같은 구분조 매칭
-                </div>
-                <p className="mt-1.5 text-[10px] text-slate-400 leading-relaxed">
-                  나와 같은 구분조 회원들을 대상으로 라이벌을 추천합니다.
-                </p>
-              </div>
-            </button>
-
-            <button
-              onClick={() => {
-                onModeChange("otherClass");
-                const otherGroups = availableGroups.filter((g) => g !== (player.group || null));
-                if (otherGroups.length > 0 && targetGroup === null) {
-                  setTargetGroup(otherGroups[0]);
-                }
-              }}
-              className={cn(
-                "rounded-xl border p-4 text-left transition-all flex flex-col justify-between h-[105px] active:scale-[0.98]",
-                mode === "otherClass"
-                  ? "border-neon-green bg-neon-green/5 shadow-[0_0_15px_rgba(34,197,94,0.1)]"
-                  : "border-slate-800 bg-slate-900/30 hover:border-slate-700 hover:bg-slate-900/50"
-              )}
-            >
-              <div>
-                <div className="flex items-center gap-1.5 font-black text-sm text-slate-200">
-                  <span className="text-lg">⚔️</span> 다른 구분조 도전
-                </div>
-                <p className="mt-1.5 text-[10px] text-slate-400 leading-relaxed">
-                  다른 구분조 회원들을 타겟으로 삼아 매칭합니다.
-                </p>
-              </div>
-            </button>
-          </div>
-
-          {mode === "otherClass" && (
-            <div className="mt-4 p-4 rounded-xl border border-neon-green/30 bg-slate-900/50 space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="text-xs font-bold text-neon-green">⚔️ 대결할 구분조 지정</div>
-                <Button
-                  onClick={handleRandomGroup}
-                  variant="outline"
-                  size="sm"
-                  className="h-8 border-neon-green/40 text-neon-green bg-transparent hover:bg-neon-green hover:text-slate-950 font-black text-xs gap-1 active:scale-95"
-                >
-                  <Dices className="size-3.5" /> 🎲 랜덤 구분조
-                </Button>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() => setTargetGroup(null)}
-                  className={cn(
-                    "rounded-full border px-3.5 py-1 text-xs font-bold transition-all active:scale-95",
-                    targetGroup === null
-                      ? "border-neon-green bg-neon-green/20 text-neon-green"
-                      : "border-slate-800 bg-slate-950 text-slate-400 hover:text-slate-200"
-                  )}
-                >
-                  다른 구분조 전체
-                </button>
-                {availableGroups
-                  .filter((g) => g !== (player.group || null))
-                  .map((g) => (
-                    <button
-                      key={g}
-                      onClick={() => setTargetGroup(g)}
-                      className={cn(
-                        "rounded-full border px-3.5 py-1 text-xs font-bold transition-all active:scale-95",
-                        targetGroup === g
-                          ? "border-neon-green bg-neon-green/20 text-neon-green"
-                          : "border-slate-800 bg-slate-950 text-slate-400 hover:text-slate-200"
-                      )}
-                    >
-                      {g}
-                    </button>
-                  ))}
-                {availableGroups.filter((g) => g !== (player.group || null)).length === 0 && (
-                  <span className="text-xs text-slate-500 py-1">다른 구분조가 등록되지 않았습니다.</span>
-                )}
-              </div>
-            </div>
-          )}
-        </Card>
-      )}
+      </div>
 
       {/* 2. Flat Single match recommendations */}
       {player && gameType === "single" && (

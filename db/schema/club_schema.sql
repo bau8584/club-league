@@ -73,6 +73,7 @@ create table if not exists public.players (
   nickname      text,
   gender        text not null default 'U',
   group_label   text,            -- 구분조 (학년/반 대체)
+  birth_year    int,             -- 연생 (선택)
   rp            int  not null default 1000,
   tier          text,
   win_count     int  not null default 0,

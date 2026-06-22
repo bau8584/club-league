@@ -45,7 +45,6 @@ type Row = { grade: number; classNum: number; number: number; name: string; gend
 // 관리자 패널의 하위 탭 목록 — PC 사이드바와 모바일 드롭다운이 공유한다.
 const ADMIN_MENU_ITEMS = [
   { id: "settings", label: "리그 글로벌 설정", icon: Settings, desc: "리그 이름, 티어, RP 규칙 설정" },
-  { id: "studentRegister", label: "선수 등록", icon: UserPlus, desc: "나이스 명렬표 대량 등록" },
   { id: "studentManage", label: "선수 관리", icon: User, desc: "리그 명단, RP 수정 및 삭제" },
   { id: "matchRecords", label: "리그 기록 관리", icon: Swords, desc: "전체 경기 조회, 점수 수정/삭제" },
   { id: "dataManage", label: "데이터 관리", icon: Database, desc: "JSON 백업 다운로드 및 복원" },
@@ -347,7 +346,7 @@ export function AdminPanel({
       <div className="lg:hidden sticky top-0 z-30 -mx-1 px-1 pt-1">
         <div className="bg-card/95 border border-border/40 rounded-2xl p-3 backdrop-blur-md shadow-lg">
           <label htmlFor="admin-tab-select" className="text-[10px] font-black text-neon-blue tracking-tight block mb-1.5 px-0.5">
-            관리자 관리자 패널
+            관리자 패널
           </label>
           <div className="relative">
             <select
@@ -370,7 +369,7 @@ export function AdminPanel({
       {/* Left Sidebar Menu (데스크톱·태블릿 가로 전용) */}
       <div className="hidden lg:flex w-full lg:w-64 shrink-0 flex-col gap-2 bg-card/45 border border-border/40 rounded-2xl p-4 backdrop-blur shadow-lg self-start sticky top-4">
         <div className="px-3 py-2">
-          <h2 className="text-lg font-black text-neon-blue tracking-tight">관리자 관리자 패널</h2>
+          <h2 className="text-lg font-black text-neon-blue tracking-tight">관리자 패널</h2>
           <p className="text-[10px] text-muted-foreground mt-0.5">리그 글로벌 설정 및 선수 데이터를 통제합니다.</p>
         </div>
         <div className="h-px bg-border/20 my-2" />
@@ -515,79 +514,6 @@ export function AdminPanel({
           </div>
         )}
 
-        {/* studentRegister Tab */}
-        {activeTab === "studentRegister" && (
-          <Card className="border-border/60 bg-card/60 p-5 backdrop-blur shadow-lg animate-in fade-in slide-in-from-bottom-2 duration-300">
-            <div className="mb-3">
-              <h3 className="font-bold text-sm">선수 등록</h3>
-              <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
-                엑셀이나 나이스(NEIS)의 명렬표에서 복사한 목록을 아래에 붙여넣으세요.<br />
-                형식: <code className="text-foreground bg-muted px-1 rounded">학년 반 번호 이름 (성별)</code> (예: 5 1 1 홍길동 남)<br />
-                성별은 생략 가능하며, 생략 시 미지정(U) 처리됩니다.
-              </p>
-            </div>
-            <Textarea
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder={`5\t1\t1\t홍길동\t남\n5\t1\t2\t김민지\t여`}
-              className="min-h-[160px] resize-y border-border/60 bg-input font-mono text-xs"
-            />
-            <div className="mt-3 flex flex-wrap items-center gap-3 text-[11px]">
-              <span className="rounded bg-muted/60 px-2 py-0.5">
-                현재 등록 인원: <span className="font-bold text-foreground">{count}명</span>
-              </span>
-              <span className="rounded bg-neon-blue/15 px-2 py-0.5 text-neon-blue">
-                인식된 행: <span className="font-bold">{parsed.rows.length}명</span>
-              </span>
-              {parsed.errors > 0 && (
-                <span className="flex items-center gap-1 rounded bg-destructive/15 px-2 py-0.5 text-destructive">
-                  <AlertCircle className="size-3" /> 형식 불일치 (무시됨): {parsed.errors}줄
-                </span>
-              )}
-            </div>
-
-            {parsed.rows.length > 0 && (
-              <Card className="overflow-hidden border-border/40 bg-card/40 p-0 mt-4">
-                <div className="border-b border-border/40 px-4 py-2 text-xs font-semibold">파싱 결과 미리보기 ({parsed.rows.length}명)</div>
-                <div className="max-h-[220px] overflow-auto">
-                  <table className="w-full text-xs">
-                    <thead className="sticky top-0 bg-muted text-[10px] uppercase text-muted-foreground">
-                      <tr>
-                        <th className="px-3 py-1.5 text-left">#</th>
-                        <th className="px-3 py-1.5 text-left">학년</th>
-                        <th className="px-3 py-1.5 text-left">반</th>
-                        <th className="px-3 py-1.5 text-left">번호</th>
-                        <th className="px-3 py-1.5 text-left">이름</th>
-                        <th className="px-3 py-1.5 text-left">성별</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {parsed.rows.map((r, i) => (
-                        <tr key={i} className="border-b border-border/20">
-                          <td className="px-3 py-1.5 text-muted-foreground tabular-nums">{i + 1}</td>
-                          <td className="px-3 py-1.5 tabular-nums">{r.grade}</td>
-                          <td className="px-3 py-1.5 tabular-nums">{r.classNum}</td>
-                          <td className="px-3 py-1.5 tabular-nums">{r.number}</td>
-                          <td className="px-3 py-1.5 font-medium">{r.name}</td>
-                          <td className="px-3 py-1.5"><GenderMark gender={r.gender ?? "U"} className="size-3.5 text-[9px]" /></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </Card>
-            )}
-
-            <Button
-              size="lg"
-              onClick={commit}
-              disabled={parsed.rows.length === 0}
-              className="h-10 w-full mt-4 bg-gradient-to-r from-neon-green to-neon-blue font-bold text-primary-foreground hover:opacity-90 disabled:opacity-40 disabled:shadow-none"
-            >
-              <Database className="mr-2 size-4" /> 명단 업로드 실행 ({parsed.rows.length}명)
-            </Button>
-          </Card>
-        )}
 
         {/* seasonManage Tab — 현재 시즌 / 과거 시즌 서브탭 */}
         {activeTab === "seasonManage" && isOwner && (

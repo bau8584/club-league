@@ -72,7 +72,7 @@ export function Leaderboard({
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="선수 이름으로 검색..."
+            placeholder="닉네임으로 검색..."
             className="h-10 border-border/60 bg-card/60 pl-9 text-sm"
           />
         </div>
@@ -123,7 +123,7 @@ export function Leaderboard({
               <tr className="border-b border-border/60 bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
                 <th className="px-4 py-3 text-left w-12 sm:w-16">순위</th>
                 <th className="px-3 py-3 text-left hidden sm:table-cell">구분조</th>
-                <th className="px-4 py-3 text-left">이름</th>
+                <th className="px-4 py-3 text-left">닉네임</th>
                 <th className="px-4 py-3 text-left">티어</th>
                 <th className="px-4 py-3 text-right">RP</th>
                 <th className="px-4 py-3 text-center hidden md:table-cell">최근 5경기</th>

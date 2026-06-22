@@ -10,6 +10,7 @@ export type PlayerInsert = {
   nickname?: string | null;
   gender?: string;
   group_label?: string | null;
+  birth_year?: number | null;
   rp?: number;
   tier?: string | null;
   win_count?: number;

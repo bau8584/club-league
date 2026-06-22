@@ -11,7 +11,8 @@ import { toast } from "sonner";
 import { useLeagueStore } from "@/lib/league-store";
 
 type Selection = { group: string | null; studentId: string | null };
-const empty: Selection = { group: null, studentId: null };
+// 구분조 "전체" 탭이 기본으로 열려 있도록 group을 ALL("__ALL__")로 초기화
+const empty: Selection = { group: "__ALL__", studentId: null };
 
 // 선수 표시 이름: 별명 우선, 없으면 이름
 function playerLabel(s: Student): string {
@@ -94,11 +95,13 @@ export function RecordMatch({
   onUpdateGender?: (studentId: string, gender: "M" | "F" | "U") => void;
 }) {
   const { isSyncing } = useLeagueStore();
-  const [matchType, setMatchType] = useState<"single" | "double">("single");
+  const [matchType, setMatchType] = useState<"single" | "double">("double");
   const [a, setA] = useState<Selection>(empty);
   const [a2, setA2] = useState<Selection>(empty);
   const [b, setB] = useState<Selection>(empty);
   const [b2, setB2] = useState<Selection>(empty);
+  // 동시에 1개의 선수 선택 picker만 펼친다(모바일 가독성). null이면 모두 닫힘.
+  const [activeSlot, setActiveSlot] = useState<"A" | "A2" | "B" | "B2" | null>(null);
   const [scoreA, setScoreA] = useState(0);
   const [scoreB, setScoreB] = useState(0);
 
@@ -1010,6 +1013,19 @@ export function RecordMatch({
         <div className="inline-flex rounded-xl bg-muted/40 p-1 border border-border/30 backdrop-blur">
           <button
             type="button"
+            onClick={() => setMatchType("double")}
+            className={cn(
+              "px-6 py-2.5 rounded-lg text-sm font-black transition-all duration-200 flex items-center gap-2",
+              matchType === "double"
+                ? "bg-gradient-to-r from-neon-blue to-tier-diamond text-primary-foreground shadow-md"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <Users className="size-4" />
+            복식 (2:2)
+          </button>
+          <button
+            type="button"
             onClick={() => setMatchType("single")}
             className={cn(
               "px-6 py-2.5 rounded-lg text-sm font-black transition-all duration-200 flex items-center gap-2",
@@ -1021,91 +1037,76 @@ export function RecordMatch({
             <User className="size-4" />
             단식 (1:1)
           </button>
-          <button
-            type="button"
-            onClick={() => setMatchType("double")}
-            className={cn(
-              "px-6 py-2.5 rounded-lg text-sm font-black transition-all duration-200 flex items-center gap-2",
-              matchType === "double"
-                ? "bg-gradient-to-r from-neon-blue to-tier-diamond text-primary-foreground shadow-md"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <Users className="size-4" />
-      복식 (2:2)
-          </button>
         </div>
       </div>
 
-      <div className={cn(
-        "grid gap-4 items-start",
-        matchType === "double" 
-          ? "md:grid-cols-2 lg:grid-cols-4" 
-          : "md:grid-cols-2"
-      )}>
-        <PlayerSelector 
-          label={matchType === "double" ? "팀 A(선수1)" : "선수 A"} 
-          accent="blue" 
-          students={students} 
-          value={a} 
-          onChange={setA} 
-          player={playerA} 
-          thresholds={thresholds}
-        />
-        {matchType === "double" && (
-          <PlayerSelector 
-            label="팀 A(선수2)" 
-            accent="blue" 
-            students={students} 
-            value={a2} 
-            onChange={setA2} 
-            player={playerA2} 
-            thresholds={thresholds}
-          />
-        )}
-        <PlayerSelector 
-          label={matchType === "double" ? "팀 B(선수1)" : "선수 B"} 
-          accent="green" 
-          students={students} 
-          value={b} 
-          onChange={setB} 
-          player={playerB} 
-          thresholds={thresholds}
-        />
-        {matchType === "double" && (
-          <PlayerSelector 
-            label="팀 B(선수2)" 
-            accent="green" 
-            students={students} 
-            value={b2} 
-            onChange={setB2} 
-            player={playerB2} 
-            thresholds={thresholds}
-          />
-        )}
-      </div>
+      {(() => {
+        const slots = {
+          A:  { value: a,  set: setA,  player: playerA,  accent: "amber"  as const },
+          A2: { value: a2, set: setA2, player: playerA2, accent: "amber"  as const },
+          B:  { value: b,  set: setB,  player: playerB,  accent: "violet" as const },
+          B2: { value: b2, set: setB2, player: playerB2, accent: "violet" as const },
+        };
+        const act = activeSlot ? slots[activeSlot] : null;
+        const renderSlot = (key: "A" | "A2" | "B" | "B2", label: string) => {
+          const sl = slots[key];
+          return (
+            <Slot
+              accent={sl.accent}
+              label={label}
+              player={sl.player}
+              active={activeSlot === key}
+              onOpen={() => setActiveSlot(activeSlot === key ? null : key)}
+              onClear={() => { sl.set(empty); if (activeSlot === key) setActiveSlot(null); }}
+              thresholds={thresholds}
+            />
+          );
+        };
+        return (
+          <div className="space-y-3">
+            <TeamBlock title="팀 A" accent="amber" cols={matchType === "double" ? 2 : 1}>
+              {renderSlot("A", matchType === "double" ? "선수 1" : "선수 A")}
+              {matchType === "double" && renderSlot("A2", "선수 2")}
+            </TeamBlock>
+            <div className="text-center text-xl font-black text-muted-foreground">VS</div>
+            <TeamBlock title="팀 B" accent="violet" cols={matchType === "double" ? 2 : 1}>
+              {renderSlot("B", matchType === "double" ? "선수 1" : "선수 B")}
+              {matchType === "double" && renderSlot("B2", "선수 2")}
+            </TeamBlock>
+            {act && (
+              <PlayerPicker
+                students={students}
+                accent={act.accent}
+                group={act.value.group}
+                onPick={(group, studentId) => { act.set({ group, studentId }); setActiveSlot(null); }}
+                thresholds={thresholds}
+              />
+            )}
+          </div>
+        );
+      })()}
 
-      <Card className="border-border/60 bg-card/60 p-6 backdrop-blur">
+      <Card className="border-border/60 bg-card/60 p-3 sm:p-6 backdrop-blur">
         <div className="mb-4 text-center text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground">스코어보드</div>
-        <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-4">
-          <ScorePad 
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:gap-4">
+          <ScorePad
             name={matchType === "double"
               ? "팀 A"
               : (playerA ? playerLabel(playerA) : "선수 A")
             }
-            value={scoreA} 
-            onChange={setScoreA} 
-            accent="blue" 
+            value={scoreA}
+            onChange={setScoreA}
+            accent="amber"
           />
-          <div className="pt-12 text-center text-3xl font-black text-muted-foreground">VS</div>
-          <ScorePad 
+          <div className="px-0.5 text-base sm:text-2xl font-black text-muted-foreground">VS</div>
+          <ScorePad
             name={matchType === "double"
               ? "팀 B"
               : (playerB ? playerLabel(playerB) : "선수 B")
             }
-            value={scoreB} 
-            onChange={setScoreB} 
-            accent="green" 
+            value={scoreB}
+            onChange={setScoreB}
+            accent="violet"
           />
         </div>
       </Card>
@@ -1711,139 +1712,133 @@ export function RecordMatch({
   );
 }
 
-function PlayerSelector({
-  label, accent, students, value, onChange, player, thresholds,
-}: {
-  label: string;
-  accent: "blue" | "green";
-  students: Student[];
-  value: Selection;
-  onChange: (s: Selection) => void;
-  player: Student | null;
-  thresholds?: Record<string, number>;
+// 팀 색상(고대비): 팀A 파랑 / 팀B 빨강(loss)
+const ACCENT = {
+  amber: {
+    text: "text-amber-400",
+    border: "border-amber-500/60",
+    soft: "border-amber-500/30 bg-amber-500/[0.06]",
+    fill: "border-amber-500/60 bg-amber-500/10",
+    band: "border-amber-500/40 bg-amber-500/15 text-amber-400",
+  },
+  violet: {
+    text: "text-violet-400",
+    border: "border-violet-500/60",
+    soft: "border-violet-500/30 bg-violet-500/[0.06]",
+    fill: "border-violet-500/60 bg-violet-500/10",
+    band: "border-violet-500/40 bg-violet-500/15 text-violet-400",
+  },
+} as const;
+type Accent = keyof typeof ACCENT;
+const ALL_GROUP = "__ALL__";
+
+function TeamBlock({ title, accent, cols, children }: { title: string; accent: Accent; cols: number; children: React.ReactNode }) {
+  const a = ACCENT[accent];
+  return (
+    <div className={cn("rounded-2xl border p-2.5 sm:p-3", a.soft)}>
+      <div className={cn("mb-2 inline-flex items-center rounded-lg border px-2.5 py-1 text-xs font-black", a.band)}>{title}</div>
+      <div className={cn("grid gap-2", cols === 1 ? "grid-cols-1" : "grid-cols-2")}>{children}</div>
+    </div>
+  );
+}
+
+// 슬롯: 선택됨이면 컴팩트 카드, 비었으면 "선수 선택" 버튼
+function Slot({ accent, label, player, active, onOpen, onClear, thresholds }: {
+  accent: Accent; label: string; player: Student | null; active: boolean;
+  onOpen: () => void; onClear: () => void; thresholds?: Record<string, number>;
 }) {
-  const accentCls = accent === "blue"
-    ? "border-neon-blue/60 bg-neon-blue/15 text-neon-blue shadow-[0_0_14px_oklch(0.78_0.18_230/0.35)]"
-    : "border-neon-green/60 bg-neon-green/15 text-neon-green shadow-[0_0_14px_oklch(0.85_0.22_150/0.35)]";
+  const a = ACCENT[accent];
+  if (player) {
+    return (
+      <div className={cn("relative rounded-xl border p-3", a.fill)}>
+        <button onClick={onClear} title="선수 변경" className="absolute top-1.5 right-1.5 rounded-md bg-black/30 px-1.5 py-0.5 text-[10px] font-bold text-white/70 hover:text-white cursor-pointer">✕</button>
+        <div className="text-[10px] text-muted-foreground">{label}{player.group ? ` · ${player.group}` : ""}</div>
+        <div className="mt-1 flex items-center gap-1.5 min-w-0">
+          <GenderMark gender={player.gender} className="size-4 text-[10px] shrink-0" />
+          <span className={cn("truncate text-base font-black", a.text)}>{playerLabel(player)}</span>
+        </div>
+        <div className="mt-1.5"><TierBadge rp={player.rp} thresholds={thresholds} /></div>
+      </div>
+    );
+  }
+  return (
+    <button type="button" onClick={onOpen}
+      className={cn(
+        "flex min-h-[5rem] flex-col items-center justify-center rounded-xl border border-dashed p-4 text-center transition-all active:scale-95 cursor-pointer",
+        active ? cn(a.border, a.text, "bg-white/[0.03]") : "border-border/50 text-muted-foreground hover:border-border",
+      )}>
+      <span className="text-xl leading-none">＋</span>
+      <span className="mt-1 text-xs font-bold">{label}</span>
+    </button>
+  );
+}
 
-  const headerCls = accent === "blue" ? "text-neon-blue" : "text-neon-green";
-
+// 선수 선택 picker: 검색 → 구분조 칩 → 선수 목록 (한 번에 1개만 펼쳐짐)
+function PlayerPicker({ students, accent, group, onPick, thresholds }: {
+  students: Student[]; accent: Accent; group: string | null;
+  onPick: (group: string, studentId: string) => void; thresholds?: Record<string, number>;
+}) {
+  const a = ACCENT[accent];
   const [search, setSearch] = useState("");
+  const [grp, setGrp] = useState<string>(group ?? ALL_GROUP);
 
-  // 활성화된 구분조 목록 (group 미지정 멤버는 "전체" 가상 그룹으로 처리)
-  const ALL_GROUP = "__ALL__";
   const activeGroups = useMemo(() => {
     const set = new Set<string>();
-    students.forEach((s) => {
-      if (s.group) set.add(s.group);
-    });
-    return Array.from(set).sort((a, b) => a.localeCompare(b, "ko"));
+    students.forEach((s) => { if (s.group) set.add(s.group); });
+    return Array.from(set).sort((x, y) => x.localeCompare(y, "ko"));
   }, [students]);
 
   const roster = useMemo(() => {
-    if (value.group == null) return [];
     const q = search.trim().toLowerCase();
     return students
-      .filter((s) => (value.group === ALL_GROUP ? true : (s.group ?? null) === value.group))
+      .filter((s) => (grp === ALL_GROUP ? true : (s.group ?? null) === grp))
       .filter((s) => {
         if (!q) return true;
-        const name = (s.name || "").toLowerCase();
-        const nick = (s.nickname || "").toLowerCase();
-        return name.includes(q) || nick.includes(q);
+        const n = (s.name || "").toLowerCase();
+        const nk = (s.nickname || "").toLowerCase();
+        return n.includes(q) || nk.includes(q);
       })
-      .sort((a, b) => (a.nickname || a.name).localeCompare(b.nickname || b.name, "ko"));
-  }, [students, value.group, search]);
+      .sort((x, y) => (x.nickname || x.name).localeCompare(y.nickname || y.name, "ko"));
+  }, [students, grp, search]);
 
   return (
-    <Card className="border-border/60 bg-card/60 p-5 backdrop-blur h-auto">
-      <div className="mb-4 flex items-center justify-between">
-        <h3 className={cn("text-sm font-bold uppercase tracking-wider", headerCls)}>{label}</h3>
-        {player && (
+    <Card className={cn("border p-3 backdrop-blur", a.border)}>
+      {/* 검색을 구분조 위에 */}
+      <input
+        type="text"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="닉네임 검색"
+        className="mb-3 w-full rounded-lg border border-border/60 bg-[#0e1322]/80 px-3 py-2 text-sm text-white placeholder:text-muted-foreground focus:border-neon-blue/60 focus:outline-none"
+      />
+      <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
+        <Chip active={grp === ALL_GROUP} accent={accent} onClick={() => setGrp(ALL_GROUP)}>전체</Chip>
+        {activeGroups.map((g) => (
+          <Chip key={g} active={grp === g} accent={accent} onClick={() => setGrp(g)}>{g}</Chip>
+        ))}
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
+        {roster.map((s) => (
           <button
-            onClick={() => onChange({ group: value.group, studentId: null })}
-            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-black bg-rose-600 hover:bg-rose-700 text-white shadow-[0_0_12px_rgba(225,29,72,0.35)] transition-all active:scale-95 cursor-pointer"
+            key={s.id}
+            type="button"
+            onClick={() => onPick(grp, s.id)}
+            className="relative flex min-h-[4.75rem] w-full flex-col items-center justify-between overflow-hidden rounded-lg border border-border/60 bg-[#0e1322]/80 px-2 pt-6 pb-2.5 text-center transition-all hover:border-neon-blue/60 hover:bg-accent/40 cursor-pointer"
           >
-            <X className="size-3.5" /> 선수 다시 선택
+            {s.group && (
+              <span className="absolute top-1 left-1.5 max-w-[60%] truncate text-left font-mono text-[10px] text-gray-500">{s.group}</span>
+            )}
+            <GenderMark gender={s.gender} className="absolute top-1 right-1.5 size-3.5 text-[9px] shrink-0" />
+            <div className="flex w-full min-w-0 flex-grow items-center justify-center">
+              <span className="w-full break-keep text-center text-sm font-bold text-white">{playerLabel(s)}</span>
+            </div>
+            <div className="mt-1.5 flex w-full shrink-0 justify-center"><TierBadge rp={s.rp} thresholds={thresholds} /></div>
           </button>
+        ))}
+        {roster.length === 0 && (
+          <span className="col-span-full block py-2 text-xs text-muted-foreground">선수가 없습니다</span>
         )}
       </div>
-
-      {player ? (
-        <div className={cn("rounded-lg border p-4", accentCls)}>
-          <div className="text-xs opacity-80">{player.group ? player.group : "구분조 없음"}</div>
-          <div className="mt-1 flex items-center gap-2 text-xl sm:text-2xl font-black min-w-0">
-            <GenderMark gender={player.gender} className="size-5 text-xs shrink-0" />
-            <span className="whitespace-nowrap truncate flex-1">{playerLabel(player)}</span>
-          </div>
-          <div className="mt-2 flex items-center gap-2">
-            <TierBadge rp={player.rp} thresholds={thresholds} />
-          </div>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          <Step n={1} title="구분조">
-            <div className="grid grid-cols-3 gap-2.5 mt-2 w-full">
-              <Chip active={value.group === ALL_GROUP} accent={accent} onClick={() => onChange({ group: ALL_GROUP, studentId: null })}>
-                전체
-              </Chip>
-              {activeGroups.map((g) => (
-                <Chip key={g} active={value.group === g} accent={accent} onClick={() => onChange({ group: g, studentId: null })}>
-                  {g}
-                </Chip>
-              ))}
-            </div>
-          </Step>
-          {value.group != null && (
-            <Step n={2} title="선수 선택">
-              {/* 이름/별명 검색 */}
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="이름 또는 별명 검색"
-                className="mb-3 w-full rounded-lg border border-border/60 bg-[#0e1322]/80 px-3 py-2 text-sm text-white placeholder:text-muted-foreground focus:border-neon-blue/60 focus:outline-none"
-              />
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                {roster.map((s) => (
-                  <button
-                    key={s.id}
-                    onClick={() => onChange({ ...value, studentId: s.id })}
-                    className="relative rounded-lg border border-border/60 bg-[#0e1322]/80 px-2 pt-6 pb-2.5 text-center transition-all hover:border-neon-blue/60 hover:bg-accent/40 flex flex-col items-center justify-between h-auto min-h-[4.75rem] w-full overflow-hidden cursor-pointer"
-                  >
-                    {/* 1. 좌측 상단 구분조 */}
-                    {s.group && (
-                      <span className="absolute top-1 left-1.5 text-[10px] text-gray-500 font-mono truncate max-w-[60%] text-left">
-                        {s.group}
-                      </span>
-                    )}
-
-                    {/* 2. 우측 상단 성별 아이콘 */}
-                    <GenderMark
-                      gender={s.gender}
-                      className="absolute top-1 right-1.5 size-3.5 text-[9px] shrink-0"
-                    />
-
-                    {/* 3. 정중앙 이름(별명) 배치 */}
-                    <div className="flex-grow flex items-center justify-center w-full min-w-0">
-                      <span className="text-base font-bold text-white break-keep text-center w-full">
-                        {playerLabel(s)}
-                      </span>
-                    </div>
-
-                    {/* 4. 하단 티어 뱃지 단독 배치 */}
-                    <div className="flex justify-center mt-1.5 w-full shrink-0">
-                      <TierBadge rp={s.rp} thresholds={thresholds} />
-                    </div>
-                  </button>
-                ))}
-                {roster.length === 0 && (
-                  <span className="text-xs text-muted-foreground block py-2 col-span-full">선수가 없습니다</span>
-                )}
-              </div>
-            </Step>
-          )}
-        </div>
-      )}
     </Card>
   );
 }
@@ -1859,10 +1854,10 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
   );
 }
 
-function Chip({ active, accent, onClick, children }: { active: boolean; accent: "blue" | "green"; onClick: () => void; children: React.ReactNode }) {
-  const activeCls = accent === "blue"
-    ? "border-neon-blue bg-neon-blue/20 text-neon-blue shadow-[0_0_18px_rgba(0,180,216,0.35)]"
-    : "border-neon-green bg-neon-green/20 text-neon-green shadow-[0_0_18px_rgba(34,197,94,0.35)]";
+function Chip({ active, accent, onClick, children }: { active: boolean; accent: "amber" | "violet"; onClick: () => void; children: React.ReactNode }) {
+  const activeCls = accent === "amber"
+    ? "border-amber-500 bg-amber-500/20 text-amber-400 shadow-[0_0_18px_rgba(245,158,11,0.35)]"
+    : "border-violet-500 bg-violet-500/20 text-violet-400 shadow-[0_0_18px_rgba(139,92,246,0.35)]";
   return (
     <button
       type="button"
@@ -1877,25 +1872,24 @@ function Chip({ active, accent, onClick, children }: { active: boolean; accent: 
   );
 }
 
-function ScorePad({ name, value, onChange, accent }: { name: string; value: number; onChange: (v: number) => void; accent: "blue" | "green" }) {
-  const colorText = accent === "blue" ? "text-neon-blue text-glow-blue" : "text-neon-green";
-  const plusCls = accent === "blue"
-    ? "border-neon-blue/50 bg-neon-blue/10 text-neon-blue hover:bg-neon-blue/20"
-    : "border-neon-green/50 bg-neon-green/10 text-neon-green hover:bg-neon-green/20";
-  const minusCls = "border-loss/40 bg-loss/10 text-loss hover:bg-loss/20";
+function ScorePad({ name, value, onChange, accent }: { name: string; value: number; onChange: (v: number) => void; accent: "amber" | "violet" }) {
+  // 큰 점수 숫자만 팀 색(주황/보라), 가감 버튼은 모든 팀 공통: 득점=파랑, 감점=빨강
+  const colorText = accent === "amber" ? "text-amber-400" : "text-violet-400";
+  const plusCls = "border-neon-blue/50 bg-neon-blue/10 text-neon-blue hover:bg-neon-blue/20";
+  const minusCls = "border-loss/50 bg-loss/10 text-loss hover:bg-loss/20";
   const set = (delta: number) => onChange(Math.max(0, value + delta));
 
   return (
-    <div className="rounded-xl border border-border/60 bg-muted/30 p-4 text-center">
+    <div className="min-w-0 rounded-xl border border-border/60 bg-muted/30 p-2.5 sm:p-4 text-center">
       <div className="truncate text-xs font-semibold uppercase tracking-wider text-muted-foreground">{name}</div>
-      <div className={cn("my-3 font-mono text-6xl font-black tabular-nums", colorText)}>{value}</div>
-      <div className="space-y-2">
-        <div className="grid grid-cols-3 gap-2">
+      <div className={cn("my-2 sm:my-3 font-mono text-4xl sm:text-6xl font-black tabular-nums", colorText)}>{value}</div>
+      <div className="space-y-1.5 sm:space-y-2">
+        <div className="grid grid-cols-3 gap-1.5">
           {[1, 5, 10].map((d) => (
             <QuickBtn key={`p${d}`} className={plusCls} onClick={() => set(d)}>+{d}</QuickBtn>
           ))}
         </div>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-3 gap-1.5">
           {[1, 5, 10].map((d) => (
             <QuickBtn key={`m${d}`} className={minusCls} onClick={() => set(-d)}>-{d}</QuickBtn>
           ))}
@@ -1918,7 +1912,7 @@ function QuickBtn({ className, onClick, children }: { className?: string; onClic
     <button
       onClick={onClick}
       className={cn(
-        "rounded-lg border py-2.5 font-mono text-lg font-black tabular-nums transition-all active:scale-95",
+        "rounded-lg border py-1.5 font-mono text-sm sm:text-base font-bold tabular-nums transition-all active:scale-95",
         className,
       )}
     >

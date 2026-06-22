@@ -239,10 +239,7 @@ function Index() {
                   : "border-purple-500/40 bg-purple-500/5 text-purple-400"
               )}>
                 {session.role === "TEACHER" ? (
-                  <>
-                    <School className="size-3.5" />
-                    <span>🏫 {session.schoolName} · {session.userName} 관리자</span>
-                  </>
+                  <span>{session.schoolName} · {session.userName} 관리자</span>
                 ) : (
                   <>
                     <Users className="size-3.5" />
@@ -357,10 +354,10 @@ function Index() {
                   티어 순위표
                 </TabButton>
                 
-                {/* 4. 관리자 관리자 (관리자 전용) */}
+                {/* 4. 관리자 (관리자 전용) */}
                 {currentViewSeason === "현재 시즌" && isClassManager && (
                   <TabButton active={tab === "admin"} onClick={() => setTab("admin")} icon={<Users className="size-4" />}>
-                    관리자 관리자
+                    관리자
                   </TabButton>
                 )}
               </>

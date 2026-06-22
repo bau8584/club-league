@@ -130,7 +130,7 @@ export async function apiUpdateMatchWinnerLoser(
 export async function apiFetchStudents(classId: string) {
   return supabase
     .from("players")
-    .select("id, league_id, user_id, rp, tier, win_count, lose_count, nickname, name, group_label, gender, is_deleted, recent_matches, display_name")
+    .select("id, league_id, user_id, rp, tier, win_count, lose_count, nickname, name, group_label, birth_year, gender, is_deleted, recent_matches, display_name")
     .eq("league_id", classId)
     .or("is_deleted.is.null,is_deleted.eq.false");
 }
@@ -166,10 +166,11 @@ export async function apiResetAllClassStudentsRp(classId: string) {
 }
 
 export async function apiUpdateStudentFields(studentId: string, fields: {
-  name?: string;
+  name?: string | null;
   nickname?: string | null;
   gender?: string;
   group_label?: string | null;
+  birth_year?: number | null;
 }) {
   return supabase
     .from("players")
@@ -178,10 +179,11 @@ export async function apiUpdateStudentFields(studentId: string, fields: {
 }
 
 export async function apiInsertStudent(classId: string, info: {
-  name: string;
+  name?: string | null;
   nickname?: string | null;
   gender?: string;
   group_label?: string | null;
+  birth_year?: number | null;
   user_id?: string | null;
   rp?: number;
 }) {
@@ -190,10 +192,11 @@ export async function apiInsertStudent(classId: string, info: {
     .insert({
       league_id: classId,
       rp: info.rp ?? 1000,
-      name: info.name,
+      name: info.name ?? null,
       nickname: info.nickname ?? null,
       gender: info.gender ?? "U",
       group_label: info.group_label ?? null,
+      birth_year: info.birth_year ?? null,
       user_id: info.user_id ?? null
     } satisfies PlayerInsert)
     .select("id")

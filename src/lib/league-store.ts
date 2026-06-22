@@ -292,6 +292,7 @@ function useLeagueStoreInternal() {
           name,
           nickname: s.nickname ?? "",
           group,
+          birthYear: s.birth_year ?? null,
           displayName: s.display_name ?? null,
           gender,
           rp: s.rp || 1000,
@@ -929,7 +930,7 @@ function useLeagueStoreInternal() {
 
   // 새로운 명렬표 대량 업서트 및 동기화
   const upsertStudents = useCallback(
-    async (rows: { name: string; nickname?: string | null; gender?: Gender; group?: string | null }[]) => {
+    async (rows: { name?: string; nickname?: string | null; gender?: Gender; group?: string | null; birthYear?: number | null }[]) => {
       if (currentViewSeasonRef.current !== "현재 시즌") {
         toast.error("과거 시즌 기록은 수정할 수 없습니다 (읽기 전용).");
         return { added: 0, kept: 0 };
@@ -962,9 +963,10 @@ function useLeagueStoreInternal() {
           added++;
           next.push({
             id: uid(),
-            name: r.name,
+            name: r.name ?? r.nickname ?? "",
             nickname: r.nickname ?? null,
             group: r.group ?? null,
+            birthYear: r.birthYear ?? null,
             gender: r.gender ?? "U",
             rp: 1000,
             recent: [],
@@ -994,6 +996,7 @@ function useLeagueStoreInternal() {
                 name: r.name,
                 nickname: r.nickname ?? null,
                 group_label: r.group ?? null,
+                birth_year: r.birthYear ?? null,
                 gender: r.gender || 'U'
               });
             } else {
@@ -1001,6 +1004,7 @@ function useLeagueStoreInternal() {
                 name: r.name,
                 nickname: r.nickname ?? null,
                 group_label: r.group ?? null,
+                birth_year: r.birthYear ?? null,
                 gender: r.gender || 'U',
                 rp: 1000
               });

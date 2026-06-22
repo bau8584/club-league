@@ -29,10 +29,9 @@ type RowDraft = { name: string; nickname: string; group: string; gender: Gender;
 
 type DeletedStudent = { id: string; name: string; nickname: string; group: string | null; rp: number };
 
-// 한 줄 = 한 명. 형식: "구분조<탭/콤마>이름<탭/콤마>닉네임" 또는 "이름"만.
-// 첫 칸이 이름인지 구분조인지 헷갈리지 않도록: 칸이 1개면 이름,
-// 2개면 "구분조,이름", 3개면 "구분조,이름,닉네임" 으로 해석.
-type ParsedRow = { name: string; group: string | null; nickname: string | null };
+// 한 줄 = 한 명. 칸은 탭/콤마로 구분.
+//   1칸 → 닉네임 / 2칸 → 구분조, 닉네임
+type ParsedRow = { nickname: string; group: string | null };
 function parseRoster(text: string): ParsedRow[] {
   const out: ParsedRow[] = [];
   for (const rawLine of text.split(/\r?\n/)) {
@@ -40,24 +39,23 @@ function parseRoster(text: string): ParsedRow[] {
     if (!line) continue;
     const cells = line.split(/[\t,]/).map((c) => c.trim()).filter((c) => c.length > 0);
     if (cells.length === 0) continue;
-    let name = "";
+    let nickname = "";
     let group: string | null = null;
-    let nickname: string | null = null;
     if (cells.length === 1) {
-      name = cells[0];
-    } else if (cells.length === 2) {
-      group = cells[0];
-      name = cells[1];
+      nickname = cells[0];
     } else {
       group = cells[0];
-      name = cells[1];
-      nickname = cells[2];
+      nickname = cells[1];
     }
-    if (!name) continue;
-    out.push({ name, group: group || null, nickname: nickname || null });
+    if (!nickname) continue;
+    out.push({ nickname, group: group || null });
   }
   return out;
 }
+
+// 연생(출생연도) 선택 옵션: 약 10~89세 범위
+const CURRENT_YEAR = new Date().getFullYear();
+const BIRTH_YEARS = Array.from({ length: 80 }, (_, i) => CURRENT_YEAR - 10 - i);
 
 export function AdminStudentManage({ students, onDeleteStudent, thresholds }: AdminStudentManageProps) {
   const { upsertStudents, updateStudentInfo, bulkUpdateStudents, fetchDeletedStudents, restoreDeletedStudent, hardDeleteStudent } = useLeagueStore();
@@ -90,7 +88,7 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
 
   // 개인 추가
   const [addOpen, setAddOpen] = useState(false);
-  const [addForm, setAddForm] = useState<{ name: string; nickname: string; group: string; gender: Gender }>({ name: "", nickname: "", group: "", gender: "U" });
+  const [addForm, setAddForm] = useState<{ nickname: string; group: string; gender: Gender; birthYear: string }>({ nickname: "", group: "", gender: "U", birthYear: "" });
   const [adding, setAdding] = useState(false);
 
   const availableGroups = useMemo(
@@ -164,10 +162,10 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
 
   const handleImport = async () => {
     const parsed = pastePreview;
-    if (parsed.length === 0) { toast.error("붙여넣은 명단에서 이름을 찾지 못했습니다."); return; }
+    if (parsed.length === 0) { toast.error("붙여넣은 명단에서 닉네임을 찾지 못했습니다."); return; }
     setImporting(true);
     try {
-      const res = await upsertStudents(parsed.map((p) => ({ name: p.name, group: p.group, nickname: p.nickname })));
+      const res = await upsertStudents(parsed.map((p) => ({ name: p.nickname, group: p.group, nickname: p.nickname })));
       if (res) toast.success(`명단을 반영했습니다. (추가 ${res.added ?? 0}명, 유지 ${res.kept ?? 0}명)`);
       setPasteText("");
       setPasteOpen(false);
@@ -175,12 +173,18 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
   };
 
   const handleAdd = async () => {
-    const name = addForm.name.trim();
-    if (!name) { toast.error("이름을 입력하세요."); return; }
+    const nickname = addForm.nickname.trim();
+    if (!nickname) { toast.error("닉네임을 입력하세요."); return; }
     setAdding(true);
     try {
-      await upsertStudents([{ name, nickname: addForm.nickname.trim() || null, group: addForm.group.trim() || null, gender: addForm.gender }]);
-      setAddForm({ name: "", nickname: "", group: "", gender: "U" });
+      await upsertStudents([{
+        name: nickname,
+        nickname,
+        group: addForm.group.trim() || null,
+        gender: addForm.gender,
+        birthYear: addForm.birthYear ? Number(addForm.birthYear) : null,
+      }]);
+      setAddForm({ nickname: "", group: "", gender: "U", birthYear: "" });
       setAddOpen(false);
     } finally { setAdding(false); }
   };
@@ -207,7 +211,7 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
           <h3 className="font-black text-lg">회원 관리</h3>
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
-          이름·닉네임·구분조·성별·RP를 바로 수정하고, 회원을 선택해 코드 초기화나 RP 일괄 조정을 할 수 있어요. 명단을 한 번에 붙여넣어 등록할 수도 있습니다.
+          닉네임·구분조·성별·RP를 바로 수정하고, 회원을 선택해 코드 초기화나 RP 일괄 조정을 할 수 있어요. 명단을 한 번에 붙여넣어 등록할 수도 있습니다.
         </p>
       </div>
 
@@ -229,16 +233,15 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
             <HelpCircle className="size-3.5 mt-0.5 shrink-0 text-neon-blue" />
             <span>
               한 줄에 한 명씩 입력하세요. 칸은 <b className="text-foreground">탭 또는 콤마(,)</b>로 구분합니다.<br />
-              · <b className="text-foreground">이름</b> (칸 1개)<br />
-              · <b className="text-foreground">구분조, 이름</b> (칸 2개)<br />
-              · <b className="text-foreground">구분조, 이름, 닉네임</b> (칸 3개)
+              · <b className="text-foreground">닉네임</b> (칸 1개)<br />
+              · <b className="text-foreground">구분조, 닉네임</b> (칸 2개)
             </span>
           </p>
           <textarea
             value={pasteText}
             onChange={(e) => setPasteText(e.target.value)}
             rows={6}
-            placeholder={"예시)\nA조, 홍길동, 길동이\nA조, 김철수\n이영희"}
+            placeholder={"예시)\nA조, 길동이\nA조, 철수\n영희"}
             className="w-full rounded-lg bg-input border border-border/30 p-3 text-xs font-mono leading-relaxed focus:outline-none focus:ring-1 focus:ring-neon-blue"
           />
           <div className="flex items-center justify-between gap-2">
@@ -255,12 +258,7 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
         <div className="mb-5 rounded-xl border border-border/40 bg-muted/10 p-4 space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <div>
-              <label className="text-[11px] font-bold text-muted-foreground">이름</label>
-              <Input value={addForm.name} onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))}
-                placeholder="이름" className="h-9 mt-1 bg-input border-border/30" />
-            </div>
-            <div>
-              <label className="text-[11px] font-bold text-muted-foreground">닉네임 (선택)</label>
+              <label className="text-[11px] font-bold text-muted-foreground">닉네임</label>
               <Input value={addForm.nickname} onChange={(e) => setAddForm((f) => ({ ...f, nickname: e.target.value }))}
                 placeholder="닉네임" className="h-9 mt-1 bg-input border-border/30" />
             </div>
@@ -268,6 +266,14 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
               <label className="text-[11px] font-bold text-muted-foreground">구분조 (선택)</label>
               <Input value={addForm.group} onChange={(e) => setAddForm((f) => ({ ...f, group: e.target.value }))}
                 placeholder="구분조" className="h-9 mt-1 bg-input border-border/30" />
+            </div>
+            <div>
+              <label className="text-[11px] font-bold text-muted-foreground">나이(연생) (선택)</label>
+              <select value={addForm.birthYear} onChange={(e) => setAddForm((f) => ({ ...f, birthYear: e.target.value }))}
+                className="h-9 mt-1 w-full rounded-md bg-input border border-border/30 px-2 text-sm">
+                <option value="">선택 안 함</option>
+                {BIRTH_YEARS.map((y) => <option key={y} value={y}>{y}년생</option>)}
+              </select>
             </div>
           </div>
           <div className="flex items-center justify-between gap-2">
@@ -364,9 +370,9 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
             <thead className="bg-muted/40 text-[10px] uppercase tracking-wider text-muted-foreground">
               <tr>
                 <th className="px-3 py-2.5 text-left"><input type="checkbox" checked={allSelected} onChange={toggleSelectAll} className="size-4 accent-neon-blue align-middle" /></th>
-                <th className="px-2 py-2.5 text-left font-bold">이름</th>
                 <th className="px-2 py-2.5 text-left font-bold">닉네임</th>
                 <th className="px-2 py-2.5 text-left font-bold">구분조</th>
+                <th className="px-2 py-2.5 text-center font-bold">나이</th>
                 <th className="px-2 py-2.5 text-center font-bold">성별</th>
                 <th className="px-2 py-2.5 text-center font-bold">티어</th>
                 <th className="px-2 py-2.5 text-center font-bold">RP</th>
@@ -381,21 +387,19 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
                   <tr key={s.id} className={cn("border-t border-border/20", idx % 2 === 1 && "bg-muted/[0.12]", selected.has(s.id) && "bg-neon-blue/[0.06]", dirty && "ring-1 ring-inset ring-amber-500/40")}>
                     <td className="px-3 py-1.5"><input type="checkbox" checked={selected.has(s.id)} onChange={() => toggleSelect(s.id)} className="size-4 accent-neon-blue align-middle" /></td>
                     <td className="px-2 py-1.5">
-                      <Input type="text" value={r.name}
-                        onChange={(e) => setField(s, { name: e.target.value })}
-                        className="h-8 min-w-[90px] bg-input border-border/30 font-bold" />
-                    </td>
-                    <td className="px-2 py-1.5">
                       <Input type="text" value={r.nickname}
                         onChange={(e) => setField(s, { nickname: e.target.value })}
                         placeholder="(없음)"
-                        className="h-8 min-w-[90px] bg-input border-border/30" />
+                        className="h-8 min-w-[90px] bg-input border-border/30 font-bold" />
                     </td>
                     <td className="px-2 py-1.5">
                       <Input type="text" value={r.group}
                         onChange={(e) => setField(s, { group: e.target.value })}
                         placeholder="(없음)"
                         className="h-8 w-20 bg-input border-border/30" />
+                    </td>
+                    <td className="px-2 py-1.5 text-center text-muted-foreground tabular-nums">
+                      {s.birthYear ? `${CURRENT_YEAR - s.birthYear}세` : "-"}
                     </td>
                     <td className="px-2 py-1.5">
                       <div className="flex items-center justify-center gap-1">
