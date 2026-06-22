@@ -34,8 +34,6 @@ import {
   apiInsertStudentsBulk,
   apiRestoreClassData,
   apiRecordMatchTransaction,
-  apiFetchClassSecret,
-  apiUpdateClassSecret,
   apiListSeasons,
   apiStartNewSeason,
   apiFetchSeasonStandings,
@@ -99,14 +97,6 @@ function useLeagueStoreInternal() {
   const [isClassManager, setIsClassManager] = useState<boolean>(false);
   const isClassManagerRef = useRef(false);
   useEffect(() => { isClassManagerRef.current = isClassManager; }, [isClassManager]);
-  const [teacherAccessCode, setTeacherAccessCode] = useState<string>("");
-  // 화면 잠금: 태블릿을 선수에게 맡길 때 순위표/관리자 탭을 리그 코드로 잠근다. (독립 토글)
-  const [lockLeaderboard, setLockLeaderboard] = useState<boolean>(false);
-  const [lockAdmin, setLockAdmin] = useState<boolean>(false);
-  const lockLeaderboardRef = useRef(false);
-  const lockAdminRef = useRef(false);
-  useEffect(() => { lockLeaderboardRef.current = lockLeaderboard; }, [lockLeaderboard]);
-  useEffect(() => { lockAdminRef.current = lockAdmin; }, [lockAdmin]);
   const isSyncingRef = useRef(false);
 
   useEffect(() => {
@@ -196,9 +186,6 @@ function useLeagueStoreInternal() {
             if (migrated.decayTiers !== undefined) setDecayTiers(migrated.decayTiers);
             if (migrated.lastDecayDate !== undefined) setLastDecayDate(migrated.lastDecayDate);
             if (migrated.decayApplied !== undefined && migrated.decayApplied) setDecayAppliedDates(migrated.decayApplied);
-            // 잠금 설정 로드 (구버전 kioskLockEnabled 단일값도 호환)
-            setLockLeaderboard(!!(migrated.lockLeaderboard ?? migrated.kioskLockEnabled));
-            setLockAdmin(!!(migrated.lockAdmin ?? migrated.kioskLockEnabled));
             if (migrated.tierSettings !== undefined) setTierSettings(migrated.tierSettings);
             if (migrated.dynamicBonuses !== undefined) setDynamicBonuses(migrated.dynamicBonuses);
              if (migrated.dynamicPenalties !== undefined) setDynamicPenalties(migrated.dynamicPenalties);
@@ -231,21 +218,7 @@ function useLeagueStoreInternal() {
       const isTeacherSession = isManager;
       isTeacherRef.current = isTeacherSession;
 
-      // class_secrets 조회 추가 (관리자 세션일 때만 RLS 우회하여 안전 조회)
-      let fetchedAccessCode = "";
-      if (isTeacherSession) {
-        try {
-          const { data: secretData, error: secretErr } = await apiFetchClassSecret(classId);
-          if (!secretErr && secretData) {
-            fetchedAccessCode = secretData.admin_code;
-          }
-        } catch (err) {
-          console.warn("Failed to fetch class secret in loadClassData:", err);
-        }
-      }
-      setTeacherAccessCode(fetchedAccessCode);
-
-      const studentsFetchResult = isTeacherSession 
+      const studentsFetchResult = isTeacherSession
         ? await apiFetchStudents(classId)
         : await apiFetchStudentsPublic(classId);
 
@@ -2350,38 +2323,6 @@ function useLeagueStoreInternal() {
     }
   }, [tierThresholds, rpVariables, tierSettings, dynamicBonuses, dynamicPenalties, decayEnabled, decayDays, decayAmount, decayTiers, currentClassId, isClassOwner]);
 
-  // 화면 잠금 on/off 저장 (소유자 전용). which: 어떤 화면을 토글할지.
-  const saveLockSetting = useCallback(async (which: "leaderboard" | "admin", enabled: boolean) => {
-    if (!isClassOwner) {
-      toast.error("권한이 없습니다. 클래스 개설자만 이 작업을 수행할 수 있습니다.");
-      return;
-    }
-    const prevLeaderboard = lockLeaderboardRef.current;
-    const prevAdmin = lockAdminRef.current;
-    const nextLeaderboard = which === "leaderboard" ? enabled : prevLeaderboard;
-    const nextAdmin = which === "admin" ? enabled : prevAdmin;
-    if (which === "leaderboard") setLockLeaderboard(enabled); else setLockAdmin(enabled);
-
-    if (currentClassId) {
-      try {
-        const { data: currentClass } = await apiFetchClassSettings(currentClassId);
-        const newSettings = {
-          ...(currentClass?.settings || {}),
-          lockLeaderboard: nextLeaderboard,
-          lockAdmin: nextAdmin
-        };
-        const { error: updateErr } = await apiUpdateClassSettings(currentClassId, newSettings);
-        if (updateErr) throw updateErr;
-        toast.success(enabled ? "잠금이 켜졌습니다." : "잠금이 꺼졌습니다.");
-      } catch (err: any) {
-        console.error("Failed to save lock setting:", err.message);
-        toast.error("잠금 설정 저장에 실패했습니다: " + err.message);
-        // 롤백
-        if (which === "leaderboard") setLockLeaderboard(prevLeaderboard); else setLockAdmin(prevAdmin);
-      }
-    }
-  }, [currentClassId, isClassOwner]);
-
   // 경기 입력 방식 저장 (소유자 전용).
   const saveMatchInputMode = useCallback(async (mode: MatchInputMode) => {
     if (!isClassOwner) {
@@ -2788,11 +2729,6 @@ function useLeagueStoreInternal() {
     matches, 
     title, 
     setTitle, 
-    teacherAccessCode,
-    setTeacherAccessCode,
-    lockLeaderboard,
-    lockAdmin,
-    saveLockSetting,
     matchInputMode,
     saveMatchInputMode,
     recordMatch,

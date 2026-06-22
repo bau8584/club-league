@@ -45,10 +45,3 @@ export type LeagueInsert = {
   is_deleted?: boolean;
 };
 export type LeagueUpdate = Partial<LeagueInsert>;
-
-// ── league_secrets ──────────────────────────────────────
-export type LeagueSecretInsert = {
-  league_id: string;            // NOT NULL
-  admin_code?: string | null;
-};
-export type LeagueSecretUpdate = Partial<LeagueSecretInsert>;

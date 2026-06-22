@@ -152,7 +152,6 @@ export type Class = {
     matchInputMode?: MatchInputMode; // 경기결과 입력 방식 (관리자 제어)
     schoolName?: string;
     sport?: string;
-    adminCode?: string;
     tierThresholds?: Record<TierName, number>; // 티어 기준선 설정
     rpVariables?: { winDelta: number; loseDelta: number }; // 기본 승패 획득/차감 점수
     decayEnabled?: boolean; // 휴면 감쇠 여부

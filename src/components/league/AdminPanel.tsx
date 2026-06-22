@@ -103,7 +103,6 @@ export function AdminPanel({
   onUpdateStudentInfo,
   onRestoreFromCSV,
   onBulkDecay,
-  teacherAccessCode,
   onUpdateMatchScore,
   title,
   activeBonuses,
@@ -129,7 +128,6 @@ export function AdminPanel({
   ) => Promise<void>;
   onRestoreFromCSV?: (students: Student[], matches: Match[]) => void;
   onBulkDecay?: (inactiveDays: number, decayAmount: number) => Promise<number> | number | any;
-  teacherAccessCode?: string;
   onUpdateMatchScore: (matchId: string, scoreA: number, scoreB: number) => void;
   title?: string;
   activeBonuses?: ActiveBonuses;
@@ -163,9 +161,6 @@ export function AdminPanel({
     decayTiers,
     decaySettings,
     saveDecaySettings,
-    lockLeaderboard,
-    lockAdmin,
-    saveLockSetting,
     matchInputMode,
     saveMatchInputMode,
     checkAndApplyAutomaticDecay,
@@ -420,12 +415,8 @@ export function AdminPanel({
             decayTiers={decayTiers}
             decaySettings={decaySettings}
             saveDecaySettings={saveDecaySettings}
-            lockLeaderboard={lockLeaderboard}
-            lockAdmin={lockAdmin}
-            saveLockSetting={saveLockSetting}
             matchInputMode={matchInputMode}
             saveMatchInputMode={saveMatchInputMode}
-            accessCode={teacherAccessCode}
             isOwner={isOwner}
             tierSettings={tierSettings}
             dynamicBonuses={dynamicBonuses}

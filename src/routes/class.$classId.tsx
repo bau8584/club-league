@@ -8,7 +8,6 @@ import { AdminPanel } from "@/components/league/AdminPanel";
 import { MatchRecommend } from "@/components/league/MatchRecommend";
 import { MyRecord } from "@/components/league/MyRecord";
 import { SeasonSummary } from "@/components/league/SeasonSummary";
-import { LockGate } from "@/components/league/LockGate";
 import { Toaster } from "@/components/ui/sonner";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -66,9 +65,6 @@ function Index() {
     currentSeason,
     currentViewSeason,
     changeViewSeason,
-    teacherAccessCode,
-    lockLeaderboard,
-    lockAdmin
   } = useLeagueStore();
 
   useEffect(() => {
@@ -79,12 +75,6 @@ function Index() {
 
   const [tab, setTab] = useState<Tab>("leaderboard");
   const [editingTitle, setEditingTitle] = useState(false);
-  // 화면 잠금: 해제되면 수동 재잠금(또는 새로고침) 전까지 유지
-  const [unlocked, setUnlocked] = useState(false);
-  // 현재 탭이 잠금 대상인지. 코드 미설정 시 fail-open(잠그지 않음).
-  const currentTabLocked = (tab === "leaderboard" && lockLeaderboard) || (tab === "admin" && lockAdmin);
-  const anyLockEnabled = lockLeaderboard || lockAdmin;
-  const showLockGate = currentTabLocked && !!teacherAccessCode && !unlocked && session?.role !== "STUDENT";
   const [recommendInitials, setRecommendInitials] = useState<{
     playerAId: string;
     playerBId: string;
@@ -272,18 +262,6 @@ function Index() {
                 <span className="font-bold text-neon-green">{students.length}</span>
               </div>
 
-              {/* 다시 잠그기 (잠금이 켜져 있고 현재 해제된 상태일 때) */}
-              {session.role === "TEACHER" && anyLockEnabled && unlocked && (
-                <button
-                  onClick={() => setUnlocked(false)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 active:scale-95 transition-all text-xs font-bold cursor-pointer"
-                  title="순위표·관리자 화면을 다시 잠급니다"
-                >
-                  <Lock className="size-3.5" />
-                  <span>다시 잠그기</span>
-                </button>
-              )}
-
               {/* 리그 로비로 돌아가기 */}
               <button
                 onClick={() => { window.location.href = "/"; }}
@@ -393,16 +371,7 @@ function Index() {
           />
         )}
 
-        {/* 화면 잠금 게이트 (순위표·관리자 탭) */}
-        {showLockGate && (
-          <LockGate
-            expectedCode={teacherAccessCode}
-            title={tab === "admin" ? "관리자 탭 잠금" : "순위표 잠금"}
-            onUnlock={() => setUnlocked(true)}
-          />
-        )}
-
-        {tab === "leaderboard" && session.role !== "STUDENT" && !showLockGate && (
+        {tab === "leaderboard" && session.role !== "STUDENT" && (
           <Leaderboard
             students={students}
             thresholds={tierThresholds}
@@ -459,7 +428,7 @@ function Index() {
           />
         )}
         
-         {session.role !== "STUDENT" && tab === "admin" && isClassManager && !showLockGate && (
+         {session.role !== "STUDENT" && tab === "admin" && isClassManager && (
           <AdminPanel
             isOwner={isClassOwner}
             students={students}
@@ -482,7 +451,6 @@ function Index() {
             title={title}
             activeBonuses={activeBonuses}
             onSaveLeagueSettings={saveLeagueSettings}
-            teacherAccessCode={teacherAccessCode}
           />
         )}
       </main>

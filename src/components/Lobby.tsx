@@ -36,7 +36,7 @@ import {
 import { cn } from "@/lib/utils";
 
 import { type Class } from "@/lib/league-types";
-import type { LeagueInsert, LeagueSecretInsert } from "@/lib/database.types";
+import type { LeagueInsert } from "@/lib/database.types";
 import { LEAGUE_BUNDLES, buildBundleSettings, type BundleKey } from "@/lib/league-presets";
 
 export function Lobby() {
@@ -52,8 +52,6 @@ export function Lobby() {
   const [newSport, setNewSport] = useState("");
   const [newLeagueName, setNewLeagueName] = useState("");
   const [newSeason, setNewSeason] = useState("");
-  const [adminCode, setAdminCode] = useState("");
-  const [confirmAdminCode, setConfirmAdminCode] = useState("");
   const [creating, setCreating] = useState(false);
   const [showBundle, setShowBundle] = useState(false);
   const [selectedBundle, setSelectedBundle] = useState<BundleKey>("standard");
@@ -94,28 +92,11 @@ export function Lobby() {
   const [editingLeague, setEditingLeague] = useState<Class | null>(null);
   const [editLeagueName, setEditLeagueName] = useState("");
   const [updatingName, setUpdatingName] = useState(false);
-  // 관리자 코드 편집
-  const [editAdminCode, setEditAdminCode] = useState("");
-  const [editConfirmCode, setEditConfirmCode] = useState("");
-  const [currentCodeExists, setCurrentCodeExists] = useState<boolean | null>(null); // null=확인중
 
-  // 리그 수정 모달 열기 (이름 채우고 현재 코드 존재 여부 조회)
-  const openEditLeague = async (league: Class) => {
+  // 리그 수정 모달 열기 (이름 채우기)
+  const openEditLeague = (league: Class) => {
     setEditingLeague(league);
     setEditLeagueName(league.name);
-    setEditAdminCode("");
-    setEditConfirmCode("");
-    setCurrentCodeExists(null);
-    try {
-      const { data } = await supabase
-        .from("league_secrets")
-        .select("admin_code")
-        .eq("league_id", league.id)
-        .maybeSingle();
-      setCurrentCodeExists(!!(data && data.admin_code));
-    } catch {
-      setCurrentCodeExists(false);
-    }
   };
 
   useEffect(() => {
@@ -166,13 +147,6 @@ export function Lobby() {
     if (!editingLeague) return;
     if (!editLeagueName.trim()) return toast.error("리그 이름을 입력해 주세요.");
 
-    // 코드 변경을 입력했는지 (둘 중 하나라도 입력되면 변경 시도로 간주)
-    const wantsCodeChange = editAdminCode.length > 0 || editConfirmCode.length > 0;
-    if (wantsCodeChange) {
-      if (!/^\d{4}$/.test(editAdminCode)) return toast.error("관리자 코드는 4자리 숫자여야 합니다.");
-      if (editAdminCode !== editConfirmCode) return toast.error("코드 확인이 일치하지 않습니다.");
-    }
-
     setUpdatingName(true);
     try {
       const { error } = await supabase
@@ -182,19 +156,9 @@ export function Lobby() {
 
       if (error) throw error;
 
-      // 코드 변경/생성 (upsert: 기존 row 없으면 생성)
-      if (wantsCodeChange) {
-        const { error: codeErr } = await supabase
-          .from("league_secrets")
-          .upsert({ league_id: editingLeague.id, admin_code: editAdminCode }, { onConflict: "league_id" });
-        if (codeErr) throw codeErr;
-      }
-
-      toast.success(wantsCodeChange ? "리그 정보와 관리자 코드가 저장되었습니다!" : "리그 이름이 수정되었습니다!");
+      toast.success("리그 이름이 수정되었습니다!");
       setEditingLeague(null);
       setEditLeagueName("");
-      setEditAdminCode("");
-      setEditConfirmCode("");
       await loadLeagues(userId);
     } catch (err: any) {
       console.error("Failed to update league name:", err.message);
@@ -230,21 +194,13 @@ export function Lobby() {
     if (!newSchoolName.trim()) {
       return toast.error("클럽 이름을 입력해 주세요.");
     }
-    if (!/^\d{4}$/.test(adminCode)) {
-      return toast.error("관리자 코드는 4자리 숫자여야 합니다.");
-    }
-    if (adminCode !== confirmAdminCode) {
-      return; // Block submission (inline error is displayed)
-    }
-
     // 리그 이름 미입력 시 "클럽이름 리그"로 자동 생성, 시즌 미입력 시 "시즌 1"
     const finalName = newLeagueName.trim() || `${newSchoolName.trim()} 리그`;
     const finalSeason = newSeason.trim() || "시즌 1";
 
     setCreating(true);
     try {
-      // 1. classes 테이블에 인서트 (settings에서 adminCode 제외)
-      const { data: classData, error: classErr } = await supabase
+      const { error: classErr } = await supabase
         .from("leagues")
         .insert({
           name: finalName,
@@ -258,22 +214,9 @@ export function Lobby() {
           owner_uid: userId,
           member_uids: [],
           admin_uids: []
-        } satisfies LeagueInsert)
-        .select("id")
-        .single();
+        } satisfies LeagueInsert);
 
       if (classErr) throw classErr;
-
-      // 2. league_secrets 테이블에 admin_code 삽입
-      if (classData) {
-        const { error: secretErr } = await supabase
-          .from("league_secrets")
-          .insert({
-            league_id: classData.id,
-            admin_code: adminCode
-          } satisfies LeagueSecretInsert);
-        if (secretErr) throw secretErr;
-      }
 
       toast.success("새로운 리그가 개설되었습니다!");
       setIsModalOpen(false);
@@ -281,8 +224,6 @@ export function Lobby() {
       setNewSport("");
       setNewLeagueName("");
       setNewSeason("");
-      setAdminCode("");
-      setConfirmAdminCode("");
       await loadLeagues(userId);
     } catch (err: any) {
       console.error("Failed to create class:", err.message);
@@ -690,39 +631,7 @@ export function Lobby() {
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-bold text-foreground">관리자 코드</Label>
-                      <Input
-                        type="password"
-                        required
-                        maxLength={4}
-                        value={adminCode}
-                        onChange={(e) => setAdminCode(e.target.value.replace(/\D/g, ""))}
-                        placeholder="4자리 숫자 입력"
-                        className="h-10 border-border/60 bg-background/40 focus:border-neon-blue transition-all"
-                      />
-                      <p className="text-[10px] text-muted-foreground mt-0.5 leading-tight">관리자 및 티어 순위표 접근용 비밀번호</p>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-bold text-foreground">관리자 코드 확인</Label>
-                      <Input
-                        type="password"
-                        required
-                        maxLength={4}
-                        value={confirmAdminCode}
-                        onChange={(e) => setConfirmAdminCode(e.target.value.replace(/\D/g, ""))}
-                        placeholder="4자리 숫자 재입력"
-                        className="h-10 border-border/60 bg-background/40 focus:border-neon-blue transition-all"
-                      />
-                      {confirmAdminCode && adminCode !== confirmAdminCode && (
-                        <p className="text-[10px] text-destructive mt-0.5 font-bold animate-in fade-in duration-200">
-                          코드가 일치하지 않습니다.
-                        </p>
-                      )}
-                    </div>
-                  </div>
-              {/* 리그 설정 (토글) — 관리자 코드 아래 */}
+              {/* 리그 설정 (토글) */}
               <div className="rounded-xl border border-border/50 bg-background/30 overflow-hidden">
                 <button
                   type="button"
@@ -803,7 +712,7 @@ export function Lobby() {
                 리그 설정 수정
               </h3>
               <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
-                리그 이름과 관리자 코드를 변경합니다. 변경 후 즉시 반영됩니다.
+                리그 이름을 변경합니다. 변경 후 즉시 반영됩니다.
               </p>
             </div>
 
@@ -819,45 +728,6 @@ export function Lobby() {
                 />
               </div>
 
-              {/* 관리자 코드 (화면 잠금 해제용) */}
-              <div className="space-y-2 rounded-xl border border-amber-500/30 bg-amber-500/[0.05] p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <Label className="text-xs font-bold text-foreground">🔒 관리자 코드 (4자리)</Label>
-                  <span className={cn(
-                    "text-[10px] font-bold px-2 py-0.5 rounded-full border",
-                    currentCodeExists === null
-                      ? "text-muted-foreground border-border/40"
-                      : currentCodeExists
-                        ? "text-neon-green border-neon-green/40 bg-neon-green/10"
-                        : "text-amber-500 border-amber-500/40 bg-amber-500/10"
-                  )}>
-                    {currentCodeExists === null ? "확인 중..." : currentCodeExists ? "설정됨" : "미설정"}
-                  </span>
-                </div>
-                <p className="text-[10px] text-muted-foreground leading-snug">
-                  순위표·관리자 탭 잠금을 해제할 때 쓰는 코드입니다. {currentCodeExists ? "변경하지 않으려면 비워 두세요." : "잠금 기능을 쓰려면 코드를 설정하세요."}
-                </p>
-                <div className="grid grid-cols-2 gap-2">
-                  <Input
-                    type="password"
-                    inputMode="numeric"
-                    maxLength={4}
-                    value={editAdminCode}
-                    onChange={(e) => setEditAdminCode(e.target.value.replace(/\D/g, ""))}
-                    placeholder={currentCodeExists ? "새 코드" : "코드 입력"}
-                    className="h-9 border-border/60 bg-background/40 focus:border-amber-500 text-center tracking-[0.3em] font-bold"
-                  />
-                  <Input
-                    type="password"
-                    inputMode="numeric"
-                    maxLength={4}
-                    value={editConfirmCode}
-                    onChange={(e) => setEditConfirmCode(e.target.value.replace(/\D/g, ""))}
-                    placeholder="코드 확인"
-                    className="h-9 border-border/60 bg-background/40 focus:border-amber-500 text-center tracking-[0.3em] font-bold"
-                  />
-                </div>
-              </div>
 
               <div className="grid grid-cols-2 gap-3 pt-2">
                 <Button

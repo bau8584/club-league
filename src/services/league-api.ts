@@ -370,19 +370,3 @@ export async function apiRenameSeason(classId: string, oldName: string, newName:
 export async function apiDeleteSeason(classId: string, season: string, deleteMatches = false) {
   return supabase.rpc("delete_season", { p_class_id: classId, p_season: season, p_delete_matches: deleteMatches });
 }
-
-// --- League Secrets API ---
-export async function apiFetchClassSecret(classId: string) {
-  return supabase
-    .from("league_secrets")
-    .select("admin_code")
-    .eq("league_id", classId)
-    .single();
-}
-
-export async function apiUpdateClassSecret(classId: string, adminCode: string) {
-  return supabase
-    .from("league_secrets")
-    .update({ admin_code: adminCode })
-    .eq("league_id", classId);
-}

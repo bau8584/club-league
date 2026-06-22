@@ -239,12 +239,8 @@ export interface AdminSettingsProps {
   decayTiers: TierName[];
   decaySettings?: DecaySettingsRecord;
   saveDecaySettings: (enabled: boolean, days: number, amount: number, tiers: TierName[], perTierRp?: Partial<Record<TierName, number>>) => Promise<void> | void;
-  lockLeaderboard?: boolean;
-  lockAdmin?: boolean;
-  saveLockSetting?: (which: "leaderboard" | "admin", enabled: boolean) => Promise<void> | void;
   matchInputMode?: MatchInputMode;
   saveMatchInputMode?: (mode: MatchInputMode) => Promise<void> | void;
-  accessCode?: string;
   isOwner?: boolean;
   tierSettings: TierSettings | null;
   dynamicBonuses: DynamicBonuses | null;
@@ -264,12 +260,8 @@ export function AdminSettings({
   decayTiers,
   decaySettings,
   saveDecaySettings,
-  lockLeaderboard = false,
-  lockAdmin = false,
-  saveLockSetting,
   matchInputMode = "admin-only",
   saveMatchInputMode,
-  accessCode = "",
   isOwner = false,
   tierSettings,
   dynamicBonuses,
@@ -697,43 +689,6 @@ export function AdminSettings({
         </Card>
       )}
 
-      {/* 0. 화면 잠금 설정 카드 — 소유자 전용 */}
-      {isOwner && (
-        <Card className="border border-amber-500/40 bg-amber-500/[0.06] p-6 backdrop-blur shadow-xl">
-          <div className="space-y-3">
-            <span className="text-xs font-bold text-amber-500 uppercase tracking-wider block">🔒 화면 잠금</span>
-            <p className="text-[11px] text-muted-foreground leading-relaxed max-w-md">
-              태블릿을 선수에게 맡길 때 켜세요. 잠긴 화면은 <b>리그 코드(4자리)</b>를 입력해야 열리며, 경기 기록 입력 화면은 그대로 열려 있습니다.
-            </p>
-
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-border/30 bg-background/30 px-3 py-2.5">
-              <span className="text-[11px] font-bold text-foreground">🏆 순위표 잠그기</span>
-              <ToggleSwitch
-                checked={lockLeaderboard}
-                onChange={() => saveLockSetting?.("leaderboard", !lockLeaderboard)}
-                activeColor="bg-amber-500"
-              />
-            </div>
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-border/30 bg-background/30 px-3 py-2.5">
-              <span className="text-[11px] font-bold text-foreground">⚙️ 관리자 탭 잠그기</span>
-              <ToggleSwitch
-                checked={lockAdmin}
-                onChange={() => saveLockSetting?.("admin", !lockAdmin)}
-                activeColor="bg-amber-500"
-              />
-            </div>
-
-            {(lockLeaderboard || lockAdmin) && !accessCode && (
-              <p className="text-[10px] font-bold text-destructive leading-snug bg-destructive/10 rounded-lg px-2.5 py-1.5 border border-destructive/30">
-                ⚠️ 이 리그에 코드가 설정되어 있지 않아 잠금이 동작하지 않습니다. 리그 생성 시 코드를 설정해야 잠금을 쓸 수 있습니다.
-              </p>
-            )}
-            <p className="text-[10px] text-muted-foreground/80 leading-snug bg-background/30 rounded-lg px-2.5 py-1.5 border border-border/20">
-              💡 코드로 한 번 열면 헤더의 <b>“다시 잠그기”</b> 버튼이나 새로고침 전까지 열린 상태가 유지됩니다. 기록관도 같은 코드를 사용합니다.
-            </p>
-          </div>
-        </Card>
-      )}
 
       {/* 1. League Title Card */}
       <Card className="border border-border/60 bg-card/60 p-6 backdrop-blur shadow-xl">
