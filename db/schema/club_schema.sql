@@ -368,7 +368,7 @@ begin
   from public.leagues l where l.id = p_class_id and coalesce(l.is_deleted,false) = false;
   if v_owner is null then raise exception '리그를 찾을 수 없습니다. 코드를 다시 확인해 주세요.'; end if;
   if v_owner <> auth.uid() and not (auth.uid() = any(v_members)) then
-    update public.leagues set member_uids = array_append(v_members, auth.uid()) where id = p_class_id;
+    update public.leagues set member_uids = array_append(v_members, auth.uid()) where leagues.id = p_class_id;
   end if;
   return query select l.id, l.name, (l.owner_uid = auth.uid()) from public.leagues l where l.id = p_class_id;
 end; $$;
