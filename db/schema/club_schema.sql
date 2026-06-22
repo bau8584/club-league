@@ -145,8 +145,8 @@ alter table public.season_standings enable row level security;
 
 -- ── 7) players_public : 본명(name) 제외 공개 뷰 ──────────────
 create or replace view public.players_public as
-  select id, league_id, user_id, rp, tier, win_count, lose_count, nickname,
-         group_label, gender, is_deleted, recent_matches, display_name
+  select id, league_id, rp, tier, win_count, lose_count, nickname,
+         group_label, gender, is_deleted, recent_matches, display_name, user_id
   from public.players;
 
 -- ============================================================

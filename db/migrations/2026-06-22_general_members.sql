@@ -33,9 +33,10 @@ $$;
 grant execute on function public.is_class_member(uuid) to authenticated;
 
 -- 1-b) players_public 뷰에 user_id 노출 (일반회원이 미연결 닉네임을 식별·연동하기 위함)
+--   CREATE OR REPLACE VIEW 는 기존 컬럼 순서를 못 바꾸므로 user_id 를 맨 뒤에 추가.
 create or replace view public.players_public as
-  select id, league_id, user_id, rp, tier, win_count, lose_count, nickname,
-         group_label, gender, is_deleted, recent_matches, display_name
+  select id, league_id, rp, tier, win_count, lose_count, nickname,
+         group_label, gender, is_deleted, recent_matches, display_name, user_id
   from public.players;
 grant select on public.players_public to anon, authenticated;
 
