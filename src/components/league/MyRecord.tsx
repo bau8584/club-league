@@ -217,18 +217,6 @@ export function MyRecord({
               </div>
               
               <div className="flex items-center gap-2">
-                {/* 🛡️ 강등 보호막 카운터 HUD */}
-                {me.rp >= (thresholds?.Silver ?? 1000) && (
-                  <div className={cn(
-                    "flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-bold shadow-md transition-all shrink-0",
-                    (me.demotionShields ?? 0) > 0 
-                      ? "border-amber-500/40 bg-amber-500/10 text-amber-500 animate-pulse"
-                      : "border-border bg-card/60 text-muted-foreground"
-                  )}>
-                    <span>🛡️ x{me.demotionShields ?? 0}</span>
-                    <span className="text-[9px] font-black uppercase tracking-wider hidden sm:inline">강등 보호막</span>
-                  </div>
-                )}
                 <TierBadge rp={me.rp} thresholds={thresholds} />
               </div>
             </div>
@@ -241,19 +229,18 @@ export function MyRecord({
               <span className="text-xs font-black uppercase tracking-wider text-neon-blue">RP 점수</span>
             </div>
 
-            {/* 휴면 경고 안내 바 */}
+            {/* 휴면 경고 안내 바 (전적 없음 상태는 표시하지 않음) */}
+            {inactivityInfo.status !== "new" && (
             <div className={cn(
               "rounded-xl border p-3 text-xs font-bold flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-sm transition-all",
-              inactivityInfo.status === "new"
-                ? "border-neon-blue/30 bg-neon-blue/5 text-neon-blue"
-                : inactivityInfo.status === "exempt"
-                  ? "border-border bg-background/30 text-muted-foreground"
-                  : inactivityInfo.warning
-                    ? "border-destructive/40 bg-destructive/10 text-destructive animate-pulse"
-                    : "border-border bg-background/30 text-muted-foreground"
+              inactivityInfo.status === "exempt"
+                ? "border-border bg-background/30 text-muted-foreground"
+                : inactivityInfo.warning
+                  ? "border-destructive/40 bg-destructive/10 text-destructive animate-pulse"
+                  : "border-border bg-background/30 text-muted-foreground"
             )}>
               <span className="flex items-center gap-1.5 leading-relaxed">
-                {inactivityInfo.status === "new" ? "🌱 " : inactivityInfo.status === "exempt" ? "😊 " : inactivityInfo.warning ? "⚠️ " : "⏱️ "}
+                {inactivityInfo.status === "exempt" ? "😊 " : inactivityInfo.warning ? "⚠️ " : "⏱️ "}
                 {inactivityInfo.text}
               </span>
               {inactivityInfo.status === "active" && inactivityInfo.warning ? (
@@ -274,6 +261,7 @@ export function MyRecord({
                 </span>
               )}
             </div>
+            )}
 
             {/* Tier progress gauge */}
             <div className="space-y-2">

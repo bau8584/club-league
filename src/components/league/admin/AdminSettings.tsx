@@ -646,15 +646,14 @@ export function AdminSettings({
           <div className="space-y-3">
             <span className="text-xs font-bold text-neon-blue uppercase tracking-wider block">🏸 경기 입력 방식</span>
             <p className="text-[11px] text-muted-foreground leading-relaxed max-w-md">
-              누가 경기 결과를 입력할 수 있는지 정합니다. <b>관리자만</b>은 클럽형(태블릿) 방식, <b>자율 입력</b>은 멤버 각자가 자기 경기를 기록하는 동호회 방식입니다.
+              누가 경기 결과를 입력할 수 있는지 정합니다. <b>관리자만</b>은 클럽형(태블릿) 방식, <b>자율</b>은 멤버가 자기 경기만, <b>완전 자율</b>은 모든 멤버가 아무 경기나 입력하는 방식입니다.
             </p>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {([
                 { value: "admin-only", label: "관리자만", desc: "관리자·기록원만 입력", disabled: false },
-                { value: "free", label: "자율 입력", desc: "모든 멤버가 자기 경기 입력", disabled: false },
-                { value: "peer-confirm", label: "상대 확인", desc: "상대가 확인해야 확정", disabled: true },
-                { value: "admin-approve", label: "관리자 승인", desc: "관리자가 승인해야 확정", disabled: true },
+                { value: "free", label: "자율", desc: "멤버가 본인 경기만 입력", disabled: false },
+                { value: "free-all", label: "완전 자율", desc: "모든 멤버가 아무 경기나 입력", disabled: false },
               ] as const).map((opt) => {
                 const selected = matchInputMode === opt.value;
                 return (
@@ -683,7 +682,7 @@ export function AdminSettings({
               })}
             </div>
             <p className="text-[10px] text-muted-foreground/80 leading-snug bg-background/30 rounded-lg px-2.5 py-1.5 border border-border/20">
-              💡 <b>상대 확인</b>·<b>관리자 승인</b>은 계정 연동·승인 기능이 준비되면 활성화됩니다.
+              💡 <b>자율</b>·<b>완전 자율</b>이면 멤버에게 "내 경기 기록" 화면이 열립니다. 본인 참여 여부는 서버에서 한 번 더 검증됩니다.
             </p>
           </div>
         </Card>

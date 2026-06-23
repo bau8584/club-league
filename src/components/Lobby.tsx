@@ -38,6 +38,7 @@ import { cn } from "@/lib/utils";
 import { type Class } from "@/lib/league-types";
 import type { LeagueInsert } from "@/lib/database.types";
 import { LEAGUE_BUNDLES, buildBundleSettings, type BundleKey } from "@/lib/league-presets";
+import { SPORT_OPTIONS, getSportPreset } from "@/domain/sport-levels";
 
 export function Lobby() {
   const [userEmail, setUserEmail] = useState<string>("");
@@ -50,6 +51,8 @@ export function Lobby() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newSchoolName, setNewSchoolName] = useState("");
   const [newSport, setNewSport] = useState("");
+  const [customSport, setCustomSport] = useState(false); // 종목 직접 입력 모드
+  const [newLevelMode, setNewLevelMode] = useState<"preset" | "free">("preset"); // 레벨 체계 따름/자유
   const [newLeagueName, setNewLeagueName] = useState("");
   const [newSeason, setNewSeason] = useState("");
   const [creating, setCreating] = useState(false);
@@ -208,6 +211,14 @@ export function Lobby() {
             season: finalSeason,
             schoolName: newSchoolName.trim(),
             sport: newSport.trim(),
+            // 레벨 체계: preset(종목 프리셋 복사) vs free(자유 입력)
+            ...(() => {
+              const preset = getSportPreset(newSport.trim());
+              if (newLevelMode === "preset" && preset) {
+                return { levelMode: "preset" as const, levels: preset.levels };
+              }
+              return { levelMode: "free" as const, levels: [] };
+            })(),
             // 개설 시 선택한 '리그 성향' → 기준점/승패/보너스/패널티 일괄 적용
             ...buildBundleSettings(selectedBundle),
           },
@@ -222,6 +233,8 @@ export function Lobby() {
       setIsModalOpen(false);
       setNewSchoolName("");
       setNewSport("");
+      setCustomSport(false);
+      setNewLevelMode("preset");
       setNewLeagueName("");
       setNewSeason("");
       await loadLeagues(userId);
@@ -602,13 +615,81 @@ export function Lobby() {
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-xs font-bold text-foreground">종목</Label>
-                      <Input
-                        value={newSport}
-                        onChange={(e) => setNewSport(e.target.value)}
-                        placeholder="예: 배드민턴, 테니스"
-                        className="h-10 border-border/60 bg-background/40 focus:border-neon-blue transition-all"
-                      />
+                      {customSport ? (
+                        <Input
+                          autoFocus
+                          value={newSport}
+                          onChange={(e) => setNewSport(e.target.value)}
+                          placeholder="종목 직접 입력"
+                          className="h-10 border-border/60 bg-background/40 focus:border-neon-blue transition-all"
+                        />
+                      ) : (
+                        <select
+                          value={newSport}
+                          onChange={(e) => {
+                            if (e.target.value === "__custom__") {
+                              setCustomSport(true);
+                              setNewSport("");
+                              setNewLevelMode("free");
+                            } else {
+                              setNewSport(e.target.value);
+                            }
+                          }}
+                          className="h-10 w-full rounded-md border border-border/60 bg-background/40 px-2 text-sm focus:border-neon-blue transition-all"
+                        >
+                          <option value="">종목 선택</option>
+                          {SPORT_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+                          <option value="__custom__">+ 직접 입력</option>
+                        </select>
+                      )}
                     </div>
+                  </div>
+
+                  {/* 레벨 체계 선택 */}
+                  <div className="space-y-1.5 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-bold text-foreground">레벨 체계</Label>
+                      {customSport && (
+                        <button type="button" onClick={() => { setCustomSport(false); setNewSport(""); }}
+                          className="text-[11px] font-bold text-neon-blue hover:underline">목록에서 선택</button>
+                      )}
+                    </div>
+                    {(() => {
+                      const preset = getSportPreset(newSport.trim());
+                      const presetDisabled = !preset; // 프리셋 없는 종목(직접입력 등)은 자유만 가능
+                      return (
+                        <>
+                          <div className="inline-flex rounded-xl bg-muted/40 p-1 border border-border/30">
+                            <button type="button" disabled={presetDisabled}
+                              onClick={() => setNewLevelMode("preset")}
+                              className={cn("px-3 py-1.5 rounded-lg text-xs font-black transition-all disabled:opacity-40",
+                                newLevelMode === "preset" && !presetDisabled ? "bg-neon-blue/15 text-neon-blue" : "text-muted-foreground")}>
+                              체계 따름
+                            </button>
+                            <button type="button"
+                              onClick={() => setNewLevelMode("free")}
+                              className={cn("px-3 py-1.5 rounded-lg text-xs font-black transition-all",
+                                newLevelMode === "free" || presetDisabled ? "bg-neon-blue/15 text-neon-blue" : "text-muted-foreground")}>
+                              자유
+                            </button>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground leading-relaxed">
+                            {presetDisabled
+                              ? "이 종목은 정의된 레벨 체계가 없어 자유 입력으로 운영됩니다. (개설 후 관리자 탭에서 레벨을 추가할 수 있어요.)"
+                              : newLevelMode === "preset"
+                                ? `${newSport.trim()} 표준 레벨 체계를 적용합니다. 이름·설명은 개설 후 관리자 탭에서 수정·추가·삭제할 수 있어요.`
+                                : "레벨을 자유 텍스트로 입력하도록 합니다."}
+                          </p>
+                          {!presetDisabled && newLevelMode === "preset" && (
+                            <div className="flex flex-wrap gap-1.5 pt-0.5">
+                              {preset!.levels.map((lv) => (
+                                <span key={lv.name} className="rounded-md border border-border/50 bg-background/40 px-2 py-0.5 text-[11px] font-bold text-foreground">{lv.name}</span>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
 
                   <div className="space-y-1.5 animate-in fade-in slide-in-from-bottom-2 duration-200">
@@ -863,12 +944,16 @@ export function Lobby() {
                   <div key={m.uid} className="flex items-center justify-between gap-2 rounded-xl border border-border/40 bg-background/40 px-3.5 py-2.5">
                     <div className="min-w-0">
                       <div className="font-bold text-sm truncate">{m.email || m.uid.slice(0, 8) + "…"}</div>
-                      <div className="text-[10px] text-muted-foreground">{m.role}</div>
+                      <div className="text-[10px] text-muted-foreground">
+                        {m.role === "owner" ? "방장" : m.role === "admin" ? "공동 관리자" : "일반 멤버"}
+                      </div>
                     </div>
-                    <Button type="button" variant="ghost" onClick={() => handleRemoveMember(m.uid, m.email)}
-                      className="h-8 px-3 rounded-lg text-[11px] font-bold text-destructive hover:bg-destructive/10 shrink-0">
-                      <UserX className="size-3.5 mr-1" /> 내보내기
-                    </Button>
+                    {m.role !== "owner" && (
+                      <Button type="button" variant="ghost" onClick={() => handleRemoveMember(m.uid, m.email)}
+                        className="h-8 px-3 rounded-lg text-[11px] font-bold text-destructive hover:bg-destructive/10 shrink-0">
+                        <UserX className="size-3.5 mr-1" /> 내보내기
+                      </Button>
+                    )}
                   </div>
                 ))}
               </div>

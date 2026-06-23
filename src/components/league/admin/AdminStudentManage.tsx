@@ -3,7 +3,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { Users, Save, KeyRound, Trash2, ShieldAlert, HelpCircle, RotateCcw, ChevronDown, ClipboardPaste, UserPlus } from "lucide-react";
+import { Users, Save, KeyRound, Trash2, ShieldAlert, HelpCircle, RotateCcw, ChevronDown, ClipboardPaste, UserPlus, Link2, Link2Off, ShieldCheck, ShieldOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiResetStudentCode } from "@/services/league-api";
 import { useLeagueStore } from "@/lib/league-store";
@@ -30,7 +30,7 @@ type RowDraft = { name: string; nickname: string; group: string; gender: Gender;
 type DeletedStudent = { id: string; name: string; nickname: string; group: string | null; rp: number };
 
 // 한 줄 = 한 명. 칸은 탭/콤마로 구분.
-//   1칸 → 닉네임 / 2칸 → 구분조, 닉네임
+//   1칸 → 닉네임 / 2칸 → 레벨, 닉네임
 type ParsedRow = { nickname: string; group: string | null };
 function parseRoster(text: string): ParsedRow[] {
   const out: ParsedRow[] = [];
@@ -58,7 +58,8 @@ const CURRENT_YEAR = new Date().getFullYear();
 const BIRTH_YEARS = Array.from({ length: 80 }, (_, i) => CURRENT_YEAR - 10 - i);
 
 export function AdminStudentManage({ students, onDeleteStudent, thresholds }: AdminStudentManageProps) {
-  const { upsertStudents, updateStudentInfo, bulkUpdateStudents, fetchDeletedStudents, restoreDeletedStudent, hardDeleteStudent } = useLeagueStore();
+  const { upsertStudents, updateStudentInfo, bulkUpdateStudents, fetchDeletedStudents, restoreDeletedStudent, hardDeleteStudent, levelMode, levels, ownerUid, adminUids, setMemberAdmin, isClassOwner } = useLeagueStore();
+  const usePresetLevels = levelMode === "preset" && levels.length > 0;
 
   const [trashOpen, setTrashOpen] = useState(false);
   const [trash, setTrash] = useState<DeletedStudent[]>([]);
@@ -106,7 +107,7 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
   );
   const studentsById = useMemo(() => new Map(students.map((s) => [s.id, s])), [students]);
 
-  // 구분조 전환 시 미저장 편집/선택 초기화
+  // 레벨 전환 시 미저장 편집/선택 초기화
   const changeFilter = (g: string | null) => {
     setDraft({});
     setSelected(new Set());
@@ -211,7 +212,7 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
           <h3 className="font-black text-lg">회원 관리</h3>
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
-          닉네임·구분조·성별·RP를 바로 수정하고, 회원을 선택해 코드 초기화나 RP 일괄 조정을 할 수 있어요. 명단을 한 번에 붙여넣어 등록할 수도 있습니다.
+          닉네임·레벨·성별·RP를 바로 수정하고, 회원을 선택해 코드 초기화나 RP 일괄 조정을 할 수 있어요. 명단을 한 번에 붙여넣어 등록할 수도 있습니다.
         </p>
       </div>
 
@@ -234,7 +235,7 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
             <span>
               한 줄에 한 명씩 입력하세요. 칸은 <b className="text-foreground">탭 또는 콤마(,)</b>로 구분합니다.<br />
               · <b className="text-foreground">닉네임</b> (칸 1개)<br />
-              · <b className="text-foreground">구분조, 닉네임</b> (칸 2개)
+              · <b className="text-foreground">레벨, 닉네임</b> (칸 2개)
             </span>
           </p>
           <textarea
@@ -263,9 +264,17 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
                 placeholder="닉네임" className="h-9 mt-1 bg-input border-border/30" />
             </div>
             <div>
-              <label className="text-[11px] font-bold text-muted-foreground">구분조 (선택)</label>
-              <Input value={addForm.group} onChange={(e) => setAddForm((f) => ({ ...f, group: e.target.value }))}
-                placeholder="구분조" className="h-9 mt-1 bg-input border-border/30" />
+              <label className="text-[11px] font-bold text-muted-foreground">레벨 (선택)</label>
+              {usePresetLevels ? (
+                <select value={addForm.group} onChange={(e) => setAddForm((f) => ({ ...f, group: e.target.value }))}
+                  className="h-9 mt-1 w-full rounded-md bg-input border border-border/30 px-2 text-sm">
+                  <option value="">선택 안 함</option>
+                  {levels.map((lv) => <option key={lv.name} value={lv.name}>{lv.name}</option>)}
+                </select>
+              ) : (
+                <Input value={addForm.group} onChange={(e) => setAddForm((f) => ({ ...f, group: e.target.value }))}
+                  placeholder="레벨" className="h-9 mt-1 bg-input border-border/30" />
+              )}
             </div>
             <div>
               <label className="text-[11px] font-bold text-muted-foreground">나이(연생) (선택)</label>
@@ -297,10 +306,10 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
         </div>
       )}
 
-      {/* 구분조 필터 */}
+      {/* 레벨 필터 */}
       <div className="rounded-xl border border-border/40 bg-muted/10 p-4 space-y-3">
         <div>
-          <span className="text-xs text-neon-blue font-bold uppercase tracking-wider">구분조</span>
+          <span className="text-xs text-neon-blue font-bold uppercase tracking-wider">레벨</span>
           <div className="flex flex-wrap gap-2 mt-2">
             <button type="button" onClick={() => changeFilter(null)}
               className={cn("px-4 py-1.5 rounded-full text-xs font-bold border transition-all active:scale-95",
@@ -371,12 +380,13 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
               <tr>
                 <th className="px-3 py-2.5 text-left"><input type="checkbox" checked={allSelected} onChange={toggleSelectAll} className="size-4 accent-neon-blue align-middle" /></th>
                 <th className="px-2 py-2.5 text-left font-bold">닉네임</th>
-                <th className="px-2 py-2.5 text-left font-bold">구분조</th>
+                <th className="px-2 py-2.5 text-left font-bold">레벨</th>
                 <th className="px-2 py-2.5 text-center font-bold">나이</th>
                 <th className="px-2 py-2.5 text-center font-bold">성별</th>
                 <th className="px-2 py-2.5 text-center font-bold">티어</th>
                 <th className="px-2 py-2.5 text-center font-bold">RP</th>
                 <th className="px-2 py-2.5 text-center font-bold"></th>
+                {isClassOwner && <th className="px-2 py-2.5 text-center font-bold">관리자</th>}
               </tr>
             </thead>
             <tbody>
@@ -387,16 +397,36 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
                   <tr key={s.id} className={cn("border-t border-border/20", idx % 2 === 1 && "bg-muted/[0.12]", selected.has(s.id) && "bg-neon-blue/[0.06]", dirty && "ring-1 ring-inset ring-amber-500/40")}>
                     <td className="px-3 py-1.5"><input type="checkbox" checked={selected.has(s.id)} onChange={() => toggleSelect(s.id)} className="size-4 accent-neon-blue align-middle" /></td>
                     <td className="px-2 py-1.5">
-                      <Input type="text" value={r.nickname}
-                        onChange={(e) => setField(s, { nickname: e.target.value })}
-                        placeholder="(없음)"
-                        className="h-8 min-w-[90px] bg-input border-border/30 font-bold" />
+                      <div className="flex items-center gap-1.5">
+                        {s.userId ? (
+                          <Link2 className="size-3.5 shrink-0 text-emerald-400" aria-label="구글 연동됨"><title>구글 계정 연동됨</title></Link2>
+                        ) : (
+                          <Link2Off className="size-3.5 shrink-0 text-muted-foreground/50" aria-label="미연동"><title>구글 계정 미연동</title></Link2Off>
+                        )}
+                        <Input type="text" value={r.nickname}
+                          onChange={(e) => setField(s, { nickname: e.target.value })}
+                          placeholder="(없음)"
+                          className="h-8 min-w-[80px] bg-input border-border/30 font-bold" />
+                      </div>
                     </td>
                     <td className="px-2 py-1.5">
-                      <Input type="text" value={r.group}
-                        onChange={(e) => setField(s, { group: e.target.value })}
-                        placeholder="(없음)"
-                        className="h-8 w-20 bg-input border-border/30" />
+                      {usePresetLevels ? (
+                        <select value={r.group}
+                          onChange={(e) => setField(s, { group: e.target.value })}
+                          className="h-8 w-24 rounded-md bg-input border border-border/30 px-1.5 text-sm">
+                          <option value="">(없음)</option>
+                          {levels.map((lv) => <option key={lv.name} value={lv.name}>{lv.name}</option>)}
+                          {/* 목록에 없는 기존 값 보존 */}
+                          {r.group && !levels.some((lv) => lv.name === r.group) && (
+                            <option value={r.group}>{r.group}</option>
+                          )}
+                        </select>
+                      ) : (
+                        <Input type="text" value={r.group}
+                          onChange={(e) => setField(s, { group: e.target.value })}
+                          placeholder="(없음)"
+                          className="h-8 w-20 bg-input border-border/30" />
+                      )}
                     </td>
                     <td className="px-2 py-1.5 text-center text-muted-foreground tabular-nums">
                       {s.birthYear ? `${CURRENT_YEAR - s.birthYear}세` : "-"}
@@ -437,11 +467,39 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
                         <Save className="size-3.5" />
                       </button>
                     </td>
+                    {isClassOwner && (() => {
+                      const linked = !!s.userId;
+                      const isOwnerRow = linked && s.userId === ownerUid;
+                      const isAdminRow = linked && adminUids.includes(s.userId!);
+                      return (
+                        <td className="px-2 py-1.5 text-center whitespace-nowrap">
+                          {isOwnerRow ? (
+                            <span className="text-[10px] font-black text-neon-blue">방장</span>
+                          ) : !linked ? (
+                            <span className="text-[10px] text-muted-foreground/60" title="구글 연동된 회원만 관리자로 승격할 수 있어요">미연동</span>
+                          ) : isAdminRow ? (
+                            <button type="button"
+                              onClick={() => { if (window.confirm(`${r.nickname || s.name || "이 회원"} 님을 관리자에서 일반 회원으로 강등하시겠습니까?`)) setMemberAdmin(s.userId!, false); }}
+                              title="일반 멤버로 강등"
+                              className="inline-flex items-center gap-1 rounded-md border border-border/40 px-2 h-7 text-[10px] font-bold text-muted-foreground hover:text-foreground hover:bg-accent/40 active:scale-95">
+                              <ShieldOff className="size-3.5" /> 강등
+                            </button>
+                          ) : (
+                            <button type="button"
+                              onClick={() => { if (window.confirm(`${r.nickname || s.name || "이 회원"} 님을 공동 관리자로 승격하시겠습니까?`)) setMemberAdmin(s.userId!, true); }}
+                              title="공동 관리자로 승격"
+                              className="inline-flex items-center gap-1 rounded-md border border-neon-blue/40 px-2 h-7 text-[10px] font-bold text-neon-blue hover:bg-neon-blue/10 active:scale-95">
+                              <ShieldCheck className="size-3.5" /> 승격
+                            </button>
+                          )}
+                        </td>
+                      );
+                    })()}
                   </tr>
                 );
               })}
               {rows.length === 0 && (
-                <tr><td colSpan={8} className="py-8 text-center text-muted-foreground text-xs">등록된 회원이 없습니다.</td></tr>
+                <tr><td colSpan={isClassOwner ? 9 : 8} className="py-8 text-center text-muted-foreground text-xs">등록된 회원이 없습니다.</td></tr>
               )}
             </tbody>
           </table>

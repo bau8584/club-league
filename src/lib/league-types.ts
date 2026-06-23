@@ -3,11 +3,11 @@ export type Gender = "M" | "F" | "U"; // M: 남, F: 여, U: 미지정
 /**
  * 경기결과 입력 방식 (관리자가 리그별로 제어)
  * - admin-only: 관리자(방장/공동관리/기록원)만 입력
- * - free: 모든 멤버 자율 입력
- * - peer-confirm: 멤버 입력 후 상대가 확인해야 확정 (Phase 2 — DB 필요)
- * - admin-approve: 멤버 입력 후 관리자가 승인해야 확정 (Phase 2 — DB 필요)
+ * - free: 자율 — 멤버가 "본인이 참여한 경기"만 기록
+ * - free-all: 완전 자율 — 모든 멤버가 아무 경기나 입력
+ * - peer-confirm / admin-approve: 승인 흐름 (보류 — DB 필요, 현재 미사용)
  */
-export type MatchInputMode = "admin-only" | "free" | "peer-confirm" | "admin-approve";
+export type MatchInputMode = "admin-only" | "free" | "free-all" | "peer-confirm" | "admin-approve";
 
 /**
  * Student 인터페이스 - Supabase 'students' 테이블 스키마와 대응
@@ -23,7 +23,7 @@ export type Student = {
   name: string; // 이름 -> DB: name
   nickname?: string | null; // 별명 -> DB: nickname
   gender: Gender; // 성별 -> DB: gender
-  group?: string | null; // 구분조 -> DB: group_label
+  group?: string | null; // 레벨 -> DB: group_label
   birthYear?: number | null; // 연생 -> DB: birth_year
   displayName?: string | null; // 표시 이름 -> DB: display_name
 
@@ -31,7 +31,6 @@ export type Student = {
   recent: ("W" | "L")[]; // 최근 5경기 결과 (가장 최근이 첫 요소)
   wins: number; // 승리 횟수
   losses: number; // 패배 횟수
-  demotionShields?: number; // 횟수제 강등 보호막 (기본값 0)
   lastMatchDate?: string; // 마지막 경기 일시 (ISO 8601)
   lastWinDate?: string; // 마지막 승리 일시 (YYYY-MM-DD)
   totalMatches?: number; // 총 경기수
@@ -152,6 +151,8 @@ export type Class = {
     matchInputMode?: MatchInputMode; // 경기결과 입력 방식 (관리자 제어)
     schoolName?: string;
     sport?: string;
+    levelMode?: "preset" | "free"; // 레벨 체계: 정의된 목록만(preset) vs 자유 입력(free)
+    levels?: { name: string; description?: string }[]; // preset일 때 정의된 레벨 목록(순서=높→낮)
     tierThresholds?: Record<TierName, number>; // 티어 기준선 설정
     rpVariables?: { winDelta: number; loseDelta: number }; // 기본 승패 획득/차감 점수
     decayEnabled?: boolean; // 휴면 감쇠 여부
@@ -247,7 +248,7 @@ export const TIER_STYLES: Record<TierName, { bg: string; text: string; ring: str
 };
 
 export function studentKey(s: { id?: string; name?: string; nickname?: string | null; group?: string | null }) {
-  // 동호회: 안정적 식별은 id 우선, 없으면 이름/구분조 조합.
+  // 동호회: 안정적 식별은 id 우선, 없으면 이름/레벨 조합.
   if (s.id) return s.id;
   return `${s.group ?? ""}-${s.name ?? s.nickname ?? ""}`;
 }

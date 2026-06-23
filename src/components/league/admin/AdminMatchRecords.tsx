@@ -6,7 +6,6 @@ import { toast } from "sonner";
 import { Swords, Search, Calendar, Users, Pencil, Trash2, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Gender, Student, Match } from "@/lib/league-types";
-import { GenderMark } from "../GenderMark";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -153,7 +152,7 @@ export function AdminMatchRecords({
       const query = appliedSearchGradeClass.trim().toLowerCase();
       if (!query) return [];
 
-      // 구분조(group) 문자열 부분 일치 검색
+      // 레벨(group) 문자열 부분 일치 검색
       return result.filter((m) => {
         const playerA = students.find((s) => s.id === m.playerAId);
         const playerB = students.find((s) => s.id === m.playerBId);
@@ -266,7 +265,7 @@ export function AdminMatchRecords({
               )}
             >
               <Users className="size-3.5" />
-              구분조 검색
+              레벨 검색
             </button>
           </div>
 
@@ -351,7 +350,7 @@ export function AdminMatchRecords({
                 <Users className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground/75" />
                 <Input
                   type="text"
-                  placeholder="조회할 구분조를 입력하세요..."
+                  placeholder="조회할 레벨를 입력하세요..."
                   value={matchSearchGradeClass}
                   onChange={(e) => setMatchSearchGradeClass(e.target.value)}
                   onKeyDown={(e) => {
@@ -383,213 +382,52 @@ export function AdminMatchRecords({
           )}
         </div>
 
-        {/* Matches table container (데스크톱·태블릿 가로 전용 — 그 외는 아래 카드형) */}
-        <div className="hidden lg:block overflow-x-auto rounded-xl border border-border/30 bg-muted/5">
-          <table className="w-full text-xs text-left">
-            <thead className="bg-muted/40 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border/30">
-              <tr>
-                <th className="px-4 py-3">경기 일시</th>
-                <th className="px-4 py-3">대결 선수 A</th>
-                <th className="px-4 py-3 text-center">점수</th>
-                <th className="px-4 py-3">대결 선수 B</th>
-                <th className="px-4 py-3 text-right">관리 작업</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredMatches && filteredMatches.length > 0 ? (
-                filteredMatches.map((m) => {
-                  const playerA = students.find((s) => s.id === m.playerAId) ?? {
-                    name: "알 수 없는 멤버",
-                    group: null,
-                    gender: "U" as Gender
-                  };
-                  const playerB = students.find((s) => s.id === m.playerBId) ?? {
-                    name: "알 수 없는 멤버",
-                    group: null,
-                    gender: "U" as Gender
-                  };
-                  const playerA2 = m.playerA2Id ? students.find((s) => s.id === m.playerA2Id) : null;
-                  const playerB2 = m.playerB2Id ? students.find((s) => s.id === m.playerB2Id) : null;
-
-                  const aWon = m.scoreA > m.scoreB;
-                  const matchDateStr = new Date(m.date).toLocaleString("ko-KR", {
-                    month: "short",
-                    day: "numeric",
-                    hour: "2-digit",
-                    minute: "2-digit"
-                  });
-
-                  return (
-                    <tr key={m.id} className="border-b border-border/20 hover:bg-accent/10 transition-colors">
-                      <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{matchDateStr}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <div className="flex flex-col gap-1">
-                          <div className="flex items-center gap-1.5">
-                            <GenderMark gender={playerA.gender} className="size-3.5 text-[9px]" />
-                            <span className={cn("font-bold", aWon && "text-neon-blue")}>{displayName(playerA)}</span>
-                            {playerA.group && <span className="text-[10px] text-muted-foreground">({playerA.group})</span>}
-                          </div>
-                          {playerA2 && (
-                            <div className="flex items-center gap-1.5 border-t border-border/10 pt-1">
-                              <GenderMark gender={playerA2.gender} className="size-3.5 text-[9px]" />
-                              <span className={cn("font-bold", aWon && "text-neon-blue")}>{displayName(playerA2)}</span>
-                              {playerA2.group && <span className="text-[10px] text-muted-foreground">({playerA2.group})</span>}
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-center whitespace-nowrap">
-                        <span className="font-mono font-bold bg-muted/60 px-2.5 py-1 rounded text-sm select-none">
-                          <span className={cn(aWon ? "text-win" : "text-loss")}>{m.scoreA}</span>
-                          <span className="text-muted-foreground mx-1">:</span>
-                          <span className={cn(!aWon ? "text-win" : "text-loss")}>{m.scoreB}</span>
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <div className="flex flex-col gap-1">
-                          <div className="flex items-center gap-1.5">
-                            <GenderMark gender={playerB.gender} className="size-3.5 text-[9px]" />
-                            <span className={cn("font-bold", !aWon && "text-neon-blue")}>{displayName(playerB)}</span>
-                            {playerB.group && <span className="text-[10px] text-muted-foreground">({playerB.group})</span>}
-                          </div>
-                          {playerB2 && (
-                            <div className="flex items-center gap-1.5 border-t border-border/10 pt-1">
-                              <GenderMark gender={playerB2.gender} className="size-3.5 text-[9px]" />
-                              <span className={cn("font-bold", !aWon && "text-neon-blue")}>{displayName(playerB2)}</span>
-                              {playerB2.group && <span className="text-[10px] text-muted-foreground">({playerB2.group})</span>}
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {/* Score Edit */}
-                          <Button
-                            onClick={() => {
-                              setEditingMatchId(m.id);
-                              setEditScoreA(m.scoreA.toString());
-                              setEditScoreB(m.scoreB.toString());
-                            }}
-                            variant="outline"
-                            size="sm"
-                            className="h-8 px-2.5 rounded-lg border-border/80 text-foreground hover:bg-accent/40 active:scale-95 transition-all text-[11px] font-bold"
-                            title="경기 점수 수정"
-                          >
-                            <Pencil className="size-3.5 mr-1" /> 수정
-                          </Button>
-
-                          {/* Delete & Rollback */}
-                          <Button
-                            onClick={() => requestDeleteMatch(m, playerA, playerB, playerA2, playerB2, aWon)}
-                            variant="ghost"
-                            size="icon"
-                            className="size-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg active:scale-95 transition-all shrink-0"
-                            title="이 경기 삭제 및 안전 롤백"
-                          >
-                            <Trash2 className="size-4" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              ) : (
-                <tr>
-                  <td colSpan={5} className="py-12 text-center text-muted-foreground font-medium bg-muted/5 font-sans text-xs">
-                    {(() => {
-                      if (matchFilterType === "recent") {
-                        return "기록된 전체 경기 매치 내역이 전혀 존재하지 않습니다.";
-                      }
-
-                      const hasApplied = 
-                        (matchFilterType === "student" && appliedSearchStudent) ||
-                        (matchFilterType === "date" && appliedSearchDate) ||
-                        (matchFilterType === "class" && appliedSearchGradeClass);
-
-                      if (!hasApplied) {
-                        return "검색어를 입력하고 '검색' 버튼(또는 엔터)을 누르면 매치 기록을 불러옵니다.";
-                      }
-
-                      return "선택한 필터 조건과 일치하는 경기 기록이 존재하지 않습니다.";
-                    })()}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* 카드형 목록 (폰·태블릿 세로) — 가로 스크롤 없이 한눈에 */}
-        <div className="lg:hidden space-y-2.5">
+        {/* 경기 목록 — 한 행에 핵심만(대결 요약 · 점수 · 작업). 모바일·데스크톱 공통 컴팩트 행. */}
+        <div className="space-y-1.5">
           {filteredMatches && filteredMatches.length > 0 ? (
             filteredMatches.map((m) => {
-              const playerA = students.find((s) => s.id === m.playerAId) ?? { name: "알 수 없는 멤버", group: null, gender: "U" as Gender };
-              const playerB = students.find((s) => s.id === m.playerBId) ?? { name: "알 수 없는 멤버", group: null, gender: "U" as Gender };
+              const playerA = students.find((s) => s.id === m.playerAId) ?? { name: "알 수 없는 멤버", nickname: null, group: null, gender: "U" as Gender };
+              const playerB = students.find((s) => s.id === m.playerBId) ?? { name: "알 수 없는 멤버", nickname: null, group: null, gender: "U" as Gender };
               const playerA2 = m.playerA2Id ? students.find((s) => s.id === m.playerA2Id) : null;
               const playerB2 = m.playerB2Id ? students.find((s) => s.id === m.playerB2Id) : null;
               const aWon = m.scoreA > m.scoreB;
               const matchDateStr = new Date(m.date).toLocaleString("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+              // 복식이면 "닉·파트너" 한 줄로 합쳐 표기
+              const teamA = playerA2 ? `${displayName(playerA)}·${displayName(playerA2)}` : displayName(playerA);
+              const teamB = playerB2 ? `${displayName(playerB)}·${displayName(playerB2)}` : displayName(playerB);
 
               return (
-                <div key={m.id} className="rounded-xl border border-border/30 bg-input p-3 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-muted-foreground">{matchDateStr}</span>
-                    <span className="font-mono font-bold bg-muted/60 px-2 py-0.5 rounded text-xs select-none">
+                <div key={m.id} className="flex items-center gap-2 sm:gap-3 rounded-lg border border-border/30 bg-input/40 px-2.5 py-2 hover:bg-accent/10 transition-colors">
+                  <span className="hidden sm:block w-[88px] shrink-0 text-[10px] leading-tight text-muted-foreground">{matchDateStr}</span>
+
+                  {/* 대결 요약: A팀  점수  B팀 (승자 강조) */}
+                  <div className="flex min-w-0 flex-1 items-center justify-center gap-2 text-xs">
+                    <span className={cn("min-w-0 flex-1 truncate text-right font-bold", aWon ? "text-neon-blue" : "text-foreground")} title={teamA}>{teamA}</span>
+                    <span className="shrink-0 font-mono font-bold bg-muted/60 px-2 py-0.5 rounded text-[13px] select-none">
                       <span className={cn(aWon ? "text-win" : "text-loss")}>{m.scoreA}</span>
-                      <span className="text-muted-foreground mx-1">:</span>
+                      <span className="text-muted-foreground mx-0.5">:</span>
                       <span className={cn(!aWon ? "text-win" : "text-loss")}>{m.scoreB}</span>
                     </span>
+                    <span className={cn("min-w-0 flex-1 truncate text-left font-bold", !aWon ? "text-neon-blue" : "text-foreground")} title={teamB}>{teamB}</span>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div className={cn("rounded-lg p-2 border", aWon ? "border-neon-blue/30 bg-neon-blue/[0.06]" : "border-border/30 bg-muted/15")}>
-                      <div className="flex items-center gap-1 font-bold">
-                        <GenderMark gender={playerA.gender} className="size-3.5 text-[9px]" />
-                        <span className={cn(aWon && "text-neon-blue")}>{displayName(playerA)}</span>
-                      </div>
-                      {playerA2 && (
-                        <div className="flex items-center gap-1 font-bold mt-0.5">
-                          <GenderMark gender={playerA2.gender} className="size-3.5 text-[9px]" />
-                          <span className={cn(aWon && "text-neon-blue")}>{displayName(playerA2)}</span>
-                        </div>
-                      )}
-                      <div className={cn("text-[10px] font-bold mt-1", aWon ? "text-win" : "text-loss")}>{aWon ? "승" : "패"}</div>
-                    </div>
-                    <div className={cn("rounded-lg p-2 border", !aWon ? "border-neon-blue/30 bg-neon-blue/[0.06]" : "border-border/30 bg-muted/15")}>
-                      <div className="flex items-center gap-1 font-bold">
-                        <GenderMark gender={playerB.gender} className="size-3.5 text-[9px]" />
-                        <span className={cn(!aWon && "text-neon-blue")}>{displayName(playerB)}</span>
-                      </div>
-                      {playerB2 && (
-                        <div className="flex items-center gap-1 font-bold mt-0.5">
-                          <GenderMark gender={playerB2.gender} className="size-3.5 text-[9px]" />
-                          <span className={cn(!aWon && "text-neon-blue")}>{displayName(playerB2)}</span>
-                        </div>
-                      )}
-                      <div className={cn("text-[10px] font-bold mt-1", !aWon ? "text-win" : "text-loss")}>{!aWon ? "승" : "패"}</div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-end gap-2 pt-0.5">
+                  {/* 작업 (아이콘) */}
+                  <div className="flex shrink-0 items-center gap-0.5">
                     <Button
-                      onClick={() => {
-                        setEditingMatchId(m.id);
-                        setEditScoreA(m.scoreA.toString());
-                        setEditScoreB(m.scoreB.toString());
-                      }}
-                      variant="outline"
-                      size="sm"
-                      className="h-8 px-3 rounded-lg border-border/80 text-foreground active:scale-95 text-[11px] font-bold"
+                      onClick={() => { setEditingMatchId(m.id); setEditScoreA(m.scoreA.toString()); setEditScoreB(m.scoreB.toString()); }}
+                      variant="ghost" size="icon"
+                      className="size-8 text-muted-foreground hover:text-foreground hover:bg-accent/40 rounded-lg active:scale-95"
+                      title="경기 점수 수정"
                     >
-                      <Pencil className="size-3.5 mr-1" /> 수정
+                      <Pencil className="size-4" />
                     </Button>
                     <Button
                       onClick={() => requestDeleteMatch(m, playerA, playerB, playerA2, playerB2, aWon)}
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 px-3 rounded-lg text-destructive hover:bg-destructive/10 active:scale-95 text-[11px] font-bold"
+                      variant="ghost" size="icon"
+                      className="size-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg active:scale-95"
+                      title="이 경기 삭제 및 안전 롤백"
                     >
-                      <Trash2 className="size-3.5 mr-1" /> 삭제
+                      <Trash2 className="size-4" />
                     </Button>
                   </div>
                 </div>

@@ -79,7 +79,7 @@ export function Leaderboard({
 
         {availableGroups.length > 0 && (
           <div>
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">구분조</p>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">레벨</p>
             <div className="flex flex-wrap gap-2">
               <FilterChip active={group === "all"} onClick={() => setGroup("all")}>전체보기</FilterChip>
               {availableGroups.map((g) => (
@@ -122,7 +122,7 @@ export function Leaderboard({
             <thead>
               <tr className="border-b border-border/60 bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
                 <th className="px-4 py-3 text-left w-12 sm:w-16">순위</th>
-                <th className="px-3 py-3 text-left hidden sm:table-cell">구분조</th>
+                <th className="px-3 py-3 text-left hidden sm:table-cell">레벨</th>
                 <th className="px-4 py-3 text-left">닉네임</th>
                 <th className="px-4 py-3 text-left">티어</th>
                 <th className="px-4 py-3 text-right">RP</th>

@@ -14,11 +14,15 @@ const BIRTH_YEARS = Array.from({ length: 80 }, (_, i) => CURRENT_YEAR - 10 - i);
 export function Onboarding({
   students,
   thresholds,
+  levelMode = "free",
+  levels = [],
   onClaim,
   onCreate,
 }: {
   students: Student[];
   thresholds?: Record<TierName, number>;
+  levelMode?: "preset" | "free";
+  levels?: { name: string; description?: string }[];
   onClaim: (playerId: string) => Promise<boolean>;
   onCreate: (profile: { nickname: string; gender: Gender; group?: string | null; birthYear?: number | null }) => Promise<boolean>;
 }) {
@@ -125,13 +129,24 @@ export function Onboarding({
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="text-[11px] font-bold text-muted-foreground">구분조 (선택)</label>
-                <Input
-                  value={form.group}
-                  onChange={(e) => setForm((f) => ({ ...f, group: e.target.value }))}
-                  placeholder="구분조"
-                  className="h-9 mt-1 bg-input border-border/40"
-                />
+                <label className="text-[11px] font-bold text-muted-foreground">레벨 (선택)</label>
+                {levelMode === "preset" && levels.length > 0 ? (
+                  <select
+                    value={form.group}
+                    onChange={(e) => setForm((f) => ({ ...f, group: e.target.value }))}
+                    className="h-9 mt-1 w-full rounded-md bg-input border border-border/40 px-2 text-sm"
+                  >
+                    <option value="">선택 안 함</option>
+                    {levels.map((lv) => <option key={lv.name} value={lv.name}>{lv.name}</option>)}
+                  </select>
+                ) : (
+                  <Input
+                    value={form.group}
+                    onChange={(e) => setForm((f) => ({ ...f, group: e.target.value }))}
+                    placeholder="레벨"
+                    className="h-9 mt-1 bg-input border-border/40"
+                  />
+                )}
               </div>
               <div>
                 <label className="text-[11px] font-bold text-muted-foreground">나이(연생) (선택)</label>

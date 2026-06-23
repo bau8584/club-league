@@ -35,6 +35,8 @@ import {
   apiRestoreClassData,
   apiRecordMatchTransaction,
   apiClaimPlayer,
+  apiSetPlayerLevel,
+  apiSetMemberAdmin,
   apiListSeasons,
   apiStartNewSeason,
   apiFetchSeasonStandings,
@@ -183,7 +185,9 @@ function useLeagueStoreInternal() {
 
       if (classData) {
         setTitle(classData.name);
-        
+        setOwnerUid(classData.owner_uid ?? "");
+        setAdminUids(Array.isArray(classData.admin_uids) ? classData.admin_uids : []);
+
         if (classData.settings) {
           const s = classData.settings;
           const migrated = migrateSettings(s);
@@ -204,6 +208,10 @@ function useLeagueStoreInternal() {
             if (migrated.activeBonuses !== undefined) setActiveBonuses(migrated.activeBonuses);
             if (migrated.matchInputMode !== undefined) setMatchInputMode(migrated.matchInputMode);
           }
+          // 레벨 체계는 마이그레이션 대상이 아니므로 settings에서 직접 읽음
+          setLevelMode(s.levelMode === "preset" ? "preset" : "free");
+          setLevels(Array.isArray(s.levels) ? s.levels : []);
+          setSport(typeof s.sport === "string" ? s.sport : "");
         }
       }
 
@@ -240,25 +248,28 @@ function useLeagueStoreInternal() {
       // Map Supabase students to frontend Student structure, computing stats on-the-fly
       const studentsList: Student[] = (dbStudents || []).map((s: any) => {
         const group = s.group_label ?? null;
-        // name(표시)은 본명/닉네임/구분조 순으로 fallback
+        // name(표시)은 본명/닉네임/레벨 순으로 fallback
         const name = s.name || s.display_name || s.nickname || "이름없음";
         const gender = (s.gender || "U") as Gender;
 
         // Find matches for this student to compute derived stats
+        // 복식: 파트너(playerA2Id/playerB2Id)도 승/패에 포함해야 함.
+        const isWinnerSide = (m: Match) => m.playerAId === s.id || m.playerA2Id === s.id;
+        const isLoserSide = (m: Match) => m.playerBId === s.id || m.playerB2Id === s.id;
         const studentMatches = matchesList
-          .filter((m) => m.playerAId === s.id || m.playerBId === s.id)
+          .filter((m) => isWinnerSide(m) || isLoserSide(m))
           .sort((x, y) => new Date(y.date).getTime() - new Date(x.date).getTime());
 
-        const wins = studentMatches.filter((m) => m.playerAId === s.id).length;
-        const losses = studentMatches.filter((m) => m.playerBId === s.id).length;
+        const wins = studentMatches.filter(isWinnerSide).length;
+        const losses = studentMatches.filter(isLoserSide).length;
 
         // Last 5 matches form (W or L)
-        const recent = studentMatches.slice(0, 5).map((m) => (m.playerAId === s.id ? "W" : "L"));
+        const recent = studentMatches.slice(0, 5).map((m) => (isWinnerSide(m) ? "W" : "L"));
 
         // Current streak
         let currentStreak = 0;
         for (const m of studentMatches) {
-          const won = m.playerAId === s.id;
+          const won = isWinnerSide(m);
           if (currentStreak === 0) {
             currentStreak = won ? 1 : -1;
           } else if (currentStreak > 0) {
@@ -285,7 +296,6 @@ function useLeagueStoreInternal() {
           losses,
           recent,
           currentStreak,
-          demotionShields: 3
         };
       });
 
@@ -406,6 +416,13 @@ function useLeagueStoreInternal() {
 
   // 경기 입력 방식 (관리자 제어). 기존 리그는 클럽형(관리자만) 기본값.
   const [matchInputMode, setMatchInputMode] = useState<MatchInputMode>("admin-only");
+  // 레벨 체계 (구 구분조): preset=정의된 목록만 / free=자유 입력
+  const [levelMode, setLevelMode] = useState<"preset" | "free">("free");
+  const [levels, setLevels] = useState<{ name: string; description?: string }[]>([]);
+  const [sport, setSport] = useState<string>("");
+  // 권한 판정용: 리그 소유자/공동관리자 UID (선수 명단의 userId 와 대조)
+  const [ownerUid, setOwnerUid] = useState<string>("");
+  const [adminUids, setAdminUids] = useState<string[]>([]);
   const matchInputModeRef = useRef<MatchInputMode>("admin-only");
   useEffect(() => { matchInputModeRef.current = matchInputMode; }, [matchInputMode]);
 
@@ -968,7 +985,6 @@ function useLeagueStoreInternal() {
             recent: [],
             wins: 0,
             losses: 0,
-            demotionShields: 3,
           });
         }
       }
@@ -2123,32 +2139,7 @@ function useLeagueStoreInternal() {
       const delta = pStat.delta;
 
       const preRp = s.rp;
-      const preTier = getTier(preRp, tierThresholds);
-      const preTierRank = TIER_RANKING[preTier] ?? 1;
-
-      let nextRp = preRp + delta;
-      let nextShields = s.demotionShields ?? 0;
-
-      if (won) {
-        const tentativeTier = getTier(nextRp, tierThresholds);
-        const tentativeTierRank = TIER_RANKING[tentativeTier] ?? 1;
-        if (tentativeTierRank > preTierRank) {
-          nextShields = 3; // 승급 시 3회 완충
-        }
-        nextRp = Math.max(0, nextRp);
-      } else {
-        const minThreshold = tierThresholds[preTier] ?? 0;
-        if (nextRp < minThreshold && preTier !== "Bronze") {
-          if (nextShields >= 1) {
-            nextRp = minThreshold;
-            nextShields = nextShields - 1;
-          } else {
-            nextRp = Math.max(0, nextRp);
-          }
-        } else {
-          nextRp = Math.max(0, nextRp);
-        }
-      }
+      const nextRp = Math.max(0, preRp + delta);
 
       // Build new recent array
       const tempMatches = matches.map((m) => m.id === matchId ? updatedMatch : m);
@@ -2170,7 +2161,6 @@ function useLeagueStoreInternal() {
         wins: s.wins + (won ? 1 : 0),
         losses: s.losses + (won ? 0 : 1),
         recent: newRecent,
-        demotionShields: nextShields,
         lastMatchDate: new Date().toISOString(),
         lastWinDate: won ? todayYmd : s.lastWinDate,
       };
@@ -2372,6 +2362,68 @@ function useLeagueStoreInternal() {
       }
     }
   }, [currentClassId, isClassOwner]);
+
+  // 레벨 체계 저장 (관리자: 소유자/공동관리자). 이름/설명 수정·추가·삭제 + 체계 모드 변경.
+  //  migrations: 레벨 rename/삭제 시 그 레벨이던 회원의 group_label 일괄 이전/정리.
+  //    { from, to } — to=null 이면 정리(빈값).
+  const saveLevels = useCallback(async (
+    nextLevels: { name: string; description?: string }[],
+    nextMode: "preset" | "free",
+    migrations: { from: string; to: string | null }[] = []
+  ) => {
+    if (!isClassManagerRef.current) {
+      toast.error("권한이 없습니다. 관리자만 레벨을 수정할 수 있습니다.");
+      return false;
+    }
+    const prevLevels = levels;
+    const prevMode = levelMode;
+    setLevels(nextLevels);
+    setLevelMode(nextMode);
+    if (currentClassId) {
+      try {
+        const { data: currentClass } = await apiFetchClassSettings(currentClassId);
+        const newSettings = {
+          ...(currentClass?.settings || {}),
+          levelMode: nextMode,
+          levels: nextLevels,
+        };
+        const { error: updateErr } = await apiUpdateClassSettings(currentClassId, newSettings);
+        if (updateErr) throw updateErr;
+        // 회원 레벨 이전/정리
+        for (const mig of migrations) {
+          if (!mig.from || mig.from === mig.to) continue;
+          const { error: migErr } = await apiSetPlayerLevel(currentClassId, mig.from, mig.to);
+          if (migErr) throw migErr;
+        }
+        toast.success("레벨 체계가 저장되었습니다.");
+        // 회원 레벨이 바뀌었으면 명단 재로딩
+        if (migrations.length > 0) await loadClassDataRef.current?.(currentClassId, true);
+        return true;
+      } catch (err: any) {
+        console.error("Failed to save levels:", err.message);
+        toast.error("레벨 저장에 실패했습니다: " + err.message);
+        setLevels(prevLevels); // 롤백
+        setLevelMode(prevMode);
+        return false;
+      }
+    }
+    return true;
+  }, [currentClassId, levels, levelMode]);
+
+  // 멤버 ↔ 공동관리자 승격/강등 (소유자 전용). 구글 연동된 선수의 userId 기준.
+  const setMemberAdmin = useCallback(async (uid: string, makeAdmin: boolean): Promise<boolean> => {
+    if (!isClassOwnerRef.current) {
+      toast.error("권한이 없습니다. 방장만 관리자 권한을 변경할 수 있습니다.");
+      return false;
+    }
+    const cid = currentClassIdRef.current;
+    if (!cid) return false;
+    const { error } = await apiSetMemberAdmin(cid, uid, makeAdmin);
+    if (error) { toast.error("권한 변경에 실패했습니다: " + error.message); return false; }
+    toast.success(makeAdmin ? "관리자로 승격했습니다." : "일반 멤버로 변경했습니다.");
+    await loadClassDataRef.current?.(cid, true);
+    return true;
+  }, []);
 
   // Decay settings save function
   const saveDecaySettings = useCallback(async (enabled: boolean, days: number, amount: number, tiers: TierName[], perTierRp?: Partial<Record<TierName, number>>) => {
@@ -2682,7 +2734,6 @@ function useLeagueStoreInternal() {
           losses,
           recent,
           currentStreak: 0,
-          demotionShields: 3,
         };
       });
       studentsList.sort((a, b) => b.rp - a.rp);
@@ -2787,6 +2838,14 @@ function useLeagueStoreInternal() {
     setTitle, 
     matchInputMode,
     saveMatchInputMode,
+    levelMode,
+    levels,
+    setLevels,
+    saveLevels,
+    sport,
+    ownerUid,
+    adminUids,
+    setMemberAdmin,
     recordMatch,
     upsertStudents,
     deleteMatch,

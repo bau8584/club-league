@@ -18,14 +18,14 @@ import { MyAchievements } from "@/components/league/MyAchievements";
 export const Route = createFileRoute("/class/$classId")({
   head: () => ({
     meta: [
-      { title: "초등 스포츠 리그 · 티어 시스템" },
-      { name: "description", content: "전국 초등클럽 체육 수업과 반 대항전을 위한 스포츠 리그 & 티어 랭킹 시스템." },
+      { title: "스포츠 리그 · 티어 시스템" },
+      { name: "description", content: "스포츠 리그 & 티어 랭킹 시스템." },
     ],
   }),
   component: Index,
 });
 
-type Tab = "leaderboard" | "recommend" | "record" | "admin" | "myRecord" | "myAchievements" | "seasonSummary";
+type Tab = "leaderboard" | "recommend" | "record" | "memberRecord" | "admin" | "myRecord" | "myAchievements" | "seasonSummary";
 
 function Index() {
   const { classId } = Route.useParams();
@@ -49,6 +49,9 @@ function Index() {
     myPlayerId,
     claimPlayer,
     createMyPlayer,
+    levelMode,
+    levels,
+    matchInputMode,
     session,
     logoutUser,
     tierThresholds,
@@ -116,14 +119,18 @@ function Index() {
     }
   }, [currentViewSeason, tab]);
 
-  // 선수 탭 접근 통제 보안 가드 (오직 myRecord, recommend, myAchievements 탭만 허용)
+  // 일반회원이 본인 경기를 기록할 수 있는지 (자율/완전자율 모드 + 현재 시즌)
+  const memberCanRecord = matchInputMode !== "admin-only" && currentViewSeason === "현재 시즌";
+
+  // 선수 탭 접근 통제 보안 가드 (myRecord, recommend, myAchievements + 허용 시 memberRecord)
   useEffect(() => {
     if (session && session.role === "STUDENT") {
-      if (tab !== "recommend" && tab !== "myRecord" && tab !== "myAchievements") {
+      const allowed = ["recommend", "myRecord", "myAchievements", ...(memberCanRecord ? ["memberRecord"] : [])];
+      if (!allowed.includes(tab)) {
         setTab("myRecord");
       }
     }
-  }, [session, tab]);
+  }, [session, tab, memberCanRecord]);
 
   // 관리 권한이 없는 사용자가 관리자 탭 접근 시 차단
   useEffect(() => {
@@ -170,7 +177,8 @@ function Index() {
     matchType?: "single" | "double"
   ) => {
     setRecommendInitials({ playerAId, playerBId, playerA2Id, playerB2Id, matchType });
-    setTab("record");
+    // 일반회원은 본인 경기 기록 탭으로, 관리자는 기록 입력 탭으로
+    setTab(session?.role === "STUDENT" ? "memberRecord" : "record");
   };
 
   if (!hydrated || !session) {
@@ -236,11 +244,11 @@ function Index() {
                   : "border-purple-500/40 bg-purple-500/5 text-purple-400"
               )}>
                 {session.role === "TEACHER" ? (
-                  <span>{session.schoolName} · {session.userName} 관리자</span>
+                  <span>{session.schoolName} · {isClassOwner ? "최고 관리자" : "관리자"}</span>
                 ) : (
                   <>
                     <Users className="size-3.5" />
-                    <span>🏆 {session.schoolName} · {session.userName} 선수</span>
+                    <span>🏆 {session.schoolName} · 회원</span>
                   </>
                 )}
               </div>
@@ -301,6 +309,13 @@ function Index() {
                   나의 기록
                 </TabButton>
 
+                {/* 1-b. 내 경기 기록 (자율/완전자율 모드에서만) */}
+                {memberCanRecord && (
+                  <TabButton active={tab === "memberRecord"} onClick={() => setTab("memberRecord")} icon={<Swords className="size-4" />}>
+                    내 경기 기록
+                  </TabButton>
+                )}
+
                 {/* 2. 매치 추천 (선수) */}
                 <TabButton active={tab === "recommend"} onClick={() => setTab("recommend")} icon={<Target className="size-4" />}>
                   매치 추천
@@ -357,6 +372,8 @@ function Index() {
           <Onboarding
             students={students}
             thresholds={tierThresholds}
+            levelMode={levelMode}
+            levels={levels}
             onClaim={claimPlayer}
             onCreate={createMyPlayer}
           />
@@ -442,7 +459,21 @@ function Index() {
             onUpdateGender={updateStudentGender}
           />
         )}
-        
+
+        {/* 일반회원 본인 경기 기록 — free: 본인 고정 / free-all: 자유 선택 */}
+        {session.role === "STUDENT" && tab === "memberRecord" && memberCanRecord && (
+          <RecordMatch
+            students={students}
+            onRecord={recordMatch}
+            initials={recommendInitials}
+            onClearInitials={() => setRecommendInitials(null)}
+            thresholds={tierThresholds}
+            rpVariables={rpVariables}
+            onUpdateGender={updateStudentGender}
+            lockedPlayerId={matchInputMode === "free" ? myPlayerId : null}
+          />
+        )}
+
          {session.role !== "STUDENT" && tab === "admin" && isClassManager && (
           <AdminPanel
             isOwner={isClassOwner}

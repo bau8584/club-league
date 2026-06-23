@@ -380,6 +380,24 @@ begin
      set member_uids = array_remove(coalesce(member_uids,'{}'::uuid[]), auth.uid()),
          admin_uids  = array_remove(coalesce(admin_uids,'{}'::uuid[]),  auth.uid())
    where id = p_class_id;
+  -- 탈퇴 시 내 계정↔선수 연동만 해제(기록·명단 행은 보존 → 삭제는 관리자 권한).
+  -- 재참가하면 myPlayer 가 없으므로 프로필 선택(온보딩) 화면이 다시 뜬다.
+  update public.players
+     set user_id = null
+   where league_id = p_class_id and user_id = auth.uid();
+end; $$;
+
+-- 레벨 이름변경/삭제 시 기존 회원 group_label 일괄 이전/정리 (관리자 전용)
+create or replace function public.set_player_level(p_class_id uuid, p_old text, p_new text)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if not public.is_class_recorder(p_class_id) then
+    raise exception '권한이 없습니다. 관리자만 레벨을 수정할 수 있습니다.';
+  end if;
+  if p_old is null or btrim(p_old) = '' then return; end if;
+  update public.players
+     set group_label = nullif(btrim(coalesce(p_new, '')), '')
+   where league_id = p_class_id and group_label = p_old;
 end; $$;
 
 create or replace function public.get_league_members(p_class_id uuid)
@@ -459,6 +477,7 @@ grant execute on function public.record_match_transaction(uuid, uuid, uuid, uuid
 grant execute on function public.restore_class_data(uuid, jsonb, jsonb) to authenticated;
 grant execute on function public.join_league(uuid)                  to authenticated;
 grant execute on function public.leave_league(uuid)                 to authenticated;
+grant execute on function public.set_player_level(uuid, text, text) to authenticated;
 grant execute on function public.get_league_members(uuid)           to authenticated;
 grant execute on function public.remove_league_member(uuid, uuid)   to authenticated;
 grant execute on function public.student_has_code(uuid)             to authenticated, anon;

@@ -515,32 +515,8 @@ export function calculateMatchResult(input: CalculateMatchResultInput): Calculat
     const delta = pStat.delta;
 
     const preRp = s.rp;
-    const preTier = getTier(preRp, tierThresholds);
-    const preTierRank = TIER_RANKING[preTier] ?? 1;
 
-    let nextRp = preRp + delta;
-    let nextShields = s.demotionShields ?? 0;
-
-    if (won) {
-      const tentativeTier = getTier(nextRp, tierThresholds);
-      const tentativeTierRank = TIER_RANKING[tentativeTier] ?? 1;
-      if (tentativeTierRank > preTierRank) {
-        nextShields = 3; // 승급 시 방어막 3회 완충
-      }
-      nextRp = Math.max(0, nextRp);
-    } else {
-      const minThreshold = tierThresholds[preTier] ?? 0;
-      if (nextRp < minThreshold && preTier !== "Bronze") {
-        if (nextShields >= 1) {
-          nextRp = minThreshold; // 강등 방어막 가동
-          nextShields = nextShields - 1;
-        } else {
-          nextRp = Math.max(0, nextRp); // 방어막이 소진되어 강등
-        }
-      } else {
-        nextRp = Math.max(0, nextRp);
-      }
-    }
+    const nextRp = Math.max(0, preRp + delta);
 
     const preStreak = s.currentStreak ?? 0;
     const nextStreak = won 
@@ -553,7 +529,6 @@ export function calculateMatchResult(input: CalculateMatchResultInput): Calculat
       wins: s.wins + (won ? 1 : 0),
       losses: s.losses + (won ? 0 : 1),
       recent: [(won ? "W" : "L") as "W" | "L", ...s.recent].slice(0, 5),
-      demotionShields: nextShields,
       lastMatchDate: matchDate,
       lastWinDate: won ? todayYmd : s.lastWinDate,
       currentStreak: nextStreak,

@@ -36,6 +36,7 @@ import {
 // Sub-components
 import { AdminSettings } from "./admin/AdminSettings";
 import { AdminStudentManage } from "./admin/AdminStudentManage";
+import { LevelManager } from "./admin/LevelManager";
 import { AdminMatchRecords } from "./admin/AdminMatchRecords";
 import { SeasonManagePanel } from "./admin/SeasonManagePanel";
 import { CurrentSeasonPanel } from "./admin/CurrentSeasonPanel";
@@ -213,7 +214,6 @@ export function AdminPanel({
         recent: s.recent,
         wins: s.wins,
         losses: s.losses,
-        demotionShields: s.demotionShields ?? 0,
         lastMatchDate: s.lastMatchDate ?? null,
         lastWinDate: s.lastWinDate ?? null,
         totalMatches: s.totalMatches ?? (s.wins + s.losses),
@@ -264,7 +264,6 @@ export function AdminPanel({
           recent: Array.isArray(s.recent) ? s.recent : [],
           wins: Number(s.wins),
           losses: Number(s.losses),
-          demotionShields: s.demotionShields !== undefined ? Number(s.demotionShields) : 0,
           lastMatchDate: s.lastMatchDate ? String(s.lastMatchDate) : undefined,
           lastWinDate: s.lastWinDate ? String(s.lastWinDate) : undefined,
           totalMatches: s.totalMatches !== undefined ? Number(s.totalMatches) : (Number(s.wins) + Number(s.losses)),
@@ -436,6 +435,9 @@ export function AdminPanel({
             onUpdateStudentInfo={onUpdateStudentInfo}
             thresholds={thresholds}
           />
+        )}
+        {activeTab === "studentManage" && isOwner && (
+          <div className="mt-6"><LevelManager /></div>
         )}
 
         {/* matchRecords Tab */}

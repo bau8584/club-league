@@ -36,13 +36,13 @@ export function SeasonSummary({
 }) {
   const [filterGroup, setFilterGroup] = useState<string | null>(null);
 
-  // 필터 옵션: 데이터에 존재하는 구분조만
+  // 필터 옵션: 데이터에 존재하는 레벨만
   const availableGroups = useMemo(
     () => Array.from(new Set(students.map((s) => s.group || "").filter((g) => g))).sort((a, b) => a.localeCompare(b, "ko")),
     [students]
   );
 
-  // 전체/구분조로 좁힌 선수·경기 집합
+  // 전체/레벨로 좁힌 선수·경기 집합
   const filtered = useMemo(() => {
     const fStudents = students.filter(
       (s) => filterGroup == null || (s.group || "") === filterGroup
@@ -146,11 +146,11 @@ export function SeasonSummary({
         <h3 className="text-lg font-black tracking-tight">시즌 요약 · {season}</h3>
       </div>
 
-      {/* 전체 / 구분조 필터 */}
+      {/* 전체 / 레벨 필터 */}
       {availableGroups.length > 0 && (
         <Card className="border border-border/60 bg-card/60 p-3 backdrop-blur shadow-md space-y-2">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-[10px] font-bold text-muted-foreground mr-1">구분조</span>
+            <span className="text-[10px] font-bold text-muted-foreground mr-1">레벨</span>
             <FilterChip active={filterGroup == null} onClick={() => setFilterGroup(null)}>전체</FilterChip>
             {availableGroups.map((g) => (
               <FilterChip key={g} active={filterGroup === g} onClick={() => setFilterGroup(g)}>

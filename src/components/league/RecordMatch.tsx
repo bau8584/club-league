@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import { useLeagueStore } from "@/lib/league-store";
 
 type Selection = { group: string | null; studentId: string | null };
-// 구분조 "전체" 탭이 기본으로 열려 있도록 group을 ALL("__ALL__")로 초기화
+// 레벨 "전체" 탭이 기본으로 열려 있도록 group을 ALL("__ALL__")로 초기화
 const empty: Selection = { group: "__ALL__", studentId: null };
 
 // 선수 표시 이름: 별명 우선, 없으면 이름
@@ -71,8 +71,10 @@ export function RecordMatch({
   thresholds,
   rpVariables,
   onUpdateGender,
+  lockedPlayerId,
 }: {
   students: Student[];
+  lockedPlayerId?: string | null; // 설정 시 슬롯 A를 이 선수로 고정(일반회원 본인 경기 기록)
   onRecord: (
     playerAId: string, 
     playerBId: string, 
@@ -500,6 +502,13 @@ export function RecordMatch({
       onClearInitials?.();
     }
   }, [initials, students, onClearInitials]);
+
+  // 일반회원 본인 경기: 슬롯 A를 항상 본인으로 고정
+  useEffect(() => {
+    if (!lockedPlayerId) return;
+    const me = students.find((s) => s.id === lockedPlayerId);
+    if (me) setA({ group: me.group ?? null, studentId: me.id });
+  }, [lockedPlayerId, students]);
 
   // A선수 또는 B선수 및 파트너 선택 시 성별이 "U"이거나 없을 때 모달 팝업 트리거
   useEffect(() => {
@@ -1050,14 +1059,16 @@ export function RecordMatch({
         const act = activeSlot ? slots[activeSlot] : null;
         const renderSlot = (key: "A" | "A2" | "B" | "B2", label: string) => {
           const sl = slots[key];
+          const locked = !!lockedPlayerId && key === "A";
           return (
             <Slot
               accent={sl.accent}
-              label={label}
+              label={locked ? "나" : label}
               player={sl.player}
               active={activeSlot === key}
-              onOpen={() => setActiveSlot(activeSlot === key ? null : key)}
-              onClear={() => { sl.set(empty); if (activeSlot === key) setActiveSlot(null); }}
+              locked={locked}
+              onOpen={() => { if (!locked) setActiveSlot(activeSlot === key ? null : key); }}
+              onClear={() => { if (locked) return; sl.set(empty); if (activeSlot === key) setActiveSlot(null); }}
               thresholds={thresholds}
             />
           );
@@ -1743,15 +1754,19 @@ function TeamBlock({ title, accent, cols, children }: { title: string; accent: A
 }
 
 // 슬롯: 선택됨이면 컴팩트 카드, 비었으면 "선수 선택" 버튼
-function Slot({ accent, label, player, active, onOpen, onClear, thresholds }: {
-  accent: Accent; label: string; player: Student | null; active: boolean;
+function Slot({ accent, label, player, active, locked, onOpen, onClear, thresholds }: {
+  accent: Accent; label: string; player: Student | null; active: boolean; locked?: boolean;
   onOpen: () => void; onClear: () => void; thresholds?: Record<string, number>;
 }) {
   const a = ACCENT[accent];
   if (player) {
     return (
       <div className={cn("relative rounded-xl border p-3", a.fill)}>
-        <button onClick={onClear} title="선수 변경" className="absolute top-1.5 right-1.5 rounded-md bg-black/30 px-1.5 py-0.5 text-[10px] font-bold text-white/70 hover:text-white cursor-pointer">✕</button>
+        {locked ? (
+          <span className="absolute top-1.5 right-1.5 rounded-md bg-neon-blue/20 px-1.5 py-0.5 text-[10px] font-bold text-neon-blue">나</span>
+        ) : (
+          <button onClick={onClear} title="선수 변경" className="absolute top-1.5 right-1.5 rounded-md bg-black/30 px-1.5 py-0.5 text-[10px] font-bold text-white/70 hover:text-white cursor-pointer">✕</button>
+        )}
         <div className="text-[10px] text-muted-foreground">{label}{player.group ? ` · ${player.group}` : ""}</div>
         <div className="mt-1 flex items-center gap-1.5 min-w-0">
           <GenderMark gender={player.gender} className="size-4 text-[10px] shrink-0" />
@@ -1773,7 +1788,7 @@ function Slot({ accent, label, player, active, onOpen, onClear, thresholds }: {
   );
 }
 
-// 선수 선택 picker: 검색 → 구분조 칩 → 선수 목록 (한 번에 1개만 펼쳐짐)
+// 선수 선택 picker: 검색 → 레벨 칩 → 선수 목록 (한 번에 1개만 펼쳐짐)
 function PlayerPicker({ students, accent, group, onPick, thresholds }: {
   students: Student[]; accent: Accent; group: string | null;
   onPick: (group: string, studentId: string) => void; thresholds?: Record<string, number>;
@@ -1803,7 +1818,7 @@ function PlayerPicker({ students, accent, group, onPick, thresholds }: {
 
   return (
     <Card className={cn("border p-3 backdrop-blur", a.border)}>
-      {/* 검색을 구분조 위에 */}
+      {/* 검색을 레벨 위에 */}
       <input
         type="text"
         value={search}

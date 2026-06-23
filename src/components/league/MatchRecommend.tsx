@@ -28,8 +28,8 @@ type Selection = { grade: number | null; classNum: number | null; studentId: str
 
 // 표시 이름 헬퍼: 별명 > 표시이름 > 본명
 const displayNameOf = (s: Student) => s.displayName || s.nickname || s.name;
-// 구분조 라벨 헬퍼 (미지정 시 표기)
-const groupLabelOf = (s: Student) => s.group || "구분조 미지정";
+// 레벨 라벨 헬퍼 (미지정 시 표기)
+const groupLabelOf = (s: Student) => s.group || "레벨 미지정";
 
 // 예상 RP 미리보기 — 세련된 승/패 배지 (값은 예상 추정치)
 function RpPreview({ win, loss }: { win: number; loss: number }) {
@@ -108,7 +108,7 @@ export function MatchRecommend({
   ) => void;
   sel: Selection;
   onSelChange: (s: Selection) => void;
-  // 동호회: "class" = 같은 구분조, "otherClass" = 다른 구분조 (기존 prop 시그니처 호환 유지)
+  // 동호회: "class" = 같은 레벨, "otherClass" = 다른 레벨 (기존 prop 시그니처 호환 유지)
   mode: "class" | "otherClass" | "otherGrade";
   onModeChange: (m: "class" | "otherClass" | "otherGrade") => void;
   targetGrade?: number | null;
@@ -126,10 +126,10 @@ export function MatchRecommend({
   const [gameType, setGameType] = useState<"single" | "double">("double");
   const [selectedTeammateId, setSelectedTeammateId] = useState<string | null>(null);
 
-  // 동호회: 다른 구분조 매칭 시 대상 구분조(문자열). 학년/반 숫자 prop 대신 로컬 상태로 관리.
+  // 동호회: 다른 레벨 매칭 시 대상 레벨(문자열). 학년/반 숫자 prop 대신 로컬 상태로 관리.
   const [targetGroup, setTargetGroup] = useState<string | null>(null);
 
-  // "다른 구분조"가 아닐 땐 대상 구분조 선택 해제
+  // "다른 레벨"가 아닐 땐 대상 레벨 선택 해제
   useEffect(() => {
     if (mode !== "otherClass") setTargetGroup(null);
   }, [mode]);
@@ -186,7 +186,7 @@ export function MatchRecommend({
     toast.warning("성별을 입력하지 않아 선수 선택이 취소되었습니다.");
   };
 
-  // 1. 구분조(group) 옵션 목록 — 선수 명단에 존재하는 distinct group 값
+  // 1. 레벨(group) 옵션 목록 — 선수 명단에 존재하는 distinct group 값
   const availableGroups = useMemo(() => {
     const set = new Set<string>();
     students.forEach((s) => {
@@ -195,10 +195,10 @@ export function MatchRecommend({
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [students]);
 
-  // 선택 단계: 구분조별 선수 목록
+  // 선택 단계: 레벨별 선수 목록
   const groupsForSel = availableGroups;
 
-  // 선택 UI용 로컬 구분조 상태 (null = 전체)
+  // 선택 UI용 로컬 레벨 상태 (null = 전체)
   const [pickGroup, setPickGroup] = useState<string | null>(null);
   const [pickSearch, setPickSearch] = useState("");
   // 복식 팀원 직접 검색
@@ -211,7 +211,7 @@ export function MatchRecommend({
       .sort((a, b) => b.rp - a.rp);
   }, [students, pickGroup]);
 
-  // 경기기록 입력과 동일한 선택 UI용: 구분조(null=전체) + 닉네임 검색으로 필터
+  // 경기기록 입력과 동일한 선택 UI용: 레벨(null=전체) + 닉네임 검색으로 필터
   const pickRoster = useMemo(() => {
     const q = pickSearch.trim().toLowerCase();
     return students
@@ -225,17 +225,17 @@ export function MatchRecommend({
       .sort((a, b) => (a.nickname || a.name).localeCompare(b.nickname || b.name, "ko"));
   }, [students, pickGroup, pickSearch]);
 
-  // 랜덤 구분조 선택 (다른 구분조 도전)
+  // 랜덤 레벨 선택 (다른 레벨 도전)
   const handleRandomGroup = () => {
     if (!player) return;
     const otherGroups = availableGroups.filter((g) => g !== (player.group || null));
     if (otherGroups.length === 0) {
-      toast.warning("도전할 수 있는 다른 구분조 데이터가 명단에 없습니다.");
+      toast.warning("도전할 수 있는 다른 레벨 데이터가 명단에 없습니다.");
       return;
     }
     const rand = otherGroups[Math.floor(Math.random() * otherGroups.length)];
     setTargetGroup(rand);
-    toast.success(`🎲 주사위를 굴려 [${rand}] 구분조를 매칭 범위로 선택했습니다!`);
+    toast.success(`🎲 주사위를 굴려 [${rand}] 레벨를 매칭 범위로 선택했습니다!`);
   };
 
   // Compile player matches histories
@@ -483,7 +483,7 @@ export function MatchRecommend({
   const singleRecommendations = useMemo(() => {
     if (!player || gameType !== "single") return [];
 
-    // 매칭 범위는 구분조와 무관하게 전체 회원 대상 (본인/제외 대상만 제외)
+    // 매칭 범위는 레벨와 무관하게 전체 회원 대상 (본인/제외 대상만 제외)
     const candidates = students.filter((s) => !strictExcludedIds.has(s.id));
 
     const scored = candidates.map((candidate) => {
@@ -565,7 +565,7 @@ export function MatchRecommend({
   const partnerRecommendations = useMemo(() => {
     if (!player || gameType !== "double") return [];
 
-    // 파트너 후보: 구분조와 무관하게 본인 제외 전원. (추천은 점수순 정렬, 검색으로 직접 선택도 가능)
+    // 파트너 후보: 레벨와 무관하게 본인 제외 전원. (추천은 점수순 정렬, 검색으로 직접 선택도 가능)
     const candidates = students.filter((s) => s.id !== player.id);
 
     // Partner history (last 5 double matches)
@@ -640,7 +640,7 @@ export function MatchRecommend({
 
     const ourCombinedRp = player.rp + partner.rp;
 
-    // Opponent candidates pool — 구분조와 무관하게 전체 (본인/파트너 제외)
+    // Opponent candidates pool — 레벨와 무관하게 전체 (본인/파트너 제외)
     const oppCandidates = students.filter((s) => s.id !== player.id && s.id !== partner.id);
 
     if (oppCandidates.length < 2) return [];
@@ -748,7 +748,7 @@ export function MatchRecommend({
     });
   }, [partnerRecommendations, teammateSearch]);
 
-  // 매칭 범위는 구분조와 무관하게 전체 회원
+  // 매칭 범위는 레벨와 무관하게 전체 회원
   const scopeLabel = "전체 회원";
 
   return (
@@ -775,7 +775,7 @@ export function MatchRecommend({
           <div className="flex flex-col gap-3 bg-slate-900/60 p-3 sm:p-4 rounded-xl border border-slate-800/80">
             <div className="text-xs text-slate-450 font-bold uppercase tracking-wider">매치 추천 대상 회원을 선택하세요</div>
 
-            {/* 검색 (구분조 위) */}
+            {/* 검색 (레벨 위) */}
             <input
               type="text"
               value={pickSearch}
@@ -784,7 +784,7 @@ export function MatchRecommend({
               className="w-full rounded-lg border border-border/60 bg-[#0e1322]/80 px-3 py-2 text-sm text-white placeholder:text-muted-foreground focus:border-neon-blue/60 focus:outline-none"
             />
 
-            {/* 구분조 칩 (null = 전체) */}
+            {/* 레벨 칩 (null = 전체) */}
             <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
               <button
                 type="button"
@@ -906,7 +906,7 @@ export function MatchRecommend({
               <AlertCircle className="size-10 text-slate-500 mb-2" />
               <div className="text-sm font-bold text-slate-200">도전 타겟이 완벽히 설정되지 않았습니다.</div>
               <p className="text-xs text-slate-400 mt-1 max-w-sm">
-                상단 범위 필터에서 구분조를 선택하거나 🎲 랜덤 버튼을 눌러 지정해 주세요.
+                상단 범위 필터에서 레벨를 선택하거나 🎲 랜덤 버튼을 눌러 지정해 주세요.
               </p>
             </Card>
           ) : (
@@ -925,7 +925,7 @@ export function MatchRecommend({
                       </div>
 
                       <div className="space-y-4">
-                        {/* 프로필: 닉네임 옆에 구분조 · 티어 · 전적 */}
+                        {/* 프로필: 닉네임 옆에 레벨 · 티어 · 전적 */}
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pr-8">
                           <GenderMark gender={s.gender} className="size-4 text-[9px] shrink-0" />
                           <span className="text-base font-black text-slate-100">{displayNameOf(s)}</span>
@@ -1128,7 +1128,7 @@ export function MatchRecommend({
                     <AlertCircle className="size-10 text-slate-500 mb-2" />
                     <div className="text-sm font-bold text-slate-200">도전 타겟이 완벽히 설정되지 않았습니다.</div>
                     <p className="text-xs text-slate-400 mt-1 max-w-sm">
-                      상단 범위 필터에서 구분조를 지정해 주세요.
+                      상단 범위 필터에서 레벨를 지정해 주세요.
                     </p>
                   </Card>
                 ) : (
