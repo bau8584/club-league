@@ -811,7 +811,7 @@ export function RecordMatch({
           "relative overflow-hidden rounded-xl border p-5 flex flex-col justify-between h-full transition-all",
           isPromoted 
             ? `bg-[#090d16]/95 border-2 animate-glow-${p.finalTier.toLowerCase()}` 
-            : "border-cyan-500/20 bg-[#090d16]/95 shadow-[0_0_30px_rgba(0,180,216,0.1)] animate-glow-pulse"
+            : "border-cyan-500/20 bg-[#090d16]/95 glow-primary animate-glow-pulse"
         )}
       >
         {/* Futuristic Grid Overlay inside card */}
@@ -865,7 +865,7 @@ export function RecordMatch({
                   className={cn(
                     "flex items-center justify-between p-2.5 rounded-lg border bg-[#0d1222]/80 border-[#1c273e] transition-all duration-200",
                     isVisible 
-                      ? cn("opacity-100 scale-100 animate-stamp-pop border-[#1c273e]", isPromoted ? "shadow-md" : "shadow-[0_0_10px_rgba(0,180,216,0.05)]") 
+                      ? cn("opacity-100 scale-100 animate-stamp-pop border-[#1c273e]", isPromoted ? "shadow-md" : "glow-primary") 
                       : "opacity-0 scale-150 pointer-events-none"
                   )}
                 >
@@ -945,7 +945,7 @@ export function RecordMatch({
         </div>
 
         {/* Score Visualizer */}
-        <div className="relative z-10 flex items-center justify-center gap-6 py-4 mb-4 rounded-lg bg-[#0e1322] border border-[#172036] max-w-xs mx-auto w-full">
+        <div className="relative z-10 flex items-center justify-center gap-6 py-4 mb-4 rounded-lg bg-surface-deep border border-[#172036] max-w-xs mx-auto w-full">
           <div className="text-right flex flex-col items-center min-w-[70px]">
             <span className="text-[10px] text-[#8fa0c4] font-black truncate max-w-[80px]">{resultData.winner.name}</span>
             <span className="text-2xl font-black text-cyan-400 font-mono mt-0.5">{resultData.winner.score}</span>
@@ -1126,7 +1126,7 @@ export function RecordMatch({
         size="lg"
         onClick={submit}
         disabled={isSyncing}
-        className="h-14 w-full bg-gradient-to-r from-neon-blue to-tier-diamond text-base font-bold text-primary-foreground shadow-[0_0_32px_oklch(0.78_0.18_230/0.4)] hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="h-14 w-full bg-gradient-to-r from-neon-blue to-tier-diamond text-base font-bold text-primary-foreground glow-primary hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {isSyncing ? (
           <>
@@ -1190,7 +1190,7 @@ export function RecordMatch({
                     </div>
 
                     {/* Rank Info (e.g. 실버 4 -> 실버 3) */}
-                    <div className="text-[10px] text-gray-300 font-mono mt-0.5 flex items-center gap-1">
+                    <div className="text-[10px] text-soft font-mono mt-0.5 flex items-center gap-1">
                       <span>{getTierLabelInKorean(p.prevTier)} {prevSub}</span>
                       <span>➔</span>
                       <span className={isLosing ? "text-rose-400 font-bold" : "text-cyan-400 font-bold"}>
@@ -1287,7 +1287,7 @@ export function RecordMatch({
             <div 
               className={cn(
                 "relative w-full max-w-5xl overflow-hidden border bg-[#06080f] rounded-2xl p-4 md:p-6 flex flex-col items-center animate-in zoom-in duration-300",
-                isRankUp ? `animate-glow-${promotedTier.toLowerCase()}` : "border-cyan-500/30 shadow-[0_0_60px_rgba(0,180,216,0.2)] animate-glow-pulse"
+                isRankUp ? `animate-glow-${promotedTier.toLowerCase()}` : "border-cyan-500/30 glow-primary animate-glow-pulse"
               )}
             >
               {/* Embedded custom CSS */}
@@ -1521,7 +1521,7 @@ export function RecordMatch({
                       <h2 className="text-xl md:text-2xl font-black uppercase tracking-[0.2em] text-cyan-400 animate-glow-victory mb-1">
                         DIVISION UP
                       </h2>
-                      <p className="text-[11px] text-gray-300 font-bold bg-[#09101f] px-4 py-1.5 rounded-full border border-border/30 shadow-lg">
+                      <p className="text-[11px] text-soft font-bold bg-[#09101f] px-4 py-1.5 rounded-full border border-border/30 shadow-lg">
                         실력이 상승하여 <span className="text-cyan-400 font-black">{p.name}</span> 선수가 <span className="text-cyan-300 font-black">{tierNameK} {finalSub}</span> 단계에 도달했습니다.
                       </p>
                     </div>
@@ -1530,7 +1530,7 @@ export function RecordMatch({
 
                 return (
                   <div className="relative z-10 flex flex-col items-center text-center mb-4 shrink-0 animate-scale-up-bounce">
-                    <div className="flex size-10 items-center justify-center rounded-full bg-cyan-500/15 border border-cyan-500/30 text-cyan-400 shadow-[0_0_20px_rgba(0,180,216,0.3)] mb-2 shrink-0">
+                    <div className="flex size-10 items-center justify-center rounded-full bg-cyan-500/15 border border-cyan-500/30 text-cyan-400 glow-primary mb-2 shrink-0">
                       <Trophy className="size-5 text-cyan-400 animate-bounce" />
                     </div>
                     <h2 className="text-xl md:text-2xl font-black uppercase tracking-[0.25em] text-white animate-glow-victory mb-0.5">
@@ -1642,7 +1642,7 @@ export function RecordMatch({
                     "h-12 px-12 text-white font-black uppercase tracking-widest active:scale-95 transition-all w-full sm:w-auto rounded-lg border",
                     isRankUp 
                       ? "bg-gradient-to-r from-emerald-600 via-emerald-500 to-emerald-600 hover:from-emerald-500 hover:to-emerald-400 border-emerald-400/40 shadow-[0_0_25px_rgba(16,185,129,0.35)]"
-                      : "bg-gradient-to-r from-cyan-600 via-cyan-500 to-cyan-600 hover:from-cyan-500 hover:to-cyan-400 border-cyan-400/40 shadow-[0_0_25px_rgba(0,180,216,0.35)]"
+                      : "bg-gradient-to-r from-cyan-600 via-cyan-500 to-cyan-600 hover:from-cyan-500 hover:to-cyan-400 border-cyan-400/40 glow-primary"
                   )}
                 >
                   확인 (다음 경기)
@@ -1660,7 +1660,7 @@ export function RecordMatch({
         if (!targetStudent) return null;
         return (
           <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-in fade-in duration-300">
-            <div className="relative w-full max-w-md overflow-hidden border border-neon-blue/30 bg-background/95 rounded-2xl p-6 md:p-8 shadow-[0_0_50px_rgba(0,180,216,0.2)] flex flex-col items-center animate-in zoom-in duration-300">
+            <div className="relative w-full max-w-md overflow-hidden border border-neon-blue/30 bg-background/95 rounded-2xl p-6 md:p-8 glow-primary flex flex-col items-center animate-in zoom-in duration-300">
               {/* Grid Background Effect */}
               <div className="absolute inset-0 bg-[linear-gradient(rgba(18,18,18,0.2)_1px,transparent_1px),linear-gradient(90deg,rgba(18,18,18,0.2)_1px,transparent_1px)] bg-[size:20px_20px] pointer-events-none opacity-20" />
               
@@ -1675,7 +1675,7 @@ export function RecordMatch({
 
               {/* Title & Info */}
               <div className="relative z-10 flex flex-col items-center text-center w-full">
-                <div className="flex size-14 items-center justify-center rounded-full bg-neon-blue/15 border border-neon-blue/30 text-neon-blue shadow-[0_0_30px_rgba(0,180,216,0.3)] mb-4 animate-pulse">
+                <div className="flex size-14 items-center justify-center rounded-full bg-neon-blue/15 border border-neon-blue/30 text-neon-blue glow-primary mb-4 animate-pulse">
                   <Sparkles className="size-6 text-neon-blue" />
                 </div>
                 <h3 className="text-xl font-black uppercase tracking-wider text-glow-blue text-neon-blue mb-1">
@@ -1692,7 +1692,7 @@ export function RecordMatch({
                 {/* Male Option */}
                 <button
                   onClick={() => handleUpdateGender("M")}
-                  className="flex flex-col items-center justify-center p-5 rounded-xl border border-neon-blue/30 bg-neon-blue/5 hover:bg-neon-blue/15 hover:border-neon-blue/60 transition-all active:scale-95 group shadow-[0_0_15px_rgba(0,180,216,0.05)]"
+                  className="flex flex-col items-center justify-center p-5 rounded-xl border border-neon-blue/30 bg-neon-blue/5 hover:bg-neon-blue/15 hover:border-neon-blue/60 transition-all active:scale-95 group glow-primary"
                 >
                   <span className="text-4xl mb-2 group-hover:animate-bounce">♂</span>
                   <span className="text-sm font-black text-neon-blue tracking-wider">남성 (M)</span>
@@ -1770,7 +1770,7 @@ function Slot({ accent, label, player, active, locked, onOpen, onClear, threshol
         <div className="text-[10px] text-muted-foreground">{label}{player.group ? ` · ${player.group}` : ""}</div>
         <div className="mt-1 flex items-center gap-1.5 min-w-0">
           <GenderMark gender={player.gender} className="size-4 text-[10px] shrink-0" />
-          <span className={cn("truncate text-base font-black", a.text)}>{playerLabel(player)}</span>
+          <span className={cn("team-name truncate text-base font-black", a.text)}>{playerLabel(player)}</span>
         </div>
         <div className="mt-1.5"><TierBadge rp={player.rp} thresholds={thresholds} /></div>
       </div>
@@ -1824,7 +1824,7 @@ function PlayerPicker({ students, accent, group, onPick, thresholds }: {
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         placeholder="닉네임 검색"
-        className="mb-3 w-full rounded-lg border border-border/60 bg-[#0e1322]/80 px-3 py-2 text-sm text-white placeholder:text-muted-foreground focus:border-neon-blue/60 focus:outline-none"
+        className="mb-3 w-full rounded-lg border border-border/60 bg-surface-deep px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-neon-blue/60 focus:outline-none"
       />
       <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
         <Chip active={grp === ALL_GROUP} accent={accent} onClick={() => setGrp(ALL_GROUP)}>전체</Chip>
@@ -1838,14 +1838,14 @@ function PlayerPicker({ students, accent, group, onPick, thresholds }: {
             key={s.id}
             type="button"
             onClick={() => onPick(grp, s.id)}
-            className="relative flex min-h-[4.75rem] w-full flex-col items-center justify-between overflow-hidden rounded-lg border border-border/60 bg-[#0e1322]/80 px-2 pt-6 pb-2.5 text-center transition-all hover:border-neon-blue/60 hover:bg-accent/40 cursor-pointer"
+            className="relative flex min-h-[4.75rem] w-full flex-col items-center justify-between overflow-hidden rounded-lg border border-border/60 bg-surface-deep px-2 pt-6 pb-2.5 text-center transition-all hover:border-neon-blue/60 hover:bg-accent/40 cursor-pointer"
           >
             {s.group && (
-              <span className="absolute top-1 left-1.5 max-w-[60%] truncate text-left font-mono text-[10px] text-gray-500">{s.group}</span>
+              <span className="absolute top-1 left-1.5 max-w-[60%] truncate text-left font-mono text-[10px] text-soft">{s.group}</span>
             )}
             <GenderMark gender={s.gender} className="absolute top-1 right-1.5 size-3.5 text-[9px] shrink-0" />
             <div className="flex w-full min-w-0 flex-grow items-center justify-center">
-              <span className="w-full break-keep text-center text-sm font-bold text-white">{playerLabel(s)}</span>
+              <span className="w-full break-keep text-center text-sm font-bold text-strong">{playerLabel(s)}</span>
             </div>
             <div className="mt-1.5 flex w-full shrink-0 justify-center"><TierBadge rp={s.rp} thresholds={thresholds} /></div>
           </button>
@@ -1913,7 +1913,7 @@ function ScorePad({ name, value, onChange, accent }: { name: string; value: numb
           variant="outline"
           size="sm"
           onClick={() => onChange(0)}
-          className="mt-2.5 h-9 w-full text-xs font-black bg-amber-500 hover:bg-amber-600 text-slate-950 border-none transition-all flex items-center justify-center gap-1.5 active:scale-95 shadow-[0_0_14px_rgba(245,158,11,0.35)] cursor-pointer"
+          className="mt-2.5 h-9 w-full text-xs font-black bg-muted text-muted-foreground hover:bg-accent hover:text-foreground border border-border/60 transition-all flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer"
         >
           <RotateCcw className="size-3.5" /> 0으로 초기화
         </Button>

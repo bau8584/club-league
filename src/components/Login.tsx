@@ -32,13 +32,13 @@ export function Login() {
       <div className="absolute -bottom-40 -right-40 size-96 rounded-full bg-tier-diamond/10 blur-[130px] pointer-events-none" />
 
       {/* Main Premium Card */}
-      <Card className="w-full max-w-md border-border/60 bg-card/65 backdrop-blur-xl p-8 md:p-10 rounded-2xl shadow-[0_0_50px_rgba(0,180,216,0.08)] relative overflow-hidden animate-in zoom-in-95 fade-in duration-500">
+      <Card className="w-full max-w-md border-border/60 bg-card/65 backdrop-blur-xl p-8 md:p-10 rounded-2xl glow-primary relative overflow-hidden animate-in zoom-in-95 fade-in duration-500">
         {/* Decorative border glow top */}
         <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-neon-blue to-transparent opacity-80" />
 
         <div className="flex flex-col items-center text-center relative z-10">
           {/* Logo with pulsing neon ring */}
-          <div className="relative flex size-16 items-center justify-center rounded-2xl bg-gradient-to-br from-neon-blue to-tier-diamond shadow-[0_0_30px_oklch(0.78_0.18_230/0.45)] mb-6 hover:scale-105 transition-transform duration-300">
+          <div className="relative flex size-16 items-center justify-center rounded-2xl bg-gradient-to-br from-neon-blue to-tier-diamond glow-primary mb-6 hover:scale-105 transition-transform duration-300">
             <Swords className="size-8 text-primary-foreground animate-pulse" />
             <div className="absolute -inset-1 rounded-2xl border border-neon-blue/40 animate-ping opacity-25 pointer-events-none" />
           </div>

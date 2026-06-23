@@ -12,8 +12,10 @@ import { SeasonSummary } from "@/components/league/SeasonSummary";
 import { Toaster } from "@/components/ui/sonner";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { Crown, Swords, Trophy, Users, Pencil, Target, LogOut, School, ShieldAlert, Award, BarChart3, ArrowLeft, Lock } from "lucide-react";
+import { Crown, Swords, Trophy, Users, Pencil, Target, LogOut, School, ShieldAlert, Award, BarChart3, ArrowLeft, Lock, Palette } from "lucide-react";
 import { MyAchievements } from "@/components/league/MyAchievements";
+import { ThemePicker } from "@/components/ThemePicker";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent } from "@/components/ui/dropdown-menu";
 
 export const Route = createFileRoute("/class/$classId")({
   head: () => ({
@@ -196,7 +198,7 @@ function Index() {
             
             {/* Logo and Editable Title */}
             <div className="flex items-center gap-3">
-              <div className="flex size-10 items-center justify-center rounded-lg bg-gradient-to-br from-neon-blue to-tier-diamond shadow-[0_0_18px_oklch(0.78_0.18_230/0.5)]">
+              <div className="flex size-10 items-center justify-center rounded-lg bg-gradient-to-br from-neon-blue to-tier-diamond glow-primary">
                 <Crown className="size-5 text-primary-foreground" />
               </div>
               <div>
@@ -286,6 +288,22 @@ function Index() {
                 <ArrowLeft className="size-4" />
                 <span className="hidden sm:inline">리그 로비</span>
               </button>
+
+              {/* Theme Picker */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    title="화면 테마"
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border/60 bg-card/60 text-muted-foreground hover:text-neon-blue hover:border-neon-blue/40 active:scale-95 transition-all text-xs font-bold"
+                  >
+                    <Palette className="size-4" />
+                    <span className="hidden sm:inline">테마</span>
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-60 p-3">
+                  <ThemePicker />
+                </DropdownMenuContent>
+              </DropdownMenu>
 
               {/* Logout Button (Rectangular Style with Text) */}
               <button
@@ -504,7 +522,7 @@ function Index() {
 
       {isSyncing && (
         <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-background/80 backdrop-blur-md">
-          <div className="flex flex-col items-center gap-4 p-6 rounded-2xl border border-border/50 bg-card/60 shadow-[0_0_50px_rgba(0,180,216,0.15)] animate-in fade-in zoom-in-95 duration-200">
+          <div className="flex flex-col items-center gap-4 p-6 rounded-2xl border border-border/50 bg-card/60 glow-primary animate-in fade-in zoom-in-95 duration-200">
             <div className="relative flex size-16 items-center justify-center">
               <div className="absolute inset-0 rounded-full border-4 border-muted/30" />
               <div className="absolute inset-0 rounded-full border-4 border-neon-blue border-t-transparent animate-spin" />

@@ -24,7 +24,8 @@ import {
   Trash2,
   UserPlus,
   UserX,
-  ChevronDown
+  ChevronDown,
+  Palette
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -39,6 +40,7 @@ import { type Class } from "@/lib/league-types";
 import type { LeagueInsert } from "@/lib/database.types";
 import { LEAGUE_BUNDLES, buildBundleSettings, type BundleKey } from "@/lib/league-presets";
 import { SPORT_OPTIONS, getSportPreset } from "@/domain/sport-levels";
+import { ThemePicker } from "@/components/ThemePicker";
 
 export function Lobby() {
   const [userEmail, setUserEmail] = useState<string>("");
@@ -343,7 +345,7 @@ export function Lobby() {
       <header className="border-b border-border/60 bg-card/40 backdrop-blur-xl relative z-10">
         <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex size-10 items-center justify-center rounded-lg bg-gradient-to-br from-neon-blue to-tier-diamond shadow-[0_0_18px_oklch(0.78_0.18_230/0.5)]">
+            <div className="flex size-10 items-center justify-center rounded-lg bg-gradient-to-br from-neon-blue to-tier-diamond glow-primary">
               <Crown className="size-5 text-primary-foreground" />
             </div>
             <div>
@@ -359,6 +361,20 @@ export function Lobby() {
               <span className="text-xs font-black text-foreground">{userEmail}</span>
               <span className="text-[9px] font-bold text-muted-foreground">관리자/관리자 계정</span>
             </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  title="화면 테마"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border/60 bg-card/60 text-muted-foreground hover:text-neon-blue hover:border-neon-blue/40 active:scale-95 transition-all text-xs font-bold cursor-pointer"
+                >
+                  <Palette className="size-3.5" />
+                  <span className="hidden sm:inline">테마</span>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-60 p-3">
+                <ThemePicker />
+              </DropdownMenuContent>
+            </DropdownMenu>
             <button
               onClick={handleLogout}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border/60 bg-card/60 text-muted-foreground hover:text-destructive hover:border-destructive/40 active:scale-95 transition-all text-xs font-bold cursor-pointer"
@@ -373,7 +389,7 @@ export function Lobby() {
       {/* Main Content Area */}
       <main className="flex-1 mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8 relative z-10">
         {/* Banner Card */}
-        <div className="mb-8 rounded-2xl border border-neon-blue/20 bg-gradient-to-r from-neon-blue/5 to-tier-diamond/5 p-6 backdrop-blur-md relative overflow-hidden flex flex-col md:flex-row items-center justify-between gap-6 shadow-[0_0_30px_rgba(0,180,216,0.03)]">
+        <div className="mb-8 rounded-2xl border border-neon-blue/20 bg-gradient-to-r from-neon-blue/5 to-tier-diamond/5 p-6 backdrop-blur-md relative overflow-hidden flex flex-col md:flex-row items-center justify-between gap-6 glow-primary">
           <div className="flex-1">
             <h2 className="text-xl md:text-2xl font-black text-foreground tracking-tight flex items-center gap-2">
               <Sparkles className="size-5 text-neon-blue animate-pulse" />
@@ -419,7 +435,7 @@ export function Lobby() {
                     params={{ classId: league.id }}
                     className="group block"
                   >
-                    <Card className="relative border-border/60 bg-card/50 hover:bg-card/75 hover:border-neon-blue/60 backdrop-blur-md p-5 rounded-xl transition-all duration-300 hover:scale-[1.01] shadow-[0_4px_15px_rgba(0,0,0,0.05)] hover:shadow-[0_0_25px_rgba(0,180,216,0.08)] cursor-pointer flex items-center justify-between gap-4">
+                    <Card className="relative border-border/60 bg-card/50 hover:bg-card/75 hover:border-neon-blue/60 backdrop-blur-md p-5 rounded-xl transition-all duration-300 hover:scale-[1.01] shadow-[0_4px_15px_rgba(0,0,0,0.05)] hover:glow-primary cursor-pointer flex items-center justify-between gap-4">
                       <div className="flex flex-col gap-1.5 flex-1">
                         <h4 className="text-sm sm:text-base font-black text-foreground group-hover:text-neon-blue transition-colors pr-8">
                           {league.name}

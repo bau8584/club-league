@@ -213,7 +213,7 @@ function FilterChip({
       className={cn(
         "h-8 rounded-full border px-3 text-xs font-semibold transition-all",
         active
-          ? "border-neon-blue/60 bg-neon-blue/15 text-neon-blue shadow-[0_0_16px_oklch(0.78_0.18_230/0.35)]"
+          ? "border-neon-blue/60 bg-neon-blue/15 text-neon-blue glow-primary"
           : cn("border-border/60 bg-card/40 hover:text-foreground", tone ?? "text-muted-foreground"),
       )}
     >

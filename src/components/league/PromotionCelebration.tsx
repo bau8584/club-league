@@ -103,10 +103,10 @@ export function PromotionCelebration({ studentName, newTier, onConfirm }: Promot
     if (label.includes("다이아")) {
       return {
         color: "text-tier-diamond text-glow-blue",
-        glow: "shadow-[0_0_60px_rgba(0,180,216,0.6)] bg-tier-diamond/10 border-tier-diamond/40",
+        glow: "glow-primary bg-tier-diamond/10 border-tier-diamond/40",
         label: "다이아몬드",
         bgStyle: "from-tier-diamond/20 via-background/10 to-tier-diamond/5",
-        icon: <Crown className="size-16 drop-shadow-[0_0_15px_rgba(0,180,216,0.8)]" />
+        icon: <Crown className="size-16 drop-glow-primary" />
       };
     }
     if (label.includes("플래티넘")) {
@@ -169,7 +169,7 @@ export function PromotionCelebration({ studentName, newTier, onConfirm }: Promot
 
         {/* 1. 영롱한 티어 뱃지 컨테이너 */}
         <div className={cn(
-          "relative flex size-32 items-center justify-center rounded-full border-2 bg-background/80 shadow-[0_0_40px_rgba(0,180,216,0.15)] mb-6 animate-bounce",
+          "relative flex size-32 items-center justify-center rounded-full border-2 bg-background/80 glow-primary mb-6 animate-bounce",
           details.glow
         )}>
           {/* 빛이 퍼지는 백드롭 효과 */}

@@ -24,10 +24,10 @@ const TIER_THEMES = {
   Common: {
     bg: "bg-slate-500/5",
     border: "border-slate-500/30",
-    text: "text-slate-400",
+    text: "text-soft",
     accent: "bg-slate-400",
     glow: "shadow-[0_0_15px_rgba(148,163,184,0.15)]",
-    badge: "bg-slate-500/10 border-slate-500/20 text-slate-400",
+    badge: "bg-slate-500/10 border-slate-500/20 text-soft",
     label: "커먼"
   },
   Rare: {

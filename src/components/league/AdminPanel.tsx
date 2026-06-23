@@ -381,7 +381,7 @@ export function AdminPanel({
                 className={cn(
                   "flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all active:scale-95 group",
                   isActive
-                    ? "bg-neon-blue/15 text-neon-blue font-black border border-neon-blue/30 shadow-[0_0_12px_rgba(0,180,216,0.15)]"
+                    ? "bg-neon-blue/15 text-neon-blue font-black border border-neon-blue/30 glow-primary"
                     : "text-muted-foreground hover:text-foreground hover:bg-muted/30 border border-transparent"
                 )}
               >
