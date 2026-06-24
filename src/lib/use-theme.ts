@@ -1,21 +1,21 @@
 import { useCallback, useEffect, useState } from "react";
 
-export type ThemeName = "game" | "black" | "modern" | "glass" | "clay";
+export type ThemeName = "game" | "black" | "modern" | "clay";
 
 export const THEMES: { value: ThemeName; label: string; hint: string }[] = [
-  { value: "game", label: "게임", hint: "다크 네온 · e스포츠" },
+  { value: "game", label: "게임", hint: "사이버펑크 네온" },
   { value: "black", label: "블랙", hint: "OLED · 고급 미니멀" },
-  { value: "modern", label: "모던", hint: "라이트 · 깔끔" },
-  { value: "glass", label: "글래스", hint: "투명 유리 · 트렌디" },
+  { value: "modern", label: "모던", hint: "웜 뉴트럴 · 유리" },
   { value: "clay", label: "클레이", hint: "말랑 3D · 귀여움" },
 ];
 
-const VALID: ThemeName[] = ["game", "black", "modern", "glass", "clay"];
+const VALID: ThemeName[] = ["game", "black", "modern", "clay"];
 const STORAGE_KEY = "ui-theme";
 
-// 과거 제거된 테마(pastel) → 대체 테마(clay)로 정규화
+// 과거 제거된 테마 정규화: pastel→clay, glass→modern(모던에 흡수)
 function normalize(v: string | null | undefined): ThemeName {
   if (v === "pastel") return "clay";
+  if (v === "glass") return "modern";
   return (VALID as string[]).includes(v ?? "") ? (v as ThemeName) : "game";
 }
 

@@ -98,9 +98,9 @@
     radial-gradient(ellipse at 80% 100%, oklch(0.5 0.16 205 / 0.4), transparent 58%);
 }
 
-/* ── 테마: 모던(웜 뉴트럴 + 먹(ink) 강조) ──────────────────── */
+/* ── 테마: 모던 글래스(웜 뉴트럴 + 먹 강조 + 프로스티드 투명) ── */
 [data-theme="modern"] {
-  --radius: 0.75rem;
+  --radius: 1rem;
   --background: oklch(0.972 0.008 80);
   --foreground: oklch(0.22 0.006 60);
   --card: oklch(0.995 0.004 80);
@@ -144,9 +144,11 @@
   --shadow-glow-blue: 0 0 0 transparent;
   --shadow-glow-gold: 0 0 0 transparent;
   --text-glow-blue: none;
+  /* 프로스티드 카드가 비치도록 은은한 웜 다색 배경(저채도, 우아) */
   --body-gradient:
-    radial-gradient(ellipse at top, oklch(0.95 0.02 80 / 0.6), transparent 60%),
-    radial-gradient(ellipse at bottom, oklch(0.96 0.015 60 / 0.5), transparent 60%);
+    radial-gradient(ellipse at 15% 0%, oklch(0.93 0.045 60 / 0.7), transparent 55%),
+    radial-gradient(ellipse at 85% 15%, oklch(0.92 0.03 250 / 0.5), transparent 55%),
+    radial-gradient(ellipse at 60% 100%, oklch(0.94 0.04 135 / 0.45), transparent 55%);
 }
 
 /* ── 테마: 클레이모피즘(캔디 — 피치+민트+버터, 구 pastel 대체) ── */
@@ -251,59 +253,6 @@
     radial-gradient(ellipse at bottom, oklch(0.1 0 0 / 0.6), transparent 65%);
 }
 
-/* ── 테마: 글래스모피즘(아쿠아/시안 이리데센트 + 강한 유리감) ── */
-[data-theme="glass"] {
-  --radius: 1rem;
-  --background: oklch(0.9 0.05 220);
-  --foreground: oklch(0.27 0.04 230);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.27 0.04 230);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.27 0.04 230);
-  --primary: oklch(0.6 0.16 212);
-  --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.9 0.05 210);
-  --secondary-foreground: oklch(0.3 0.05 220);
-  --muted: oklch(0.92 0.03 218);
-  --muted-foreground: oklch(0.45 0.04 225);
-  --accent: oklch(0.88 0.07 200);
-  --accent-foreground: oklch(0.3 0.07 215);
-  --destructive: oklch(0.58 0.2 22);
-  --destructive-foreground: oklch(0.99 0 0);
-  --border: oklch(0.86 0.04 220);
-  --input: oklch(0.95 0.02 220);
-  --ring: oklch(0.6 0.16 212);
-
-  --neon-blue: oklch(0.6 0.16 212);
-  --neon-green: oklch(0.6 0.16 165);
-  --gold: oklch(0.72 0.15 85);
-
-  --tier-bronze: oklch(0.55 0.13 50);
-  --tier-silver: oklch(0.6 0.03 220);
-  --tier-gold: oklch(0.68 0.15 85);
-  --tier-platinum: oklch(0.62 0.12 195);
-  --tier-diamond: oklch(0.58 0.18 250);
-
-  --win: oklch(0.55 0.16 165);
-  --loss: oklch(0.57 0.2 22);
-
-  --surface-deep: oklch(0.95 0.03 220);
-  --surface-panel: oklch(1 0 0);
-  --surface-line: oklch(0.88 0.04 220);
-  --strong: oklch(0.27 0.04 230);
-  --soft: oklch(0.45 0.04 225);
-
-  --gradient-hero: linear-gradient(135deg, oklch(0.7 0.16 200) 0%, oklch(0.72 0.16 270) 100%);
-  --shadow-glow-blue: 0 0 24px oklch(0.6 0.16 212 / 0.2);
-  --shadow-glow-gold: 0 0 24px oklch(0.72 0.15 85 / 0.25);
-  --text-glow-blue: none;
-  --body-gradient:
-    radial-gradient(ellipse at 12% 0%, oklch(0.8 0.16 200 / 0.8), transparent 55%),
-    radial-gradient(ellipse at 88% 15%, oklch(0.82 0.15 175 / 0.7), transparent 52%),
-    radial-gradient(ellipse at 70% 100%, oklch(0.72 0.16 270 / 0.6), transparent 55%),
-    radial-gradient(ellipse at 30% 85%, oklch(0.8 0.13 330 / 0.4), transparent 50%);
-}
-
 @layer base {
   * {
     border-color: var(--color-border);
@@ -336,7 +285,6 @@
 /* 라이트 테마에서는 팀 강조색(amber/violet) 대신 고대비 글자색으로 — 가독성 확보.
    게임/블랙(다크)에서는 팀 색 그대로 유지. */
 [data-theme="modern"] .team-name,
-[data-theme="glass"] .team-name,
 [data-theme="clay"] .team-name {
   color: var(--strong);
 }
@@ -358,14 +306,14 @@
   box-shadow: 4px 4px 10px oklch(0.7 0.08 50 / 0.28), -3px -3px 8px oklch(1 0 0 / 0.85);
 }
 
-/* 글래스모피즘: 카드를 확실한 프로스티드 글래스로 (인라인 bg-card/60 덮어씀) */
-[data-theme="glass"] .theme-card {
-  background-color: oklch(1 0 0 / 0.38) !important;
-  background-image: linear-gradient(135deg, oklch(1 0 0 / 0.4), oklch(1 0 0 / 0) 46%);
-  backdrop-filter: blur(22px) saturate(1.6);
-  -webkit-backdrop-filter: blur(22px) saturate(1.6);
-  border: 1px solid oklch(1 0 0 / 0.6);
-  box-shadow: 0 10px 36px oklch(0.4 0.08 250 / 0.2), inset 0 1px 0 oklch(1 0 0 / 0.75);
+/* 모던 글래스: 웜 뉴트럴 배경 위 프로스티드 투명 카드 (가독 위해 알파 0.6, 인라인 bg-card/60 덮어씀) */
+[data-theme="modern"] .theme-card {
+  background-color: oklch(1 0 0 / 0.6) !important;
+  background-image: linear-gradient(135deg, oklch(1 0 0 / 0.45), oklch(1 0 0 / 0) 48%);
+  backdrop-filter: blur(18px) saturate(1.15);
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+  border: 1px solid oklch(1 0 0 / 0.7);
+  box-shadow: 0 8px 30px oklch(0.45 0.02 70 / 0.12), inset 0 1px 0 oklch(1 0 0 / 0.8);
 }
 
 @utility text-glow-blue {
@@ -374,4 +322,10 @@
 
 @utility text-glow-gold {
   text-shadow: 0 0 12px oklch(0.83 0.16 85 / 0.6);
+}
+
+/* 가로 스크롤 영역의 스크롤바 숨김(기능은 유지) — 탭 바 아래 빈 공간 제거 */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
 }

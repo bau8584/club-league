@@ -12,10 +12,10 @@ import { SeasonSummary } from "@/components/league/SeasonSummary";
 import { Toaster } from "@/components/ui/sonner";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { Crown, Swords, Trophy, Users, Pencil, Target, LogOut, School, ShieldAlert, Award, BarChart3, ArrowLeft, Lock, Palette } from "lucide-react";
+import { Crown, Swords, Trophy, Users, Pencil, Target, LogOut, School, ShieldAlert, Award, BarChart3, ArrowLeft, Lock, MoreVertical } from "lucide-react";
 import { MyAchievements } from "@/components/league/MyAchievements";
 import { ThemePicker } from "@/components/ThemePicker";
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 
 export const Route = createFileRoute("/class/$classId")({
   head: () => ({
@@ -193,7 +193,7 @@ function Index() {
 
       {/* Header */}
       <header className="border-b border-border/60 bg-card/40 backdrop-blur-xl">
-        <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-7xl px-4 pt-5 pb-0 sm:px-6 lg:px-8">
           <div className="flex flex-wrap items-center justify-between gap-3">
             
             {/* Logo and Editable Title */}
@@ -227,99 +227,80 @@ function Index() {
               </div>
             </div>
 
-            {/* Role Session Badge and Sync status */}
-            <div className="flex flex-wrap items-center gap-2">
-              
-              {/* Real-time Google Sheets Sync Badge */}
+            {/* Sync status + 통합 메뉴(케밥) */}
+            <div className="flex items-center gap-2">
+
+              {/* Real-time Sync Badge (동기화 중에만) */}
               {isSyncing && (
-                <div className="flex items-center gap-1.5 rounded-full border border-neon-blue/40 bg-neon-blue/5 px-3 py-1.5 text-xs text-neon-blue animate-pulse">
+                <div className="flex items-center gap-1.5 rounded-full border border-neon-blue/40 bg-neon-blue/5 px-2.5 py-1 text-[10px] font-bold tracking-wider text-neon-blue animate-pulse">
                   <span className="size-1.5 rounded-full bg-neon-blue animate-ping" />
-                  <span className="font-bold text-[10px] tracking-wider">🔄 구글 시트 동기화 중...</span>
+                  <span>동기화 중</span>
                 </div>
               )}
 
-              {/* Dynamic User Identity Session Badge */}
-              <div className={cn(
-                "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-bold shadow-md",
-                session.role === "TEACHER"
-                  ? "border-neon-green/40 bg-neon-green/5 text-neon-green"
-                  : "border-purple-500/40 bg-purple-500/5 text-purple-400"
-              )}>
-                {session.role === "TEACHER" ? (
-                  <span>{session.schoolName} · {isClassOwner ? "최고 관리자" : "관리자"}</span>
-                ) : (
-                  <>
-                    <Users className="size-3.5" />
-                    <span>🏆 {session.schoolName} · 회원</span>
-                  </>
-                )}
-              </div>
-
-              {/* Season Selection Dropdown */}
-              <div className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-card/60 px-2.5 py-1 text-xs">
-                <span className="font-bold text-muted-foreground mr-1">시즌:</span>
-                <select
-                  value={currentViewSeason}
-                  onChange={(e) => changeViewSeason(e.target.value)}
-                  className="bg-transparent text-foreground font-bold focus:outline-none cursor-pointer pr-1"
-                >
-                  <option value="현재 시즌" className="bg-background text-foreground font-bold">{currentSeason} (현재)</option>
-                  {seasonList && seasonList.map((season) => (
-                    <option key={season} value={season} className="bg-background text-foreground font-bold">
-                      {season}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Registered student count */}
-              <div className="flex items-center gap-2 rounded-full border border-border/60 bg-card/60 px-4 py-1.5 text-xs">
-                <Users className="size-3.5 text-neon-green" />
-                <span className="font-mono text-muted-foreground">등록 선수</span>
-                <span className="font-bold text-neon-green">{students.length}</span>
-              </div>
-
-              {/* 리그 로비로 돌아가기 */}
-              <button
-                onClick={() => { window.location.href = "/"; }}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border/60 bg-card/60 text-muted-foreground hover:text-neon-blue hover:border-neon-blue/40 active:scale-95 transition-all text-xs font-bold"
-                title="리그 로비로 돌아가기"
-              >
-                <ArrowLeft className="size-4" />
-                <span className="hidden sm:inline">리그 로비</span>
-              </button>
-
-              {/* Theme Picker */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
-                    title="화면 테마"
-                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border/60 bg-card/60 text-muted-foreground hover:text-neon-blue hover:border-neon-blue/40 active:scale-95 transition-all text-xs font-bold"
+                    title="메뉴"
+                    className="flex size-9 items-center justify-center rounded-lg border border-border/60 bg-card/60 text-muted-foreground hover:text-neon-blue hover:border-neon-blue/40 active:scale-95 transition-all"
                   >
-                    <Palette className="size-4" />
-                    <span className="hidden sm:inline">테마</span>
+                    <MoreVertical className="size-5" />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-60 p-3">
-                  <ThemePicker />
+                <DropdownMenuContent align="end" className="w-64 p-0 overflow-hidden">
+                  {/* 정보: 역할 · 등록 선수 */}
+                  <div className="flex items-center justify-between gap-2 border-b border-border/40 bg-muted/20 px-3 py-2.5">
+                    <span className={cn(
+                      "inline-flex items-center gap-1 text-[11px] font-bold",
+                      session.role === "TEACHER" ? "text-neon-green" : "text-purple-400"
+                    )}>
+                      {session.role === "TEACHER"
+                        ? (isClassOwner ? "최고 관리자" : "관리자")
+                        : <><Users className="size-3" /> 회원</>}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">등록 선수 <b className="text-neon-green">{students.length}</b></span>
+                  </div>
+
+                  {/* 시즌 선택 */}
+                  <div className="border-b border-border/40 py-1">
+                    <div className="px-3 pt-1 pb-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">시즌</div>
+                    <DropdownMenuItem
+                      onSelect={() => changeViewSeason("현재 시즌")}
+                      className={cn("text-xs cursor-pointer", currentViewSeason === "현재 시즌" && "text-neon-blue font-bold")}
+                    >
+                      {currentSeason} (현재)
+                    </DropdownMenuItem>
+                    {seasonList && seasonList.map((season) => (
+                      <DropdownMenuItem
+                        key={season}
+                        onSelect={() => changeViewSeason(season)}
+                        className={cn("text-xs cursor-pointer", currentViewSeason === season && "text-neon-blue font-bold")}
+                      >
+                        {season}
+                      </DropdownMenuItem>
+                    ))}
+                  </div>
+
+                  {/* 테마 (메뉴 유지 — 클릭해도 안 닫힘) */}
+                  <div className="border-b border-border/40 px-3 py-2.5">
+                    <ThemePicker />
+                  </div>
+
+                  {/* 액션 */}
+                  <DropdownMenuItem onSelect={() => { window.location.href = "/"; }} className="gap-2 text-xs cursor-pointer">
+                    <ArrowLeft className="size-4" /> 리그 로비로
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={logoutUser} className="gap-2 text-xs cursor-pointer text-destructive focus:text-destructive">
+                    <LogOut className="size-4" /> 로그아웃
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-
-              {/* Logout Button (Rectangular Style with Text) */}
-              <button
-                onClick={logoutUser}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border/60 bg-card/60 text-muted-foreground hover:text-destructive hover:border-destructive/40 active:scale-95 transition-all text-xs font-bold"
-                title="로그아웃"
-              >
-                <LogOut className="size-4" />
-                <span>로그아웃</span>
-              </button>
 
             </div>
           </div>
 
           {/* Role-Based Nav Tabs */}
-          <nav className="mt-5 flex gap-1 overflow-x-auto">
+          <nav className="mt-3 flex gap-1 overflow-x-auto no-scrollbar">
             {session.role === "STUDENT" ? (
               <>
                 {/* 1. 나의 기록 (선수 - 신규) */}
@@ -385,7 +366,7 @@ function Index() {
       </header>
 
       {/* Main Panel Content Routing */}
-      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+      <main className="mx-auto max-w-7xl px-4 pt-3 pb-8 sm:px-6 lg:px-8">
         {needsOnboarding ? (
           <Onboarding
             students={students}

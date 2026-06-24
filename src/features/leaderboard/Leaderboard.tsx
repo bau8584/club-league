@@ -54,15 +54,22 @@ export function Leaderboard({
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [students]);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
+  // 순위는 레벨/티어/성별 필터 집합 기준으로 매김(이름 검색과 무관).
+  const ranked = useMemo(() => {
     return students
       .filter((s) => (group === "all" ? true : s.group === group))
       .filter((s) => (tier === "all" ? true : getTier(s.rp, thresholds) === tier))
       .filter((s) => (gender === "all" ? true : s.gender === gender))
-      .filter((s) => (q ? (s.nickname || s.name).toLowerCase().includes(q) : true))
-      .sort((a, b) => b.rp - a.rp);
-  }, [students, group, tier, gender, query, thresholds]);
+      .sort((a, b) => b.rp - a.rp)
+      .map((s, i) => ({ student: s, rank: i + 1 }));
+  }, [students, group, tier, gender, thresholds]);
+
+  // 이름 검색은 표시만 거른다(각자의 순위는 그대로 유지).
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return ranked;
+    return ranked.filter(({ student }) => (student.nickname || student.name).toLowerCase().includes(q));
+  }, [ranked, query]);
 
   return (
     <div className="space-y-5">
@@ -131,13 +138,13 @@ export function Leaderboard({
               </tr>
             </thead>
             <tbody>
-              {filtered.map((s, i) => {
+              {visible.map(({ student: s, rank }) => {
                 const total = s.wins + s.losses;
                 const winRate = total === 0 ? 0 : Math.round((s.wins / total) * 100);
                 return (
                   <tr key={s.id} className="border-b border-border/30 transition-colors hover:bg-accent/40">
                     <td className="px-4 py-3 font-bold tabular-nums w-12 sm:w-16">
-                      <RankBadge rank={i + 1} />
+                      <RankBadge rank={rank} />
                     </td>
                     <td className="px-3 py-3 text-muted-foreground hidden sm:table-cell">{s.group || "-"}</td>
                     <td className="px-4 py-3">
@@ -190,7 +197,7 @@ export function Leaderboard({
                   </tr>
                 );
               })}
-              {filtered.length === 0 && (
+              {visible.length === 0 && (
                 <tr><td colSpan={7} className="px-4 py-10 text-center text-muted-foreground animate-pulse">조건에 맞는 선수가 없습니다.</td></tr>
               )}
             </tbody>

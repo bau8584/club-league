@@ -5,8 +5,7 @@ import { useTheme, THEMES, type ThemeName } from "@/lib/use-theme";
 const SWATCH: Record<ThemeName, { bg: string; a: string; b: string }> = {
   game:   { bg: "#120a1e", a: "#3df0ff", b: "#ff3df0" },
   black:  { bg: "#0a0a0a", a: "#c9d2dd", b: "#3a3a3a" },
-  modern: { bg: "#f7f5f1", a: "#2b2b2b", b: "#b9b3a8" },
-  glass:  { bg: "#bfeaf2", a: "#22b8d6", b: "#7c5cff" },
+  modern: { bg: "#f3efe9", a: "#2b2b2b", b: "#ffffff" },
   clay:   { bg: "#fff2e2", a: "#ff9d7a", b: "#9be7c4" },
 };
 
@@ -16,7 +15,7 @@ export function ThemePicker({ className }: { className?: string }) {
   return (
     <div className={cn("space-y-2", className)}>
       <div className="text-[11px] font-bold text-muted-foreground">화면 테마</div>
-      <div className="grid grid-cols-3 gap-1.5">
+      <div className="grid grid-cols-4 gap-1">
         {THEMES.map((t) => {
           const sw = SWATCH[t.value];
           const active = theme === t.value;
@@ -27,15 +26,15 @@ export function ThemePicker({ className }: { className?: string }) {
               onClick={() => setTheme(t.value)}
               title={t.hint}
               className={cn(
-                "flex flex-col items-center gap-1.5 rounded-xl border p-2 transition-all active:scale-95",
+                "flex flex-col items-center gap-1 rounded-lg border p-1 transition-all active:scale-95",
                 active ? "border-neon-blue ring-1 ring-neon-blue/50 bg-accent/40" : "border-border/50 hover:border-border"
               )}
             >
-              <span className="flex h-7 w-full items-center justify-center gap-1 rounded-md" style={{ background: sw.bg }}>
-                <span className="size-2.5 rounded-full" style={{ background: sw.a }} />
-                <span className="size-2.5 rounded-full" style={{ background: sw.b }} />
+              <span className="flex h-6 w-full items-center justify-center gap-0.5 rounded" style={{ background: sw.bg }}>
+                <span className="size-2 rounded-full" style={{ background: sw.a }} />
+                <span className="size-2 rounded-full" style={{ background: sw.b }} />
               </span>
-              <span className={cn("text-[11px] font-black", active ? "text-neon-blue" : "text-foreground")}>{t.label}</span>
+              <span className={cn("text-[10px] font-black leading-none", active ? "text-neon-blue" : "text-foreground")}>{t.label}</span>
             </button>
           );
         })}
