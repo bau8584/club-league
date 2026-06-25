@@ -12,7 +12,7 @@ import { SeasonSummary } from "@/components/league/SeasonSummary";
 import { Toaster } from "@/components/ui/sonner";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { Crown, Swords, Trophy, Users, Pencil, Target, LogOut, School, ShieldAlert, Award, BarChart3, ArrowLeft, Lock, MoreVertical } from "lucide-react";
+import { Crown, Swords, Trophy, Users, Pencil, Target, LogOut, School, ShieldAlert, Award, BarChart3, ArrowLeft, Lock, MoreVertical, Palette } from "lucide-react";
 import { MyAchievements } from "@/components/league/MyAchievements";
 import { ThemePicker } from "@/components/ThemePicker";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
@@ -238,11 +238,67 @@ function Index() {
                 </div>
               )}
 
+              {/* 데스크톱: 펼친 컨트롤 */}
+              <div className="hidden items-center gap-2 lg:flex">
+                {/* 역할 배지 */}
+                <span className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-bold",
+                  session.role === "TEACHER" ? "border-neon-green/40 bg-neon-green/5 text-neon-green" : "border-purple-500/40 bg-purple-500/5 text-purple-400"
+                )}>
+                  {session.role === "TEACHER" ? (isClassOwner ? "최고 관리자" : "관리자") : <><Users className="size-3.5" /> 회원</>}
+                </span>
+
+                {/* 시즌 */}
+                <div className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-card/60 px-2.5 py-1 text-xs">
+                  <span className="font-bold text-muted-foreground">시즌</span>
+                  <select
+                    value={currentViewSeason}
+                    onChange={(e) => changeViewSeason(e.target.value)}
+                    className="cursor-pointer bg-transparent font-bold text-foreground focus:outline-none"
+                  >
+                    <option value="현재 시즌" className="bg-background text-foreground">{currentSeason} (현재)</option>
+                    {seasonList && seasonList.map((season) => (
+                      <option key={season} value={season} className="bg-background text-foreground">{season}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* 등록 선수 */}
+                <div className="flex items-center gap-1.5 rounded-full border border-border/60 bg-card/60 px-3 py-1.5 text-xs">
+                  <Users className="size-3.5 text-neon-green" />
+                  <span className="text-muted-foreground">선수</span>
+                  <b className="text-neon-green">{students.length}</b>
+                </div>
+
+                {/* 테마 */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button title="화면 테마" className="flex size-9 items-center justify-center rounded-lg border border-border/60 bg-card/60 text-muted-foreground hover:text-neon-blue hover:border-neon-blue/40 active:scale-95 transition-all">
+                      <Palette className="size-4" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-60 p-3"><ThemePicker /></DropdownMenuContent>
+                </DropdownMenu>
+
+                {/* 리그 로비 */}
+                <button onClick={() => { window.location.href = "/"; }} title="리그 로비로"
+                  className="flex size-9 items-center justify-center rounded-lg border border-border/60 bg-card/60 text-muted-foreground hover:text-neon-blue hover:border-neon-blue/40 active:scale-95 transition-all">
+                  <ArrowLeft className="size-4" />
+                </button>
+
+                {/* 로그아웃 */}
+                <button onClick={logoutUser} title="로그아웃"
+                  className="flex items-center gap-2 rounded-lg border border-border/60 bg-card/60 px-3 py-1.5 text-xs font-bold text-muted-foreground hover:text-destructive hover:border-destructive/40 active:scale-95 transition-all">
+                  <LogOut className="size-4" /> 로그아웃
+                </button>
+              </div>
+
+              {/* 모바일: 케밥 메뉴 */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
                     title="메뉴"
-                    className="flex size-9 items-center justify-center rounded-lg border border-border/60 bg-card/60 text-muted-foreground hover:text-neon-blue hover:border-neon-blue/40 active:scale-95 transition-all"
+                    className="flex size-9 items-center justify-center rounded-lg border border-border/60 bg-card/60 text-muted-foreground hover:text-neon-blue hover:border-neon-blue/40 active:scale-95 transition-all lg:hidden"
                   >
                     <MoreVertical className="size-5" />
                   </button>

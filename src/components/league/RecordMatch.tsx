@@ -810,26 +810,26 @@ export function RecordMatch({
         className={cn(
           "relative overflow-hidden rounded-xl border p-5 flex flex-col justify-between h-full transition-all",
           isPromoted 
-            ? `bg-[#090d16]/95 border-2 animate-glow-${p.finalTier.toLowerCase()}` 
-            : "border-cyan-500/20 bg-[#090d16]/95 glow-primary animate-glow-pulse"
+            ? `bg-surface-deep border-2 animate-glow-${p.finalTier.toLowerCase()}` 
+            : "border-neon-blue/20 bg-surface-deep glow-primary animate-glow-pulse"
         )}
       >
         {/* Futuristic Grid Overlay inside card */}
         <div className="absolute inset-0 bg-[linear-gradient(rgba(18,24,38,0.12)_1px,transparent_1px),linear-gradient(90deg,rgba(18,24,38,0.12)_1px,transparent_1px)] bg-[size:12px_12px] pointer-events-none opacity-40" />
-        <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-cyan-500/10 to-transparent transform rotate-45 translate-x-12 -translate-y-12 pointer-events-none" />
+        <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-neon-blue/10 to-transparent transform rotate-45 translate-x-12 -translate-y-12 pointer-events-none" />
 
         {/* Player Header */}
-        <div className="relative z-10 mb-4 pb-3 border-b border-[#1b253b] flex items-center justify-between">
+        <div className="relative z-10 mb-4 pb-3 border-b border-surface-line flex items-center justify-between">
           <div>
             <div className="flex items-center gap-1.5">
               <GenderMark gender={p.gender} className="size-4 text-[10px]" />
-              <span className="text-base font-extrabold tracking-tight text-white">{p.name}</span>
+              <span className="text-base font-extrabold tracking-tight text-foreground">{p.name}</span>
               {isPromoted && (
                 <span className={cn(
-                  "inline-flex items-center gap-0.5 rounded-full text-white font-extrabold text-[9px] px-2 py-0.5 animate-bounce shrink-0 shadow-lg",
+                  "inline-flex items-center gap-0.5 rounded-full text-foreground font-extrabold text-[9px] px-2 py-0.5 animate-bounce shrink-0 shadow-lg",
                   p.finalTier === "Gold" ? "bg-gradient-to-r from-amber-500 to-orange-500" :
                   p.finalTier === "Platinum" ? "bg-gradient-to-r from-purple-500 to-indigo-500" :
-                  p.finalTier === "Diamond" ? "bg-gradient-to-r from-cyan-500 to-blue-500" :
+                  p.finalTier === "Diamond" ? "bg-gradient-to-r from-neon-blue to-blue-500" :
                   "bg-gradient-to-r from-gray-500 to-slate-700"
                 )}>
                   ▲ 승급! 🎉
@@ -845,7 +845,7 @@ export function RecordMatch({
               "text-[9px] font-black bg-background border px-2.5 py-0.5 rounded tracking-wider",
               isPromoted 
                 ? `${playerTierDetails?.color} border-white/20` 
-                : "text-cyan-400 border-cyan-500/30"
+                : "text-neon-blue border-neon-blue/30"
             )}>
               WINNER
             </span>
@@ -863,7 +863,7 @@ export function RecordMatch({
                 <div
                   key={item.id}
                   className={cn(
-                    "flex items-center justify-between p-2.5 rounded-lg border bg-[#0d1222]/80 border-[#1c273e] transition-all duration-200",
+                    "flex items-center justify-between p-2.5 rounded-lg border bg-surface-deep border-[#1c273e] transition-all duration-200",
                     isVisible 
                       ? cn("opacity-100 scale-100 animate-stamp-pop border-[#1c273e]", isPromoted ? "shadow-md" : "glow-primary") 
                       : "opacity-0 scale-150 pointer-events-none"
@@ -873,19 +873,19 @@ export function RecordMatch({
                     <div className={cn(
                       "flex items-center justify-center size-7 rounded border shrink-0",
                       isPromoted 
-                        ? "bg-white/5 border-white/10 text-white" 
-                        : "bg-cyan-500/10 border-cyan-500/20 text-cyan-400"
+                        ? "bg-white/5 border-white/10 text-foreground" 
+                        : "bg-neon-blue/10 border-neon-blue/20 text-neon-blue"
                     )}>
                       <span className="text-sm">{item.icon}</span>
                     </div>
                     <div className="min-w-0">
-                      <div className="text-xs font-bold text-white truncate">{item.label}</div>
+                      <div className="text-xs font-bold text-foreground truncate">{item.label}</div>
                       <div className="text-[9px] text-muted-foreground truncate">{item.desc}</div>
                     </div>
                   </div>
                   <div className={cn(
                     "text-xs font-extrabold font-mono shrink-0",
-                    isPromoted ? playerTierDetails?.color : "text-cyan-400"
+                    isPromoted ? playerTierDetails?.color : "text-neon-blue"
                   )}>
                     +{item.value} RP
                   </div>
@@ -896,12 +896,12 @@ export function RecordMatch({
         </div>
 
         {/* Total RP Count-up Section */}
-        <div className="relative z-10 mt-4 pt-3 border-t border-[#1b253b]">
+        <div className="relative z-10 mt-4 pt-3 border-t border-surface-line">
           <div className={cn(
             "flex items-center justify-between px-3 py-3 rounded-lg border",
             isPromoted 
               ? "bg-gradient-to-r from-card/30 via-[#101729] to-card/30" 
-              : "bg-gradient-to-r from-cyan-950/30 via-[#101729] to-cyan-950/30 border-cyan-500/20"
+              : "bg-gradient-to-r from-neon-blue/30 via-[#101729] to-neon-blue/30 border-neon-blue/20"
           )}
             style={isPromoted && playerTierDetails ? { borderColor: playerTierDetails.colorHex + '30' } : undefined}
           >
@@ -912,7 +912,7 @@ export function RecordMatch({
                 <span className="text-[9px] text-muted-foreground">➔</span>
                 <span className={cn(
                   "text-[10px] font-bold font-mono",
-                  isPromoted ? playerTierDetails?.color : "text-cyan-400"
+                  isPromoted ? playerTierDetails?.color : "text-neon-blue"
                 )}>
                   최종 {Math.min(10000, p.prevRp + Math.max(0, Math.floor(p.rpDelta * countUpProgress)))}
                 </span>
@@ -920,7 +920,7 @@ export function RecordMatch({
             </div>
             <div className={cn(
               "text-xl font-black font-mono tracking-tight",
-              isPromoted ? `${playerTierDetails?.color}` : "text-cyan-400 text-glow-blue",
+              isPromoted ? `${playerTierDetails?.color}` : "text-neon-blue text-glow-blue",
               countUpDone && "scale-105 transition-all duration-300"
             )}
               style={isPromoted && playerTierDetails ? { textShadow: `0 0 12px ${playerTierDetails.colorHex}` } : undefined}
@@ -936,77 +936,77 @@ export function RecordMatch({
   const renderMatchSummary = () => {
     if (!resultData) return null;
     return (
-      <div className="relative overflow-hidden rounded-xl border border-[#1b253b] bg-[#070a12]/95 p-5 shadow-[0_0_30px_rgba(0,0,0,0.5)] flex flex-col justify-between h-full">
+      <div className="relative overflow-hidden rounded-xl border border-surface-line bg-surface-deep p-5 shadow-[0_0_30px_rgba(0,0,0,0.5)] flex flex-col justify-between h-full">
         {/* Grid Background Effect */}
         <div className="absolute inset-0 bg-[linear-gradient(rgba(18,24,38,0.12)_1px,transparent_1px),linear-gradient(90deg,rgba(18,24,38,0.12)_1px,transparent_1px)] bg-[size:12px_12px] pointer-events-none opacity-40" />
 
-        <div className="relative z-10 text-center text-xs font-black uppercase tracking-[0.2em] text-[#5b6f95] mb-4 pb-2 border-b border-[#1b253b]">
+        <div className="relative z-10 text-center text-xs font-black uppercase tracking-[0.2em] text-soft mb-4 pb-2 border-b border-surface-line">
           MATCH SUMMARY
         </div>
 
         {/* Score Visualizer */}
-        <div className="relative z-10 flex items-center justify-center gap-6 py-4 mb-4 rounded-lg bg-surface-deep border border-[#172036] max-w-xs mx-auto w-full">
+        <div className="relative z-10 flex items-center justify-center gap-6 py-4 mb-4 rounded-lg bg-surface-deep border border-surface-line max-w-xs mx-auto w-full">
           <div className="text-right flex flex-col items-center min-w-[70px]">
             <span className="text-[10px] text-[#8fa0c4] font-black truncate max-w-[80px]">{resultData.winner.name}</span>
-            <span className="text-2xl font-black text-cyan-400 font-mono mt-0.5">{resultData.winner.score}</span>
+            <span className="text-2xl font-black text-neon-blue font-mono mt-0.5">{resultData.winner.score}</span>
           </div>
-          <div className="text-sm font-black text-[#4f6285] font-mono px-2 py-0.5 rounded bg-[#090c15] border border-[#1b253b] skew-x-[-12deg]">VS</div>
+          <div className="text-sm font-black text-[#4f6285] font-mono px-2 py-0.5 rounded bg-surface-deep border border-surface-line skew-x-[-12deg]">VS</div>
           <div className="text-left flex flex-col items-center min-w-[70px]">
             <span className="text-[10px] text-[#8fa0c4] font-black truncate max-w-[80px]">{resultData.loser.name}</span>
-            <span className="text-2xl font-black text-rose-500 font-mono mt-0.5">{resultData.loser.score}</span>
+            <span className="text-2xl font-black text-loss font-mono mt-0.5">{resultData.loser.score}</span>
           </div>
         </div>
 
         {/* Player outcomes list */}
         <div className="relative z-10 space-y-2.5">
           {/* Winner 1 */}
-          <div className="flex items-center justify-between p-2.5 rounded-lg bg-cyan-950/20 border border-cyan-500/20 transition-all">
+          <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface-deep border border-neon-blue/20 transition-all">
             <div className="flex items-center gap-2 min-w-0">
-              <span className="text-[9px] font-black text-cyan-400 bg-cyan-950 border border-cyan-500/30 px-1.5 py-0.5 rounded shrink-0">WIN</span>
-              <span className="text-xs font-bold text-white truncate">{resultData.winner.name}</span>
+              <span className="text-[9px] font-black text-neon-blue bg-surface-deep border border-neon-blue/30 px-1.5 py-0.5 rounded shrink-0">WIN</span>
+              <span className="text-xs font-bold text-foreground truncate">{resultData.winner.name}</span>
             </div>
             <div className="flex items-center gap-2 shrink-0">
               <TierBadge rp={resultData.winner.finalRp} />
-              <span className="text-xs font-extrabold text-cyan-400 font-mono">+{resultData.winner.rpDelta} RP</span>
+              <span className="text-xs font-extrabold text-neon-blue font-mono">+{resultData.winner.rpDelta} RP</span>
             </div>
           </div>
 
           {/* Winner 2 (if doubles) */}
           {resultData.winner2 && (
-            <div className="flex items-center justify-between p-2.5 rounded-lg bg-cyan-950/20 border border-cyan-500/20 transition-all">
+            <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface-deep border border-neon-blue/20 transition-all">
               <div className="flex items-center gap-2 min-w-0">
-                <span className="text-[9px] font-black text-cyan-400 bg-cyan-950 border border-cyan-500/30 px-1.5 py-0.5 rounded shrink-0">WIN</span>
-                <span className="text-xs font-bold text-white truncate">{resultData.winner2.name}</span>
+                <span className="text-[9px] font-black text-neon-blue bg-surface-deep border border-neon-blue/30 px-1.5 py-0.5 rounded shrink-0">WIN</span>
+                <span className="text-xs font-bold text-foreground truncate">{resultData.winner2.name}</span>
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <TierBadge rp={resultData.winner2.finalRp} />
-                <span className="text-xs font-extrabold text-cyan-400 font-mono">+{resultData.winner2.rpDelta} RP</span>
+                <span className="text-xs font-extrabold text-neon-blue font-mono">+{resultData.winner2.rpDelta} RP</span>
               </div>
             </div>
           )}
 
           {/* Loser 1 */}
-          <div className="flex items-center justify-between p-2.5 rounded-lg bg-rose-950/10 border border-rose-500/20 transition-all">
+          <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface-deep border border-loss/20 transition-all">
             <div className="flex items-center gap-2 min-w-0">
-              <span className="text-[9px] font-black text-rose-400 bg-rose-950 border border-rose-500/30 px-1.5 py-0.5 rounded shrink-0">LOSE</span>
-              <span className="text-xs font-bold text-white truncate">{resultData.loser.name}</span>
+              <span className="text-[9px] font-black text-loss bg-surface-deep border border-loss/30 px-1.5 py-0.5 rounded shrink-0">LOSE</span>
+              <span className="text-xs font-bold text-foreground truncate">{resultData.loser.name}</span>
             </div>
             <div className="flex items-center gap-2 shrink-0">
               <TierBadge rp={resultData.loser.finalRp} />
-              <span className="text-xs font-extrabold text-rose-500 font-mono">{resultData.loser.rpDelta} RP</span>
+              <span className="text-xs font-extrabold text-loss font-mono">{resultData.loser.rpDelta} RP</span>
             </div>
           </div>
 
           {/* Loser 2 (if doubles) */}
           {resultData.loser2 && (
-            <div className="flex items-center justify-between p-2.5 rounded-lg bg-rose-950/10 border border-rose-500/20 transition-all">
+            <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface-deep border border-loss/20 transition-all">
               <div className="flex items-center gap-2 min-w-0">
-                <span className="text-[9px] font-black text-rose-400 bg-rose-950 border border-rose-500/30 px-1.5 py-0.5 rounded shrink-0">LOSE</span>
-                <span className="text-xs font-bold text-white truncate">{resultData.loser2.name}</span>
+                <span className="text-[9px] font-black text-loss bg-surface-deep border border-loss/30 px-1.5 py-0.5 rounded shrink-0">LOSE</span>
+                <span className="text-xs font-bold text-foreground truncate">{resultData.loser2.name}</span>
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <TierBadge rp={resultData.loser2.finalRp} />
-                <span className="text-xs font-extrabold text-rose-500 font-mono">{resultData.loser2.rpDelta} RP</span>
+                <span className="text-xs font-extrabold text-loss font-mono">{resultData.loser2.rpDelta} RP</span>
               </div>
             </div>
           )}
@@ -1164,10 +1164,10 @@ export function RecordMatch({
               className={cn(
                 "relative overflow-hidden rounded-xl border p-3 md:p-3.5 flex flex-col justify-between gap-2.5 transition-all duration-300",
                 isLosing 
-                  ? "border-rose-950/40 bg-black/40" 
+                  ? "border-loss/30 bg-surface-panel" 
                   : isPromoted
-                    ? `bg-cyan-950/20 border-cyan-500/40 shadow-[0_0_15px_rgba(6,182,212,0.15)]`
-                    : "border-cyan-950/40 bg-black/40"
+                    ? `bg-surface-deep border-neon-blue/40 shadow-[0_0_15px_rgba(6,182,212,0.15)]`
+                    : "border-surface-line bg-surface-panel"
               )}
             >
               <div className="flex items-center justify-between gap-2 relative z-10">
@@ -1181,7 +1181,7 @@ export function RecordMatch({
                     {/* Player Name */}
                     <div className="flex items-center gap-1">
                       <GenderMark gender={p.gender} className="size-3 text-[9px]" />
-                      <span className="text-sm font-extrabold text-white truncate">{p.name}</span>
+                      <span className="text-sm font-extrabold text-foreground truncate">{p.name}</span>
                     </div>
                     
                     {/* Group & Details */}
@@ -1193,7 +1193,7 @@ export function RecordMatch({
                     <div className="text-[10px] text-soft font-mono mt-0.5 flex items-center gap-1">
                       <span>{getTierLabelInKorean(p.prevTier)} {prevSub}</span>
                       <span>➔</span>
-                      <span className={isLosing ? "text-rose-400 font-bold" : "text-cyan-400 font-bold"}>
+                      <span className={isLosing ? "text-loss font-bold" : "text-neon-blue font-bold"}>
                         {getTierLabelInKorean(p.finalTier)} {finalSub}
                       </span>
                     </div>
@@ -1205,8 +1205,8 @@ export function RecordMatch({
                   <span className={cn(
                     "text-base font-black font-mono tracking-tight",
                     isLosing 
-                      ? "text-rose-500" 
-                      : "text-emerald-400 text-glow-emerald"
+                      ? "text-loss" 
+                      : "text-win text-glow-emerald"
                   )}>
                     {p.rpDelta >= 0 ? `+${p.rpDelta}` : p.rpDelta} RP
                   </span>
@@ -1223,8 +1223,8 @@ export function RecordMatch({
                 <div className={cn(
                   "relative z-10 text-[9px] font-black uppercase px-2 py-0.5 rounded flex items-center gap-1 animate-pulse w-fit",
                   isMajorRankChange 
-                    ? "bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border border-cyan-500/35 text-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.15)]"
-                    : "bg-cyan-500/10 border border-cyan-500/10 text-cyan-300"
+                    ? "bg-gradient-to-r from-neon-blue/20 to-blue-500/20 border border-neon-blue/35 text-neon-blue shadow-[0_0_10px_rgba(6,182,212,0.15)]"
+                    : "bg-neon-blue/10 border border-neon-blue/10 text-neon-blue"
                 )}>
                   <Sparkles className="size-3 shrink-0" />
                   <span>
@@ -1237,8 +1237,8 @@ export function RecordMatch({
               )}
 
               {hasRankDown && (
-                <div className="relative z-10 text-[9px] font-black uppercase px-2 py-0.5 rounded bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center gap-1 w-fit">
-                  <span className="size-1 rounded-full bg-rose-500 animate-ping" />
+                <div className="relative z-10 text-[9px] font-black uppercase px-2 py-0.5 rounded bg-loss/10 border border-loss/20 text-loss flex items-center gap-1 w-fit">
+                  <span className="size-1 rounded-full bg-loss animate-ping" />
                   <span>티어/단계 하락</span>
                 </div>
               )}
@@ -1247,7 +1247,7 @@ export function RecordMatch({
               {rewards.length > 0 && (
                 <div className={cn(
                   "relative z-10 border-t pt-2 mt-0.5",
-                  isLosing ? "border-rose-500/10" : "border-cyan-500/10"
+                  isLosing ? "border-loss/10" : "border-neon-blue/10"
                 )}>
                   <div className="text-[9px] uppercase tracking-wider text-muted-foreground font-bold mb-1">
                     {isLosing ? "변동 상세 내역" : "획득 보너스"}
@@ -1261,14 +1261,14 @@ export function RecordMatch({
                           className={cn(
                             "inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm border",
                             isNegative 
-                              ? "bg-rose-500/10 text-rose-300 border-rose-500/20" 
-                              : "bg-cyan-500/10 text-cyan-300 border-cyan-500/20"
+                              ? "bg-loss/10 text-loss border-loss/20" 
+                              : "bg-neon-blue/10 text-neon-blue border-neon-blue/20"
                           )}
                         >
                           <span>{item.icon} {item.label}</span>
                           <span className={cn(
                             "font-mono",
-                            isNegative ? "text-rose-400" : "text-cyan-400"
+                            isNegative ? "text-loss" : "text-neon-blue"
                           )}>
                             {isNegative ? "" : "+"}{item.value}
                           </span>
@@ -1283,11 +1283,11 @@ export function RecordMatch({
         };
 
         return (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-in fade-in duration-300">
-            <div 
+          <div className="fixed inset-0 z-[100] flex justify-center overflow-y-auto bg-background/90 backdrop-blur-md p-4 animate-in fade-in duration-300">
+            <div
               className={cn(
-                "relative w-full max-w-5xl overflow-hidden border bg-[#06080f] rounded-2xl p-4 md:p-6 flex flex-col items-center animate-in zoom-in duration-300",
-                isRankUp ? `animate-glow-${promotedTier.toLowerCase()}` : "border-cyan-500/30 glow-primary animate-glow-pulse"
+                "relative my-auto w-full max-w-5xl overflow-hidden border bg-surface-deep rounded-2xl p-4 md:p-6 flex flex-col items-center animate-in zoom-in duration-300",
+                isRankUp ? `animate-glow-${promotedTier.toLowerCase()}` : "border-neon-blue/30 glow-primary animate-glow-pulse"
               )}
             >
               {/* Embedded custom CSS */}
@@ -1501,7 +1501,7 @@ export function RecordMatch({
                       )}>
                         TIER UPGRADE!
                       </h2>
-                      <p className="text-xs text-white max-w-lg leading-relaxed font-black bg-[#0c1a2e]/60 px-5 py-1.5 rounded-full border border-cyan-500/20 shadow-lg">
+                      <p className="text-xs text-foreground max-w-lg leading-relaxed font-black bg-surface-deep px-5 py-1.5 rounded-full border border-neon-blue/20 shadow-lg">
                         🎉 축하합니다! <span className={details.color}>{p.name}</span> 선수가 <span className={details.color}>{tierNameK}</span> 티어로 승급했습니다! 🎉
                       </p>
                     </div>
@@ -1515,14 +1515,14 @@ export function RecordMatch({
                   
                   return (
                     <div className="relative z-10 flex flex-col items-center text-center mb-4 shrink-0 animate-scale-up-bounce">
-                      <div className="flex size-10 items-center justify-center rounded-full bg-cyan-500/15 border border-cyan-500/30 text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.2)] mb-2 shrink-0">
-                        <Sparkles className="size-5 text-cyan-400 animate-spin" style={{ animationDuration: '6s' }} />
+                      <div className="flex size-10 items-center justify-center rounded-full bg-neon-blue/15 border border-neon-blue/30 text-neon-blue shadow-[0_0_15px_rgba(6,182,212,0.2)] mb-2 shrink-0">
+                        <Sparkles className="size-5 text-neon-blue animate-spin" style={{ animationDuration: '6s' }} />
                       </div>
-                      <h2 className="text-xl md:text-2xl font-black uppercase tracking-[0.2em] text-cyan-400 animate-glow-victory mb-1">
+                      <h2 className="text-xl md:text-2xl font-black uppercase tracking-[0.2em] text-neon-blue animate-glow-victory mb-1">
                         DIVISION UP
                       </h2>
-                      <p className="text-[11px] text-soft font-bold bg-[#09101f] px-4 py-1.5 rounded-full border border-border/30 shadow-lg">
-                        실력이 상승하여 <span className="text-cyan-400 font-black">{p.name}</span> 선수가 <span className="text-cyan-300 font-black">{tierNameK} {finalSub}</span> 단계에 도달했습니다.
+                      <p className="text-[11px] text-soft font-bold bg-surface-deep px-4 py-1.5 rounded-full border border-border/30 shadow-lg">
+                        실력이 상승하여 <span className="text-neon-blue font-black">{p.name}</span> 선수가 <span className="text-neon-blue font-black">{tierNameK} {finalSub}</span> 단계에 도달했습니다.
                       </p>
                     </div>
                   );
@@ -1530,13 +1530,13 @@ export function RecordMatch({
 
                 return (
                   <div className="relative z-10 flex flex-col items-center text-center mb-4 shrink-0 animate-scale-up-bounce">
-                    <div className="flex size-10 items-center justify-center rounded-full bg-cyan-500/15 border border-cyan-500/30 text-cyan-400 glow-primary mb-2 shrink-0">
-                      <Trophy className="size-5 text-cyan-400 animate-bounce" />
+                    <div className="flex size-10 items-center justify-center rounded-full bg-neon-blue/15 border border-neon-blue/30 text-neon-blue glow-primary mb-2 shrink-0">
+                      <Trophy className="size-5 text-neon-blue animate-bounce" />
                     </div>
-                    <h2 className="text-xl md:text-2xl font-black uppercase tracking-[0.25em] text-white animate-glow-victory mb-0.5">
+                    <h2 className="text-xl md:text-2xl font-black uppercase tracking-[0.25em] text-foreground animate-glow-victory mb-0.5">
                       MATCH RECORDED
                     </h2>
-                    <p className="text-[10px] text-[#5b6f95] max-w-md leading-relaxed uppercase tracking-wider">
+                    <p className="text-[10px] text-soft max-w-md leading-relaxed uppercase tracking-wider">
                       포인트 변동 내역 및 획득 결과
                     </p>
                   </div>
@@ -1547,17 +1547,17 @@ export function RecordMatch({
               <div className="relative z-10 w-full flex flex-col md:flex-row items-stretch gap-4 md:gap-6 px-1 md:px-4 mt-1">
                 
                 {/* Left Panel: WINNERS (Cyan/Blue Theme) */}
-                <div className="flex-1 rounded-2xl border border-cyan-500/30 bg-[#041121]/90 shadow-[0_0_40px_rgba(6,182,212,0.15)] p-4 md:p-5 flex flex-col justify-between transition-all duration-300 relative overflow-hidden">
-                  <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-cyan-500 to-blue-500" />
-                  <div className="absolute -right-10 -top-10 size-40 bg-cyan-500/5 rounded-full blur-2xl pointer-events-none" />
+                <div className="flex-1 rounded-2xl border border-neon-blue/30 bg-surface-deep shadow-[0_0_40px_rgba(6,182,212,0.15)] p-4 md:p-5 flex flex-col justify-between transition-all duration-300 relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-neon-blue to-blue-500" />
+                  <div className="absolute -right-10 -top-10 size-40 bg-neon-blue/5 rounded-full blur-2xl pointer-events-none" />
                   
                   <div>
                     {/* Header */}
-                    <div className="flex items-center justify-between mb-3 border-b border-cyan-500/10 pb-2">
-                      <span className="text-lg md:text-xl font-black text-cyan-400 tracking-widest uppercase text-glow-blue animate-pulse">
+                    <div className="flex items-center justify-between mb-3 border-b border-neon-blue/10 pb-2">
+                      <span className="text-lg md:text-xl font-black text-neon-blue tracking-widest uppercase text-glow-blue animate-pulse">
                         VICTORY
                       </span>
-                      <span className="text-xs font-black text-white bg-cyan-950 border border-cyan-500/30 px-3 py-1 rounded-full uppercase tracking-wider">
+                      <span className="text-xs font-black text-foreground bg-surface-deep border border-neon-blue/30 px-3 py-1 rounded-full uppercase tracking-wider">
                         {isDoubles 
                           ? (resultData.aWon ? "팀 A" : "팀 B") 
                           : "WINNER"
@@ -1579,37 +1579,37 @@ export function RecordMatch({
 
                 {/* VS Center Divider with Scores */}
                 <div className="flex md:flex-col items-center justify-center gap-3 py-4 md:py-0 shrink-0 select-none">
-                  <div className="h-0.5 w-12 md:w-0.5 md:h-16 bg-gradient-to-r md:bg-gradient-to-b from-transparent via-cyan-500 to-transparent opacity-50" />
+                  <div className="h-0.5 w-12 md:w-0.5 md:h-16 bg-gradient-to-r md:bg-gradient-to-b from-transparent via-neon-blue to-transparent opacity-50" />
                   
                   {/* Winner Score */}
-                  <span className="text-3xl font-black text-cyan-400 font-mono text-glow-blue animate-pulse">
+                  <span className="text-3xl font-black text-neon-blue font-mono text-glow-blue animate-pulse">
                     {resultData.winner.score}
                   </span>
                   
-                  <div className="size-10 rounded-full bg-[#0a0f1d] border border-cyan-500/40 flex items-center justify-center text-sm font-black text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.3)] skew-x-[-12deg]">
+                  <div className="size-10 rounded-full bg-surface-deep border border-neon-blue/40 flex items-center justify-center text-sm font-black text-neon-blue shadow-[0_0_15px_rgba(6,182,212,0.3)] skew-x-[-12deg]">
                     VS
                   </div>
                   
                   {/* Loser Score */}
-                  <span className="text-3xl font-black text-rose-500 font-mono">
+                  <span className="text-3xl font-black text-loss font-mono">
                     {resultData.loser.score}
                   </span>
                   
-                  <div className="h-0.5 w-12 md:w-0.5 md:h-16 bg-gradient-to-r md:bg-gradient-to-b from-transparent via-rose-500 to-transparent opacity-50" />
+                  <div className="h-0.5 w-12 md:w-0.5 md:h-16 bg-gradient-to-r md:bg-gradient-to-b from-transparent via-loss to-transparent opacity-50" />
                 </div>
 
                 {/* Right Panel: LOSERS (Red/Rose Theme) */}
-                <div className="flex-1 rounded-2xl border border-rose-950/30 bg-[#1c0d12]/90 shadow-[0_0_40px_rgba(244,63,94,0.06)] p-4 md:p-5 flex flex-col justify-between transition-all duration-300 relative overflow-hidden">
-                  <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-rose-700 to-red-500" />
-                  <div className="absolute -left-10 -top-10 size-40 bg-rose-500/5 rounded-full blur-2xl pointer-events-none" />
+                <div className="flex-1 rounded-2xl border border-loss/30 bg-surface-deep shadow-[0_0_40px_rgba(244,63,94,0.06)] p-4 md:p-5 flex flex-col justify-between transition-all duration-300 relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-loss to-loss" />
+                  <div className="absolute -left-10 -top-10 size-40 bg-loss/5 rounded-full blur-2xl pointer-events-none" />
                   
                   <div>
                     {/* Header */}
-                    <div className="flex items-center justify-between mb-3 border-b border-rose-950/20 pb-2">
-                      <span className="text-lg md:text-xl font-black text-rose-500 tracking-widest uppercase">
+                    <div className="flex items-center justify-between mb-3 border-b border-loss/30 pb-2">
+                      <span className="text-lg md:text-xl font-black text-loss tracking-widest uppercase">
                         DEFEAT
                       </span>
-                      <span className="text-xs font-black text-muted-foreground bg-rose-950/20 border border-rose-950 px-3 py-1 rounded-full uppercase tracking-wider">
+                      <span className="text-xs font-black text-muted-foreground bg-surface-deep border border-loss/30 px-3 py-1 rounded-full uppercase tracking-wider">
                         {isDoubles 
                           ? (resultData.aWon ? "팀 B" : "팀 A") 
                           : "LOSER"
@@ -1639,10 +1639,10 @@ export function RecordMatch({
                     setResultData(null);
                   }}
                   className={cn(
-                    "h-12 px-12 text-white font-black uppercase tracking-widest active:scale-95 transition-all w-full sm:w-auto rounded-lg border",
+                    "h-12 px-12 text-foreground font-black uppercase tracking-widest active:scale-95 transition-all w-full sm:w-auto rounded-lg border",
                     isRankUp 
-                      ? "bg-gradient-to-r from-emerald-600 via-emerald-500 to-emerald-600 hover:from-emerald-500 hover:to-emerald-400 border-emerald-400/40 shadow-[0_0_25px_rgba(16,185,129,0.35)]"
-                      : "bg-gradient-to-r from-cyan-600 via-cyan-500 to-cyan-600 hover:from-cyan-500 hover:to-cyan-400 border-cyan-400/40 glow-primary"
+                      ? "bg-gradient-to-r from-win via-win to-win hover:from-win hover:to-win border-win/40 shadow-[0_0_25px_rgba(16,185,129,0.35)]"
+                      : "bg-gradient-to-r from-neon-blue via-neon-blue to-neon-blue hover:from-neon-blue hover:to-neon-blue border-neon-blue/40 glow-primary"
                   )}
                 >
                   확인 (다음 경기)
@@ -1659,8 +1659,8 @@ export function RecordMatch({
         const targetStudent = students.find((s) => s.id === genderTargetId);
         if (!targetStudent) return null;
         return (
-          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-in fade-in duration-300">
-            <div className="relative w-full max-w-md overflow-hidden border border-neon-blue/30 bg-background/95 rounded-2xl p-6 md:p-8 glow-primary flex flex-col items-center animate-in zoom-in duration-300">
+          <div className="fixed inset-0 z-[110] flex justify-center overflow-y-auto bg-background/90 backdrop-blur-md p-4 animate-in fade-in duration-300">
+            <div className="relative my-auto w-full max-w-md overflow-hidden border border-neon-blue/30 bg-background/95 rounded-2xl p-6 md:p-8 glow-primary flex flex-col items-center animate-in zoom-in duration-300">
               {/* Grid Background Effect */}
               <div className="absolute inset-0 bg-[linear-gradient(rgba(18,18,18,0.2)_1px,transparent_1px),linear-gradient(90deg,rgba(18,18,18,0.2)_1px,transparent_1px)] bg-[size:20px_20px] pointer-events-none opacity-20" />
               
@@ -1761,18 +1761,18 @@ function Slot({ accent, label, player, active, locked, onOpen, onClear, threshol
   const a = ACCENT[accent];
   if (player) {
     return (
-      <div className={cn("relative rounded-xl border p-3", a.fill)}>
+      <div className={cn("relative rounded-xl border p-3 text-center", a.fill)}>
         {locked ? (
           <span className="absolute top-1.5 right-1.5 rounded-md bg-neon-blue/20 px-1.5 py-0.5 text-[10px] font-bold text-neon-blue">나</span>
         ) : (
-          <button onClick={onClear} title="선수 변경" className="absolute top-1.5 right-1.5 rounded-md bg-black/30 px-1.5 py-0.5 text-[10px] font-bold text-white/70 hover:text-white cursor-pointer">✕</button>
+          <button onClick={onClear} title="선수 변경" className="absolute top-1.5 right-1.5 rounded-md bg-black/30 px-1.5 py-0.5 text-[10px] font-bold text-foreground/70 hover:text-foreground cursor-pointer">✕</button>
         )}
         <div className="text-[10px] text-muted-foreground">{label}{player.group ? ` · ${player.group}` : ""}</div>
-        <div className="mt-1 flex items-center gap-1.5 min-w-0">
+        <div className="mt-1.5 flex items-center justify-center gap-1.5 min-w-0">
           <GenderMark gender={player.gender} className="size-4 text-[10px] shrink-0" />
-          <span className={cn("team-name truncate text-base font-black", a.text)}>{playerLabel(player)}</span>
+          <span className={cn("team-name truncate text-lg sm:text-xl font-black leading-tight", a.text)}>{playerLabel(player)}</span>
         </div>
-        <div className="mt-1.5"><TierBadge rp={player.rp} thresholds={thresholds} /></div>
+        <div className="mt-2 flex justify-center"><TierBadge rp={player.rp} thresholds={thresholds} /></div>
       </div>
     );
   }
@@ -1963,8 +1963,9 @@ function GeometricRankCrest({
   const finalTier = tier as TierName;
   const sub = getTierSubdivision(rp, thresholds);
   
-  const filterCls = isLosing 
-    ? "grayscale opacity-40 brightness-75" 
+  // 패배: 완전 무채색(실버 오해) 대신 티어 색은 유지하고 채도·투명도만 낮춰 "패배" 표시.
+  const filterCls = isLosing
+    ? "saturate-50 opacity-70"
     : "animate-pulse hover:scale-115 transition-transform duration-300";
 
   const shadowCls = isLosing
@@ -1984,7 +1985,7 @@ function GeometricRankCrest({
       <div 
         style={{ width: size, height: size }}
         className={cn(
-          "flex items-center justify-center rounded-lg border border-cyan-500/20 bg-cyan-950/20 font-black text-xs text-cyan-400 select-none uppercase tracking-tighter shrink-0",
+          "flex items-center justify-center rounded-lg border border-neon-blue/20 bg-surface-deep font-black text-xs text-neon-blue select-none uppercase tracking-tighter shrink-0",
           filterCls
         )}
       >
