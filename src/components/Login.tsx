@@ -12,7 +12,9 @@ export function Login() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
+          // 현재 페이지(초대 링크 /join?classId=... 포함)로 복귀해야
+          // 로그인 후 자동으로 초대 흐름이 이어진다. (origin만 쓰면 초대 컨텍스트 유실)
+          redirectTo: typeof window !== "undefined" ? window.location.href : undefined,
         },
       });
       if (error) throw error;

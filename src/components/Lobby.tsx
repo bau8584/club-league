@@ -601,7 +601,7 @@ export function Lobby() {
       {/* Create League Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-300">
-          <Card className="w-full max-w-md border-border/60 bg-card/95 p-6 rounded-2xl shadow-2xl relative overflow-hidden animate-in zoom-in-95 duration-300">
+          <Card className="w-full max-w-md max-h-[90vh] overflow-y-auto border-border/60 bg-card/95 p-6 rounded-2xl shadow-2xl relative animate-in zoom-in-95 duration-300">
             <div className="absolute top-4 right-4">
               <button
                 onClick={() => setIsModalOpen(false)}
@@ -797,7 +797,7 @@ export function Lobby() {
       {/* Edit League Modal */}
       {editingLeague && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-300">
-          <Card className="w-full max-w-md border-border/60 bg-card/95 p-6 rounded-2xl shadow-2xl relative overflow-hidden animate-in zoom-in-95 duration-300">
+          <Card className="w-full max-w-md max-h-[90vh] overflow-y-auto border-border/60 bg-card/95 p-6 rounded-2xl shadow-2xl relative animate-in zoom-in-95 duration-300">
             <div className="absolute top-4 right-4">
               <button
                 onClick={() => setEditingLeague(null)}
@@ -855,7 +855,7 @@ export function Lobby() {
       {/* Join League Modal */}
       {joinModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-300">
-          <Card className="w-full max-w-md border-border/60 bg-card/95 p-6 rounded-2xl shadow-2xl relative overflow-hidden animate-in zoom-in-95 duration-300">
+          <Card className="w-full max-w-md max-h-[90vh] overflow-y-auto border-border/60 bg-card/95 p-6 rounded-2xl shadow-2xl relative animate-in zoom-in-95 duration-300">
             <div className="absolute top-4 right-4">
               <button onClick={() => { setJoinModalOpen(false); setJoinCode(""); }} className="text-muted-foreground hover:text-foreground cursor-pointer">
                 <X className="size-5" />
