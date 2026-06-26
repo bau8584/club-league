@@ -41,9 +41,10 @@ import {
   apiStartNewSeason,
   apiFetchSeasonStandings,
   apiFetchSeasonStandingsPublic,
-  apiRestoreSeason,
   apiRenameSeason,
-  apiDeleteSeason
+  apiDeleteSeason,
+  apiApplyDormancyDecay,
+  apiFetchDecayLog
 } from "@/services/league-api";
 import {
   DEFAULT_TIERS,
@@ -60,6 +61,33 @@ export type ActiveBonuses = {
   underdog: boolean;
   scoreDiff: boolean;
   rival: boolean;
+};
+
+// 휴면 감점 미리보기 대상 1건
+export type DecayTarget = {
+  id: string;
+  name: string;
+  tier: TierName;
+  rp: number;
+  decayRp: number;   // 차감 예정량(현재 RP를 넘지 않도록 클램프)
+  rpAfter: number;
+  daysInactive: number;
+  lastActive: string | null;
+};
+
+// 휴면 감점 로그 1행 (decay_log 테이블)
+export type DecayLogRow = {
+  id: string;
+  league_id: string;
+  batch_id: string;
+  player_id: string | null;
+  player_name: string | null;
+  tier: string | null;
+  rp_before: number | null;
+  rp_after: number | null;
+  decay_rp: number | null;
+  season: string | null;
+  applied_at: string;
 };
 
 const TIER_RANKING: Record<TierName, number> = {
@@ -1301,7 +1329,7 @@ function useLeagueStoreInternal() {
   // 특정 선수 정보 전체 수정 및 동기화
   const updateStudentInfo = useCallback(async (
     studentId: string,
-    info: { name: string; nickname?: string | null; group?: string | null; gender: Gender; rp?: number }
+    info: { name: string; nickname?: string | null; group?: string | null; gender: Gender; rp?: number; birthYear?: number | null }
   ) => {
     if (currentViewSeasonRef.current !== "현재 시즌") {
       toast.error("과거 시즌 기록은 수정할 수 없습니다 (읽기 전용).");
@@ -1327,7 +1355,8 @@ function useLeagueStoreInternal() {
         nickname: info.nickname ?? s.nickname,
         group: info.group ?? s.group,
         gender: info.gender,
-        rp: info.rp !== undefined ? info.rp : s.rp
+        rp: info.rp !== undefined ? info.rp : s.rp,
+        birthYear: info.birthYear !== undefined ? info.birthYear : s.birthYear
       };
     });
     const previousStudents = [...students];
@@ -1343,6 +1372,9 @@ function useLeagueStoreInternal() {
         };
         if (info.rp !== undefined) {
           updatePayload.rp = info.rp;
+        }
+        if (info.birthYear !== undefined) {
+          updatePayload.birth_year = info.birthYear;
         }
         const { error } = await apiUpdateStudentInfo(studentId, updatePayload);
         if (error) throw error;
@@ -1363,7 +1395,7 @@ function useLeagueStoreInternal() {
 
   // 일괄 선수 정보 수정 (엑셀형 편집 저장) — 한 번의 낙관적 갱신 + 병렬 저장
   const bulkUpdateStudents = useCallback(async (
-    updates: { id: string; name?: string; nickname?: string | null; group?: string | null; gender?: Gender; rp?: number }[]
+    updates: { id: string; name?: string; nickname?: string | null; group?: string | null; gender?: Gender; rp?: number; birthYear?: number | null }[]
   ): Promise<boolean> => {
     if (currentViewSeasonRef.current !== "현재 시즌") {
       toast.error("과거 시즌 기록은 수정할 수 없습니다 (읽기 전용).");
@@ -1393,6 +1425,7 @@ function useLeagueStoreInternal() {
         group: u.group ?? s.group,
         gender: u.gender ?? s.gender,
         rp: u.rp ?? s.rp,
+        birthYear: u.birthYear !== undefined ? u.birthYear : s.birthYear,
       };
     });
     setStudents(next);
@@ -1405,6 +1438,7 @@ function useLeagueStoreInternal() {
         if (u.group !== undefined) payload.group_label = u.group;
         if (u.gender !== undefined) payload.gender = u.gender;
         if (u.rp !== undefined) payload.rp = u.rp;
+        if (u.birthYear !== undefined) payload.birth_year = u.birthYear;
         return apiUpdateStudentInfo(u.id, payload);
       }));
       const firstErr = results.find((r) => r.error);
@@ -2291,15 +2325,9 @@ function useLeagueStoreInternal() {
     };
     setTiers(nextTiers);
 
-    // Map decay settings
-    const nextDecaySettings = {
-      bronze: { enabled: decayEnabled && decayTiers.includes("Bronze"), inactiveDays: decayDays, decayRp: decayAmount },
-      silver: { enabled: decayEnabled && decayTiers.includes("Silver"), inactiveDays: decayDays, decayRp: decayAmount },
-      gold: { enabled: decayEnabled && decayTiers.includes("Gold"), inactiveDays: decayDays, decayRp: decayAmount },
-      platinum: { enabled: decayEnabled && decayTiers.includes("Platinum"), inactiveDays: decayDays, decayRp: decayAmount },
-      diamond: { enabled: decayEnabled && decayTiers.includes("Diamond"), inactiveDays: decayDays, decayRp: decayAmount }
-    };
-    setDecaySettings(nextDecaySettings);
+    // ⚠️ 휴면 감점(decaySettings)은 여기서 건드리지 않는다.
+    // 과거엔 단일 decayAmount로 모든 티어를 재구성해 저장하면서 티어별 값이 통일되는 버그가 있었다.
+    // decaySettings 저장은 saveDecaySettings()가 단독으로 책임진다.
 
     if (currentClassId) {
       try {
@@ -2311,8 +2339,7 @@ function useLeagueStoreInternal() {
           tierSettings: finalTierSettings,
           dynamicBonuses: finalDynamicBonuses,
           dynamicPenalties: finalDynamicPenalties,
-          tiers: nextTiers,
-          decaySettings: nextDecaySettings
+          tiers: nextTiers
         };
 
         const { error: updateErr } = await apiUpdateClassSettingsAndName(
@@ -2589,6 +2616,125 @@ function useLeagueStoreInternal() {
     }
   }, [students, decaySettings, lastDecayDate, decayAppliedDates, currentClassId, tierThresholds]);
 
+  // 휴면 감점 대상 미리보기 — matches에서 각 선수의 최근 활동일을 직접 계산해
+  // 티어별 설정(enabled/inactiveDays/decayRp)과 사이클(마지막 감점일) 기준으로 판정.
+  const previewDormancyDecay = useCallback((): DecayTarget[] => {
+    const now = Date.now();
+    // 선수별 최근 경기일시 (단·복식 4슬롯 모두 반영)
+    const lastAct: Record<string, number> = {};
+    for (const m of matches) {
+      const t = new Date(m.date).getTime();
+      if (isNaN(t)) continue;
+      for (const pid of [m.playerAId, m.playerBId, m.playerA2Id, m.playerB2Id]) {
+        if (pid) lastAct[pid] = Math.max(lastAct[pid] ?? 0, t);
+      }
+    }
+    const out: DecayTarget[] = [];
+    for (const s of students) {
+      const tier = getTier(s.rp, tierThresholds);
+      const setting = decaySettings[tier.toLowerCase() as 'bronze'|'silver'|'gold'|'platinum'|'diamond'];
+      if (!setting || !setting.enabled) continue;
+      const lastMatchTime = lastAct[s.id] ?? 0;
+      const appliedStr = decayAppliedDates[s.id];
+      const lastAppliedTime = appliedStr ? new Date(appliedStr).getTime() : 0;
+      const baseline = Math.max(lastMatchTime, lastAppliedTime);
+      if (baseline === 0) continue; // 활동 기준점 없음 → 제외
+      const elapsedMs = now - baseline;
+      if (elapsedMs < setting.inactiveDays * 86400000) continue;
+      const decayRp = Math.min(s.rp, setting.decayRp);
+      if (decayRp <= 0) continue;
+      out.push({
+        id: s.id,
+        name: s.displayName || s.name || s.nickname || "이름없음",
+        tier,
+        rp: s.rp,
+        decayRp,
+        rpAfter: Math.max(0, s.rp - decayRp),
+        daysInactive: Math.floor(elapsedMs / 86400000),
+        lastActive: lastMatchTime ? new Date(lastMatchTime).toISOString() : null,
+      });
+    }
+    return out.sort((a, b) => b.daysInactive - a.daysInactive);
+  }, [matches, students, decaySettings, tierThresholds, decayAppliedDates]);
+
+  // 휴면 감점 수동 실시 — 미리보기 대상에 대해 RPC 일괄 차감 + 로그 기록 + 로컬 반영.
+  const applyDormancyDecay = useCallback(async (): Promise<number> => {
+    if (currentViewSeasonRef.current !== "현재 시즌") {
+      toast.error("과거 시즌은 휴면 감점을 실시할 수 없습니다 (읽기 전용).");
+      return 0;
+    }
+    if (!isClassOwner) {
+      toast.error("권한이 없습니다. 클래스 개설자만 실시할 수 있습니다.");
+      return 0;
+    }
+    if (!currentClassId) return 0;
+    const targets = previewDormancyDecay();
+    if (targets.length === 0) {
+      toast.info("현재 휴면 감점 대상이 없습니다.");
+      return 0;
+    }
+
+    const today = new Date();
+    const offset = today.getTimezoneOffset();
+    const todayStr = new Date(today.getTime() - offset * 60 * 1000).toISOString().split("T")[0];
+
+    const entries = targets.map((t) => ({
+      player_id: t.id,
+      player_name: t.name,
+      tier: t.tier,
+      decay_rp: t.decayRp,
+    }));
+
+    try {
+      setIsSyncing(true);
+      const { error } = await apiApplyDormancyDecay(currentClassId, currentSeason, entries);
+      if (error) throw error;
+
+      // 로컬 RP 즉시 반영
+      const deltaById: Record<string, number> = {};
+      targets.forEach((t) => { deltaById[t.id] = t.decayRp; });
+      setStudents((prev) => prev.map((s) =>
+        deltaById[s.id] ? { ...s, rp: Math.max(0, s.rp - deltaById[s.id]) } : s
+      ));
+
+      // 사이클 기준(감점일) 영속화
+      const nextApplied = { ...decayAppliedDates };
+      targets.forEach((t) => { nextApplied[t.id] = todayStr; });
+      setDecayAppliedDates(nextApplied);
+      try {
+        const { data: currentClass } = await apiFetchClassSettings(currentClassId);
+        await apiUpdateClassSettings(currentClassId, {
+          ...(currentClass?.settings || {}),
+          decayApplied: nextApplied,
+          lastDecayDate: todayStr,
+        });
+        setLastDecayDate(todayStr);
+      } catch (e) {
+        console.warn("Failed to persist decayApplied:", e);
+      }
+
+      toast.success(`휴면 감점 완료: ${targets.length}명의 RP를 차감했습니다.`, { duration: 5000 });
+      return targets.length;
+    } catch (e: any) {
+      console.error("Failed to apply dormancy decay:", e);
+      toast.error("휴면 감점 실패: " + (e?.message ?? "알 수 없는 오류"));
+      return 0;
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [previewDormancyDecay, isClassOwner, currentClassId, currentSeason, decayAppliedDates]);
+
+  // 휴면 감점 내역 조회
+  const fetchDecayLog = useCallback(async (): Promise<DecayLogRow[]> => {
+    if (!currentClassId) return [];
+    const { data, error } = await apiFetchDecayLog(currentClassId);
+    if (error) {
+      console.warn("Failed to fetch decay log:", error);
+      return [];
+    }
+    return (data || []) as DecayLogRow[];
+  }, [currentClassId]);
+
   // 선수용 '나의 업적' 자동 연산 함수 (Derived State)
   const calculateAchievements = useCallback((studentId: string): Achievement[] => {
     return calculateAchievementsPure(students, matches, tierThresholds, studentId);
@@ -2709,7 +2855,17 @@ function useLeagueStoreInternal() {
         matchType: (m.winner2_id ? "double" : "single") as "single" | "double",
       }));
 
-      const studentsList: Student[] = (standings || []).map((s: any) => {
+      // 같은 선수가 여러 스냅샷 행으로 중복될 수 있어(과거 복귀 버그 등) player_id 기준 1행만 — 최고 RP 우선.
+      const byPid = new Map<string, any>();
+      for (const s of (standings || [])) {
+        const pid = s.player_id ?? s.student_id;
+        if (!pid) continue;
+        const prev = byPid.get(pid);
+        if (!prev || (s.rp ?? 0) > (prev.rp ?? 0)) byPid.set(pid, s);
+      }
+      const uniqueStandings = [...byPid.values()];
+
+      const studentsList: Student[] = uniqueStandings.map((s: any) => {
         const pid = s.player_id ?? s.student_id;
         const group = s.group_label ?? null;
         const name = s.name || s.display_name || s.nickname || "이름없음";
@@ -2748,23 +2904,8 @@ function useLeagueStoreInternal() {
     }
   }, []);
 
-  // 7. 과거 시즌 관리 (관리자 전용) — 복귀 / 이름변경 / 삭제 / 명예의 전당
-  const restoreSeason = useCallback(async (targetSeason: string) => {
-    const classId = currentClassIdRef.current;
-    if (!classId) return { success: false };
-    try {
-      const { error } = await apiRestoreSeason(classId, targetSeason);
-      if (error) throw error;
-      setCurrentViewSeason("현재 시즌");
-      await loadClassDataRef.current?.(classId);
-      toast.success(`'${targetSeason}' 시즌으로 복귀했습니다. (이어서 진행)`);
-      return { success: true };
-    } catch (err: any) {
-      toast.error(err.message || "시즌 복귀에 실패했습니다.");
-      return { success: false, message: err.message };
-    }
-  }, []);
-
+  // 7. 과거 시즌 관리 (관리자 전용) — 이름변경 / 삭제 / 명예의 전당
+  //    (과거 시즌 "복귀"는 단일 RP 구조상 데이터가 꼬여 제거됨. 열람은 changeViewSeason으로 가능.)
   const renameSeason = useCallback(async (oldName: string, newName: string) => {
     const classId = currentClassIdRef.current;
     if (!classId) return { success: false };
@@ -2884,7 +3025,6 @@ function useLeagueStoreInternal() {
     changeSeason,
     currentViewSeason,
     changeViewSeason,
-    restoreSeason,
     renameSeason,
     deleteSeason,
     decayEnabled,
@@ -2900,6 +3040,9 @@ function useLeagueStoreInternal() {
     decayAppliedDates,
     saveDecaySettings,
     checkAndApplyAutomaticDecay,
+    previewDormancyDecay,
+    applyDormancyDecay,
+    fetchDecayLog,
     tierSettings,
     setTierSettings,
     dynamicBonuses,

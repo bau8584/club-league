@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Save, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { TierName, TierSettings, DynamicBonuses, DynamicPenalties, DecaySettingsRecord, MatchInputMode } from "@/lib/league-types";
+import type { TierName, TierSettings, DynamicBonuses, DynamicPenalties, MatchInputMode } from "@/lib/league-types";
 import type { ActiveBonuses } from "@/lib/league-store";
 import {
   THRESHOLD_PRESETS, WINLOSS_PRESETS, BONUS_PRESETS, PENALTY_PRESETS,
@@ -231,14 +231,8 @@ export interface AdminSettingsProps {
     dynamicBonuses?: DynamicBonuses,
     dynamicPenalties?: DynamicPenalties
   ) => Promise<void>;
-  
-  // Decay settings and extra stores passed as props
-  decayEnabled: boolean;
-  decayDays: number;
-  decayAmount: number;
-  decayTiers: TierName[];
-  decaySettings?: DecaySettingsRecord;
-  saveDecaySettings: (enabled: boolean, days: number, amount: number, tiers: TierName[], perTierRp?: Partial<Record<TierName, number>>) => Promise<void> | void;
+
+  // 휴면 감점은 '휴면 감점' 탭(DecayManager)에서 관리한다.
   matchInputMode?: MatchInputMode;
   saveMatchInputMode?: (mode: MatchInputMode) => Promise<void> | void;
   isOwner?: boolean;
@@ -254,12 +248,6 @@ export function AdminSettings({
   title,
   activeBonuses,
   onSaveLeagueSettings,
-  decayEnabled,
-  decayDays,
-  decayAmount,
-  decayTiers,
-  decaySettings,
-  saveDecaySettings,
   matchInputMode = "admin-only",
   saveMatchInputMode,
   isOwner = false,
@@ -271,19 +259,6 @@ export function AdminSettings({
   const [isTierCustomOpen, setIsTierCustomOpen] = useState(false);
   const [isBonusCustomOpen, setIsBonusCustomOpen] = useState(false);
   const [isPenaltyCustomOpen, setIsPenaltyCustomOpen] = useState(false);
-
-  // Decay settings
-  const [localDecayEnabled, setLocalDecayEnabled] = useState(decayEnabled);
-  const [localDecayDays, setLocalDecayDays] = useState(decayDays.toString());
-  const [localDecayTiers, setLocalDecayTiers] = useState<TierName[]>(decayTiers);
-  // 티어별 1회 차감 RP (티어마다 다르게 설정). decaySettings(소문자 키)에서 초기화.
-  const [localTierRp, setLocalTierRp] = useState<Record<TierName, string>>(() => ({
-    Bronze: String(decaySettings?.bronze?.decayRp ?? decayAmount),
-    Silver: String(decaySettings?.silver?.decayRp ?? decayAmount),
-    Gold: String(decaySettings?.gold?.decayRp ?? decayAmount),
-    Platinum: String(decaySettings?.platinum?.decayRp ?? decayAmount),
-    Diamond: String(decaySettings?.diamond?.decayRp ?? decayAmount),
-  }));
 
   // Tier specific settings
   const [localTierSettings, setLocalTierSettings] = useState<TierSettings>(() => tierSettings || {
@@ -356,30 +331,6 @@ export function AdminSettings({
   });
 
   // Sync states when database changes
-  useEffect(() => {
-    setLocalDecayEnabled(decayEnabled);
-  }, [decayEnabled]);
-
-  useEffect(() => {
-    setLocalDecayDays(decayDays.toString());
-  }, [decayDays]);
-
-  useEffect(() => {
-    setLocalDecayTiers(decayTiers);
-  }, [decayTiers]);
-
-  useEffect(() => {
-    if (decaySettings) {
-      setLocalTierRp({
-        Bronze: String(decaySettings.bronze?.decayRp ?? decayAmount),
-        Silver: String(decaySettings.silver?.decayRp ?? decayAmount),
-        Gold: String(decaySettings.gold?.decayRp ?? decayAmount),
-        Platinum: String(decaySettings.platinum?.decayRp ?? decayAmount),
-        Diamond: String(decaySettings.diamond?.decayRp ?? decayAmount),
-      });
-    }
-  }, [decaySettings, decayAmount]);
-
   useEffect(() => {
     if (tierSettings) {
       setLocalTierSettings(tierSettings);
@@ -571,35 +522,7 @@ export function AdminSettings({
   };
 
   const handleSavePenalties = async () => {
-    // 휴면 감점(decay) 설정도 이 단계에서 함께 저장한다.
-    const decayDaysNum = parseInt(localDecayDays, 10);
-    if (localDecayEnabled && (isNaN(decayDaysNum) || decayDaysNum <= 0)) {
-      return toast.error("기준 미활동 일수는 1 이상의 정수여야 합니다.");
-    }
-
-    // 켜진 티어별 1회 차감 RP를 수집·검증
-    const perTierRp: Partial<Record<TierName, number>> = {};
-    if (localDecayEnabled) {
-      for (const t of localDecayTiers) {
-        const v = parseInt(localTierRp[t], 10);
-        if (isNaN(v) || v <= 0) {
-          const labelMap: Record<string, string> = { Bronze: "브론즈", Silver: "실버", Gold: "골드", Platinum: "플래티넘", Diamond: "다이아몬드" };
-          return toast.error(`${labelMap[t]} 티어의 차감 RP는 1 이상의 정수여야 합니다.`);
-        }
-        perTierRp[t] = v;
-      }
-    }
-    // 레거시 단일 amount 호환값: 첫 켜진 티어 값 또는 기존값
-    const legacyAmount = localDecayTiers.length > 0 ? (perTierRp[localDecayTiers[0]] ?? decayAmount) : decayAmount;
-
     const savePromise = (async () => {
-      await saveDecaySettings(
-        localDecayEnabled,
-        isNaN(decayDaysNum) ? decayDays : decayDaysNum,
-        legacyAmount,
-        localDecayTiers,
-        perTierRp
-      );
       if (onSaveLeagueSettings) {
         await onSaveLeagueSettings(
           localTitle,
@@ -1335,79 +1258,6 @@ export function AdminSettings({
 
                 </div>
               )}
-
-              {/* 휴면 감점 시스템 (이전 2단계에서 이동) */}
-              <div className={cn(
-                "space-y-3 p-3.5 rounded-xl border transition-colors",
-                localDecayEnabled ? "border-amber-500/40 bg-amber-500/[0.07]" : "border-border/30 bg-muted/15 opacity-70"
-              )}>
-                <div className="flex items-center justify-between gap-2">
-                  <div className="space-y-0.5">
-                    <span className="text-[11px] font-bold text-foreground block">😴 휴면 감점 시스템</span>
-                    <span className="text-[10px] text-muted-foreground leading-snug block">기준일수 동안 경기가 없으면 RP를 <b>1회</b> 차감합니다.</span>
-                  </div>
-                  <ToggleSwitch checked={localDecayEnabled} onChange={() => setLocalDecayEnabled(!localDecayEnabled)} activeColor="bg-amber-500" />
-                </div>
-
-                {localDecayEnabled && (
-                  <div className="space-y-3 pt-1">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-muted-foreground">기준 미활동 일수 (모든 티어 공통)</label>
-                      <div className="relative max-w-[180px]">
-                        <Input
-                          type="number"
-                          min={1}
-                          value={localDecayDays}
-                          onChange={(e) => setLocalDecayDays(e.target.value)}
-                          className="h-8 border-border/30 bg-input focus:border-amber-500 font-sans text-xs pr-12"
-                        />
-                        <span className="absolute right-2 top-1.5 text-[10px] text-muted-foreground font-bold">일 이상</span>
-                      </div>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground leading-snug bg-muted/30 rounded-lg px-2.5 py-1.5 border border-border/20">
-                      💡 한 번 차감된 뒤 경기를 하지 않으면 <b>기준일수마다 다시 1회씩</b> 차감됩니다. 경기를 하면 카운트가 초기화됩니다. 선수 화면에는 “차감까지 며칠 남음”이 표시됩니다.
-                    </p>
-                    {/* 티어별 감점 적용 여부 + 1회 차감 RP */}
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-muted-foreground block">티어별 1회 차감 RP <span className="text-muted-foreground/70 font-medium">(티어를 켜고 감점값을 따로 지정)</span></label>
-                      <div className="space-y-1.5">
-                        {(["Bronze", "Silver", "Gold", "Platinum", "Diamond"] as const).map((t) => {
-                          const labelMap: Record<string, string> = { Bronze: "브론즈", Silver: "실버", Gold: "골드", Platinum: "플래티넘", Diamond: "다이아몬드" };
-                          const on = localDecayTiers.includes(t);
-                          return (
-                            <div key={t} className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => setLocalDecayTiers(on ? localDecayTiers.filter((x) => x !== t) : [...localDecayTiers, t])}
-                                className={cn(
-                                  "w-[78px] shrink-0 px-2.5 py-1.5 rounded-lg border text-[10px] font-bold transition-all text-center",
-                                  on ? "border-amber-500/50 bg-amber-500/15 text-amber-500" : "border-border/30 text-muted-foreground hover:text-foreground"
-                                )}
-                              >
-                                {labelMap[t]}
-                              </button>
-                              {on ? (
-                                <div className="relative flex-1 max-w-[160px]">
-                                  <Input
-                                    type="number"
-                                    min={1}
-                                    value={localTierRp[t]}
-                                    onChange={(e) => setLocalTierRp((prev) => ({ ...prev, [t]: e.target.value }))}
-                                    className="h-8 border-border/30 bg-input focus:border-amber-500 font-sans text-xs text-rose-500 pr-12"
-                                  />
-                                  <span className="absolute right-2 top-1.5 text-[10px] text-rose-500 font-bold">RP 감점</span>
-                                </div>
-                              ) : (
-                                <span className="text-[10px] text-muted-foreground/70 font-semibold">감점 없음</span>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
 
               {/* Save button at the bottom of Step 4 card */}
               <div className="flex justify-between items-center pt-2 border-t border-border/10">

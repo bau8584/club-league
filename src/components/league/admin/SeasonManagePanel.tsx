@@ -3,16 +3,16 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useLeagueStore } from "@/lib/league-store";
-import { History, RotateCcw, Pencil, Trash2, ShieldAlert } from "lucide-react";
+import { History, Pencil, Trash2, ShieldAlert } from "lucide-react";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
 export function SeasonManagePanel() {
-  const { seasonList, restoreSeason, renameSeason, deleteSeason } = useLeagueStore();
+  const { seasonList, renameSeason, deleteSeason } = useLeagueStore();
 
-  const [confirm, setConfirm] = useState<{ type: "restore" | "delete"; season: string } | null>(null);
+  const [confirm, setConfirm] = useState<{ type: "delete"; season: string } | null>(null);
   const [deleteMatches, setDeleteMatches] = useState(false);
   const [renameTarget, setRenameTarget] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -45,11 +45,6 @@ export function SeasonManagePanel() {
                 <span className="font-bold text-sm">{season}</span>
                 <div className="flex items-center gap-1.5">
                   <Button size="sm" variant="outline" disabled={busy}
-                    onClick={() => setConfirm({ type: "restore", season })}
-                    className="h-8 px-2.5 rounded-lg text-[11px] font-bold border-border/80">
-                    <RotateCcw className="size-3.5 mr-1" /> 복귀
-                  </Button>
-                  <Button size="sm" variant="outline" disabled={busy}
                     onClick={() => { setRenameTarget(season); setRenameValue(season); }}
                     className="h-8 px-2.5 rounded-lg text-[11px] font-bold border-border/80">
                     <Pencil className="size-3.5 mr-1" /> 이름변경
@@ -66,30 +61,22 @@ export function SeasonManagePanel() {
         )}
       </Card>
 
-      {/* 복귀 / 삭제 확인 다이얼로그 */}
+      {/* 삭제 확인 다이얼로그 */}
       <AlertDialog open={!!confirm} onOpenChange={(o) => { if (!o) setConfirm(null); }}>
         <AlertDialogContent className="border-border/40 bg-background/95 max-w-md shadow-2xl rounded-2xl backdrop-blur-xl">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-lg font-black flex items-center gap-2">
-              {confirm?.type === "restore"
-                ? (<><RotateCcw className="size-5 text-neon-blue" /> '{confirm?.season}' 시즌으로 복귀</>)
-                : (<><ShieldAlert className="size-5 text-destructive" /> '{confirm?.season}' 시즌 삭제</>)}
+              <ShieldAlert className="size-5 text-destructive" /> '{confirm?.season}' 시즌 삭제
             </AlertDialogTitle>
             <AlertDialogDescription className="text-sm text-muted-foreground mt-2 leading-relaxed">
-              {confirm?.type === "restore" ? (
-                <>현재 진행분은 먼저 보관되고, 선수 RP·전적이 <b className="text-foreground">{confirm?.season}</b> 시즌 값으로 복원됩니다. 그 사이 등록된 전선수은 1000 RP로 시작합니다. 이후 새 경기는 이 시즌에 이어서 쌓입니다.</>
-              ) : (
-                <>이 시즌의 보관된 순위 기록이 삭제됩니다. 이 작업은 되돌릴 수 없습니다.</>
-              )}
+              이 시즌의 보관된 순위 기록이 삭제됩니다. 이 작업은 되돌릴 수 없습니다.
             </AlertDialogDescription>
           </AlertDialogHeader>
 
-          {confirm?.type === "delete" && (
-            <label className="flex items-center gap-2 mt-2 text-xs font-bold text-muted-foreground cursor-pointer select-none">
-              <input type="checkbox" checked={deleteMatches} onChange={(e) => setDeleteMatches(e.target.checked)} className="size-4 accent-destructive" />
-              이 시즌의 경기 원본까지 삭제 (용량 절감 · 시즌 요약/경기 조회 불가해짐)
-            </label>
-          )}
+          <label className="flex items-center gap-2 mt-2 text-xs font-bold text-muted-foreground cursor-pointer select-none">
+            <input type="checkbox" checked={deleteMatches} onChange={(e) => setDeleteMatches(e.target.checked)} className="size-4 accent-destructive" />
+            이 시즌의 경기 원본까지 삭제 (용량 절감 · 시즌 요약/경기 조회 불가해짐)
+          </label>
 
           <AlertDialogFooter className="mt-6 gap-2">
             <AlertDialogCancel disabled={busy} className="font-bold border-border/80 rounded-xl h-11 px-5">취소</AlertDialogCancel>
@@ -98,13 +85,10 @@ export function SeasonManagePanel() {
               onClick={(e) => {
                 e.preventDefault();
                 if (!confirm) return;
-                if (confirm.type === "restore") run(() => restoreSeason(confirm.season));
-                else run(() => deleteSeason(confirm.season, deleteMatches));
+                run(() => deleteSeason(confirm.season, deleteMatches));
               }}
-              className={confirm?.type === "delete"
-                ? "font-black bg-destructive hover:bg-destructive/80 text-white rounded-xl h-11 px-5"
-                : "font-black bg-neon-blue hover:bg-neon-blue/80 text-primary-foreground rounded-xl h-11 px-5"}>
-              {confirm?.type === "restore" ? "복귀" : "삭제"}
+              className="font-black bg-destructive hover:bg-destructive/80 text-white rounded-xl h-11 px-5">
+              삭제
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

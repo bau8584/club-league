@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,7 +16,8 @@ import {
   Users,
   Settings,
   UserPlus,
-  ChevronDown
+  ChevronDown,
+  Moon
 } from "lucide-react";
 import type { Gender, Student, Match, TierName, TierSettings, DynamicBonuses, DynamicPenalties } from "@/lib/league-types";
 import { useLeagueStore, type ActiveBonuses } from "@/lib/league-store";
@@ -40,14 +41,16 @@ import { LevelManager } from "./admin/LevelManager";
 import { AdminMatchRecords } from "./admin/AdminMatchRecords";
 import { SeasonManagePanel } from "./admin/SeasonManagePanel";
 import { CurrentSeasonPanel } from "./admin/CurrentSeasonPanel";
+import { DecayManager } from "./admin/DecayManager";
 
 type Row = { grade: number; classNum: number; number: number; name: string; gender?: Gender };
 
 // 관리자 패널의 하위 탭 목록 — PC 사이드바와 모바일 드롭다운이 공유한다.
 const ADMIN_MENU_ITEMS = [
   { id: "settings", label: "리그 글로벌 설정", icon: Settings, desc: "리그 이름, 티어, RP 규칙 설정" },
-  { id: "studentManage", label: "선수 관리", icon: User, desc: "리그 명단, RP 수정 및 삭제" },
+  { id: "studentManage", label: "회원 관리", icon: User, desc: "회원 명단, RP·나이 수정 및 삭제" },
   { id: "matchRecords", label: "리그 기록 관리", icon: Swords, desc: "전체 경기 조회, 점수 수정/삭제" },
+  { id: "decay", label: "휴면 감점", icon: Moon, desc: "티어별 감점 설정·실시·내역" },
   { id: "dataManage", label: "데이터 관리", icon: Database, desc: "JSON 백업 다운로드 및 복원" },
   { id: "seasonManage", label: "시즌 관리", icon: Calendar, desc: "시즌 초기화 및 신규 시즌 생성" },
 ] as const;
@@ -142,7 +145,7 @@ export function AdminPanel({
 }) {
   // Active Tab for dashboard split layout
   // 소유자(개설자) 전용 탭 — 관리 관리자(공동관리자/기록원)에게는 숨김
-  const OWNER_ONLY_TABS = new Set(["settings", "dataManage", "seasonManage"]);
+  const OWNER_ONLY_TABS = new Set(["settings", "decay", "dataManage", "seasonManage"]);
   const menuItems = ADMIN_MENU_ITEMS.filter((i) => isOwner || !OWNER_ONLY_TABS.has(i.id));
   const [activeTab, setActiveTab] = useState<string>(isOwner ? "settings" : "studentManage");
 
@@ -152,39 +155,14 @@ export function AdminPanel({
   const [pendingRestoreMatches, setPendingRestoreMatches] = useState<Match[] | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Auto Decay lock logic
-  const [isUnlocked, setIsUnlocked] = useState(true);
-  const { 
-    session,
-    decayEnabled,
-    decayDays,
-    decayAmount: storeDecayAmount,
-    decayTiers,
-    decaySettings,
-    saveDecaySettings,
+  const {
     matchInputMode,
     saveMatchInputMode,
-    checkAndApplyAutomaticDecay,
     tierSettings,
     dynamicBonuses,
     dynamicPenalties,
   } = useLeagueStore();
-  const isDemo = session?.loginId === "guest" || session?.schoolName?.includes("꿈나무");
-
-  // Run auto decay check once on mount/unlock
-  const hasEntered = isUnlocked || isDemo;
-  useEffect(() => {
-    if (hasEntered) {
-      checkAndApplyAutomaticDecay();
-    }
-  }, [hasEntered, checkAndApplyAutomaticDecay]);
-
-  useEffect(() => {
-    setIsUnlocked(false);
-    return () => {
-      setIsUnlocked(false);
-    };
-  }, []);
+  // 휴면 감점은 '휴면 감점' 탭에서 관리자가 수동 실시한다(자동 차감 없음).
 
   // 시즌 관리 서브탭 (현재 / 과거)
   const [seasonSubTab, setSeasonSubTab] = useState<"current" | "past">("current");
@@ -408,12 +386,6 @@ export function AdminPanel({
             title={title}
             activeBonuses={activeBonuses}
             onSaveLeagueSettings={onSaveLeagueSettings}
-            decayEnabled={decayEnabled}
-            decayDays={decayDays}
-            decayAmount={storeDecayAmount}
-            decayTiers={decayTiers}
-            decaySettings={decaySettings}
-            saveDecaySettings={saveDecaySettings}
             matchInputMode={matchInputMode}
             saveMatchInputMode={saveMatchInputMode}
             isOwner={isOwner}
@@ -438,6 +410,11 @@ export function AdminPanel({
         )}
         {activeTab === "studentManage" && isOwner && (
           <div className="mt-6"><LevelManager /></div>
+        )}
+
+        {/* decay Tab — 휴면 감점 설정·실시·내역 */}
+        {activeTab === "decay" && isOwner && (
+          <DecayManager />
         )}
 
         {/* matchRecords Tab */}

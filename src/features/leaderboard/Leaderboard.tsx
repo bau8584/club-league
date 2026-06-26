@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { TierBadge } from "@/components/league/TierBadge";
 import { GenderMark } from "@/components/league/GenderMark";
 import { cn } from "@/lib/utils";
-import { Search } from "lucide-react";
+import { Search, SlidersHorizontal, ChevronDown, X } from "lucide-react";
 import { getTier, TIER_ORDER, TIER_STYLES, type TierName, type Student } from "@/lib/league-types";
 
 type GenderFilter = "all" | "M" | "F";
@@ -27,10 +27,17 @@ export function Leaderboard({
   students: Student[]; 
   thresholds?: Record<TierName, number>;
 }) {
-  const [group, setGroup] = useState<string | "all">("all");
-  const [tier, setTier] = useState<TierName | "all">("all");
+  const [group, setGroup] = useState<string[]>([]);   // 다중 선택 (빈 배열 = 전체)
+  const [tier, setTier] = useState<TierName[]>([]);    // 다중 선택 (빈 배열 = 전체)
   const [gender, setGender] = useState<GenderFilter>("all");
   const [query, setQuery] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+
+  const activeCount = (group.length > 0 ? 1 : 0) + (tier.length > 0 ? 1 : 0) + (gender !== "all" ? 1 : 0);
+  const resetFilters = () => { setGroup([]); setTier([]); setGender("all"); };
+  const genderLabel = gender === "M" ? "남자" : gender === "F" ? "여자" : null;
+  const toggleGroup = (g: string) => setGroup((p) => (p.includes(g) ? p.filter((x) => x !== g) : [...p, g]));
+  const toggleTier = (t: TierName) => setTier((p) => (p.includes(t) ? p.filter((x) => x !== t) : [...p, t]));
 
   // 이중 보안 상태 및 자동 잠금 훅
   const [isUnlocked, setIsUnlocked] = useState(false);
@@ -57,8 +64,8 @@ export function Leaderboard({
   // 순위는 레벨/티어/성별 필터 집합 기준으로 매김(이름 검색과 무관).
   const ranked = useMemo(() => {
     return students
-      .filter((s) => (group === "all" ? true : s.group === group))
-      .filter((s) => (tier === "all" ? true : getTier(s.rp, thresholds) === tier))
+      .filter((s) => (group.length === 0 ? true : !!s.group && group.includes(s.group)))
+      .filter((s) => (tier.length === 0 ? true : tier.includes(getTier(s.rp, thresholds))))
       .filter((s) => (gender === "all" ? true : s.gender === gender))
       .sort((a, b) => b.rp - a.rp)
       .map((s, i) => ({ student: s, rank: i + 1 }));
@@ -84,43 +91,88 @@ export function Leaderboard({
           />
         </div>
 
-        {availableGroups.length > 0 && (
-          <div>
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">레벨</p>
-            <div className="flex flex-wrap gap-2">
-              <FilterChip active={group === "all"} onClick={() => setGroup("all")}>전체보기</FilterChip>
-              {availableGroups.map((g) => (
-                <FilterChip key={g} active={group === g} onClick={() => setGroup(g)}>
-                  {g}
-                </FilterChip>
-              ))}
-            </div>
+        {/* 필터 토글 */}
+        <button
+          type="button"
+          onClick={() => setFiltersOpen((v) => !v)}
+          className="flex w-full items-center justify-between rounded-lg border border-border/60 bg-card/60 px-3 py-2 text-xs font-bold transition-all hover:border-neon-blue/40"
+        >
+          <span className="flex items-center gap-2">
+            <SlidersHorizontal className="size-4 text-neon-blue" /> 필터
+            {activeCount > 0 && (
+              <span className="rounded-full bg-neon-blue/15 px-1.5 py-0.5 text-[10px] text-neon-blue">{activeCount}</span>
+            )}
+          </span>
+          <ChevronDown className={cn("size-4 text-muted-foreground transition-transform", filtersOpen && "rotate-180")} />
+        </button>
+
+        {/* 접힘 상태 활성 필터 요약 */}
+        {!filtersOpen && activeCount > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {group.map((g) => (
+              <span key={g} className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-card/60 px-2 py-0.5 text-[11px] font-bold">
+                {g}<button type="button" onClick={() => toggleGroup(g)} className="text-muted-foreground hover:text-foreground"><X className="size-3" /></button>
+              </span>
+            ))}
+            {tier.map((t) => (
+              <span key={t} className={cn("inline-flex items-center gap-1 rounded-full border border-border/60 bg-card/60 px-2 py-0.5 text-[11px] font-bold", TIER_STYLES[t].text)}>
+                {TIER_STYLES[t].label}<button type="button" onClick={() => toggleTier(t)} className="text-muted-foreground hover:text-foreground"><X className="size-3" /></button>
+              </span>
+            ))}
+            {genderLabel && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-card/60 px-2 py-0.5 text-[11px] font-bold">
+                {genderLabel}<button type="button" onClick={() => setGender("all")} className="text-muted-foreground hover:text-foreground"><X className="size-3" /></button>
+              </span>
+            )}
+            <button type="button" onClick={resetFilters} className="text-[10px] text-muted-foreground underline hover:text-foreground">전체 초기화</button>
           </div>
         )}
-        <div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">티어</p>
-          <div className="flex flex-wrap gap-2">
-            <FilterChip active={tier === "all"} onClick={() => setTier("all")}>전체 티어</FilterChip>
-            {TIER_ORDER.map((t) => (
-              <FilterChip
-                key={t}
-                active={tier === t}
-                onClick={() => setTier(t)}
-                tone={TIER_STYLES[t].text}
-              >
-                {TIER_STYLES[t].label}
-              </FilterChip>
-            ))}
+
+        {/* 펼친 필터 그룹 */}
+        {filtersOpen && (
+          <div className="space-y-3 rounded-xl border border-border/40 bg-card/40 p-3 animate-in fade-in slide-in-from-top-1 duration-150">
+            {availableGroups.length > 0 && (
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">레벨</p>
+                <div className="flex flex-wrap gap-2">
+                  <FilterChip active={group.length === 0} onClick={() => setGroup([])}>전체보기</FilterChip>
+                  {availableGroups.map((g) => (
+                    <FilterChip key={g} active={group.includes(g)} onClick={() => toggleGroup(g)}>
+                      {g}
+                    </FilterChip>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">티어</p>
+              <div className="flex flex-wrap gap-2">
+                <FilterChip active={tier.length === 0} onClick={() => setTier([])}>전체 티어</FilterChip>
+                {TIER_ORDER.map((t) => (
+                  <FilterChip
+                    key={t}
+                    active={tier.includes(t)}
+                    onClick={() => toggleTier(t)}
+                    tone={TIER_STYLES[t].text}
+                  >
+                    {TIER_STYLES[t].label}
+                  </FilterChip>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">성별</p>
+              <div className="flex flex-wrap gap-2">
+                <FilterChip active={gender === "all"} onClick={() => setGender("all")}>전체</FilterChip>
+                <FilterChip active={gender === "M"} onClick={() => setGender("M")}>남자 순위 ♂</FilterChip>
+                <FilterChip active={gender === "F"} onClick={() => setGender("F")}>여자 순위 ♀</FilterChip>
+              </div>
+            </div>
+            {activeCount > 0 && (
+              <button type="button" onClick={resetFilters} className="text-[11px] font-bold text-muted-foreground underline hover:text-foreground">필터 전체 초기화</button>
+            )}
           </div>
-        </div>
-        <div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">성별</p>
-          <div className="flex flex-wrap gap-2">
-            <FilterChip active={gender === "all"} onClick={() => setGender("all")}>전체</FilterChip>
-            <FilterChip active={gender === "M"} onClick={() => setGender("M")}>남자 순위 ♂</FilterChip>
-            <FilterChip active={gender === "F"} onClick={() => setGender("F")}>여자 순위 ♀</FilterChip>
-          </div>
-        </div>
+        )}
       </div>
 
       <Card className="overflow-hidden border-border/60 bg-card/60 p-0 backdrop-blur">

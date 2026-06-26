@@ -151,6 +151,29 @@ export async function apiUpdateStudentRp(studentId: string, rp: number) {
     .eq("id", studentId);
 }
 
+// 휴면 감점 수동 실시 — 대상 entries를 RPC로 일괄 차감 + decay_log 기록. batch_id 반환.
+export async function apiApplyDormancyDecay(
+  classId: string,
+  season: string,
+  entries: { player_id: string; player_name: string; tier: string; decay_rp: number }[]
+) {
+  return supabase.rpc("apply_dormancy_decay", {
+    p_class_id: classId,
+    p_season: season,
+    p_entries: entries,
+  });
+}
+
+// 휴면 감점 내역 조회 (관리자 전용, 최신순)
+export async function apiFetchDecayLog(classId: string) {
+  return supabase
+    .from("decay_log")
+    .select("*")
+    .eq("league_id", classId)
+    .order("applied_at", { ascending: false })
+    .limit(300);
+}
+
 export async function apiResetStudentRp(studentId: string) {
   return supabase
     .from("players")
@@ -241,6 +264,7 @@ export async function apiUpdateStudentInfo(studentId: string, payload: {
   gender?: string;
   group_label?: string | null;
   rp?: number;
+  birth_year?: number | null;
 }) {
   return supabase
     .from("players")
@@ -295,44 +319,6 @@ export async function apiRecordMatchTransaction(payload: {
   if (error) throw error;
 }
 
-// --- Player Self-Service API (개인 코드/별명) ---
-export async function apiStudentHasCode(studentId: string) {
-  return supabase.rpc("student_has_code", { p_student_id: studentId });
-}
-
-export async function apiVerifyStudentCode(studentId: string, code: string) {
-  return supabase.rpc("verify_student_code", { p_student_id: studentId, p_code: code });
-}
-
-export async function apiClaimStudent(studentId: string, code: string, nickname: string | null) {
-  return supabase.rpc("claim_student", {
-    p_student_id: studentId,
-    p_code: code,
-    p_nickname: nickname
-  });
-}
-
-export async function apiUpdateStudentNickname(studentId: string, code: string, nickname: string | null) {
-  return supabase.rpc("update_student_nickname", {
-    p_student_id: studentId,
-    p_code: code,
-    p_nickname: nickname
-  });
-}
-
-export async function apiChangeStudentCode(studentId: string, oldCode: string, newCode: string) {
-  return supabase.rpc("change_student_code", {
-    p_student_id: studentId,
-    p_old_code: oldCode,
-    p_new_code: newCode
-  });
-}
-
-// 관리자 전용: 선수 개인 코드 초기화
-export async function apiResetStudentCode(studentId: string) {
-  return supabase.from("player_secrets").delete().eq("player_id", studentId);
-}
-
 // --- 일반 회원(self-signup) API ---
 // 명단의 비어있는 닉네임(계정 미연결)을 내 계정에 연동
 export async function apiClaimPlayer(playerId: string) {
@@ -375,9 +361,6 @@ export async function apiFetchSeasonStandingsPublic(classId: string, season: str
   });
 }
 
-export async function apiRestoreSeason(classId: string, targetSeason: string) {
-  return supabase.rpc("restore_season", { p_class_id: classId, p_target_season: targetSeason });
-}
 
 export async function apiRenameSeason(classId: string, oldName: string, newName: string) {
   return supabase.rpc("rename_season", { p_class_id: classId, p_old: oldName, p_new: newName });

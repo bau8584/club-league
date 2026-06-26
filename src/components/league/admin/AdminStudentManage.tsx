@@ -3,9 +3,8 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { Users, Save, KeyRound, Trash2, ShieldAlert, HelpCircle, RotateCcw, ChevronDown, ClipboardPaste, UserPlus, Link2, Link2Off, ShieldCheck, ShieldOff } from "lucide-react";
+import { Users, Save, Trash2, ShieldAlert, HelpCircle, RotateCcw, ChevronDown, ClipboardPaste, UserPlus, Link2, Link2Off, ShieldCheck, Crown } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { apiResetStudentCode } from "@/services/league-api";
 import { useLeagueStore } from "@/lib/league-store";
 import type { Gender, Student, Match, TierName } from "@/lib/league-types";
 import { TierBadge } from "../TierBadge";
@@ -25,7 +24,7 @@ export interface AdminStudentManageProps {
   thresholds?: Record<TierName, number>;
 }
 
-type RowDraft = { name: string; nickname: string; group: string; gender: Gender; rp: number };
+type RowDraft = { name: string; nickname: string; group: string; gender: Gender; rp: number; birthYearInput: string };
 
 type DeletedStudent = { id: string; name: string; nickname: string; group: string | null; rp: number };
 
@@ -55,7 +54,17 @@ function parseRoster(text: string): ParsedRow[] {
 
 // 연생(출생연도) 선택 옵션: 약 10~89세 범위
 const CURRENT_YEAR = new Date().getFullYear();
-const BIRTH_YEARS = Array.from({ length: 80 }, (_, i) => CURRENT_YEAR - 10 - i);
+// 2자리 연생 입력(94, 01, 67)을 4자리(1994, 2001, 1967)로 인식. 빈값/무효 → null.
+function normalizeBirthYear(raw: string): number | null {
+  const t = (raw || "").trim();
+  if (!/^\d{1,4}$/.test(t)) return null;
+  const n = parseInt(t, 10);
+  if (t.length >= 3) return n; // 3~4자리는 그대로(전체 연도 입력)
+  const pivot = CURRENT_YEAR % 100; // 올해 두 자리 이하면 2000년대, 초과면 1900년대
+  return n <= pivot ? 2000 + n : 1900 + n;
+}
+// 4자리 연도 → 2자리 표기 (1994 → "94")
+const yy2 = (year?: number | null) => (year ? String(year % 100).padStart(2, "0") : "");
 
 export function AdminStudentManage({ students, onDeleteStudent, thresholds }: AdminStudentManageProps) {
   const { upsertStudents, updateStudentInfo, bulkUpdateStudents, fetchDeletedStudents, restoreDeletedStudent, hardDeleteStudent, levelMode, levels, ownerUid, adminUids, setMemberAdmin, isClassOwner } = useLeagueStore();
@@ -79,7 +88,7 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
   const [draft, setDraft] = useState<Record<string, RowDraft>>({});
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
-  const [confirm, setConfirm] = useState<null | { type: "codeReset" | "delete"; ids: string[]; label: string }>(null);
+  const [confirm, setConfirm] = useState<null | { type: "delete"; ids: string[]; label: string }>(null);
 
   // 명단 붙여넣기
   const [pasteOpen, setPasteOpen] = useState(false);
@@ -115,10 +124,10 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
   };
   useEffect(() => { setSelected(new Set()); }, [filterGroup]);
 
-  const rowOf = (s: Student): RowDraft => draft[s.id] ?? { name: s.name || "", nickname: s.nickname || "", group: s.group || "", gender: s.gender, rp: s.rp };
+  const rowOf = (s: Student): RowDraft => draft[s.id] ?? { name: s.name || "", nickname: s.nickname || "", group: s.group || "", gender: s.gender, rp: s.rp, birthYearInput: yy2(s.birthYear) };
   const isDirty = (s: Student) => {
     const r = draft[s.id];
-    return !!r && (r.name !== (s.name || "") || r.nickname !== (s.nickname || "") || r.group !== (s.group || "") || r.gender !== s.gender || r.rp !== s.rp);
+    return !!r && (r.name !== (s.name || "") || r.nickname !== (s.nickname || "") || r.group !== (s.group || "") || r.gender !== s.gender || r.rp !== s.rp || normalizeBirthYear(r.birthYearInput) !== (s.birthYear ?? null));
   };
   const dirtyRows = rows.filter(isDirty);
 
@@ -146,12 +155,14 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
   const handleSave = async () => {
     const updates = dirtyRows.map((s) => {
       const r = draft[s.id];
-      const u: { id: string; name?: string; nickname?: string | null; group?: string | null; gender?: Gender; rp?: number } = { id: s.id };
+      const u: { id: string; name?: string; nickname?: string | null; group?: string | null; gender?: Gender; rp?: number; birthYear?: number | null } = { id: s.id };
       if (r.name !== (s.name || "")) u.name = r.name;
       if (r.nickname !== (s.nickname || "")) u.nickname = r.nickname || null;
       if (r.group !== (s.group || "")) u.group = r.group || null;
       if (r.gender !== s.gender) u.gender = r.gender;
       if (r.rp !== s.rp) u.rp = r.rp;
+      const by = normalizeBirthYear(r.birthYearInput);
+      if (by !== (s.birthYear ?? null)) u.birthYear = by;
       return u;
     });
     setSaving(true);
@@ -183,7 +194,7 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
         nickname,
         group: addForm.group.trim() || null,
         gender: addForm.gender,
-        birthYear: addForm.birthYear ? Number(addForm.birthYear) : null,
+        birthYear: normalizeBirthYear(addForm.birthYear),
       }]);
       setAddForm({ nickname: "", group: "", gender: "U", birthYear: "" });
       setAddOpen(false);
@@ -192,12 +203,7 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
 
   const runConfirm = async () => {
     if (!confirm) return;
-    if (confirm.type === "codeReset") {
-      const res = await Promise.all(confirm.ids.map((id) => apiResetStudentCode(id)));
-      const failed = res.filter((r) => r.error).length;
-      if (failed) toast.error(`${failed}명 코드 초기화 실패`);
-      else toast.success(`${confirm.ids.length}명의 개인 코드를 초기화했습니다.`);
-    } else if (confirm.type === "delete") {
+    if (confirm.type === "delete") {
       confirm.ids.forEach((id) => onDeleteStudent?.(id));
     }
     setSelected(new Set());
@@ -212,7 +218,7 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
           <h3 className="font-black text-lg">회원 관리</h3>
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
-          닉네임·레벨·성별·RP를 바로 수정하고, 회원을 선택해 코드 초기화나 RP 일괄 조정을 할 수 있어요. 명단을 한 번에 붙여넣어 등록할 수도 있습니다.
+          닉네임·레벨·성별·나이·RP를 바로 수정하고, 회원을 선택해 RP 일괄 조정·삭제를 할 수 있어요. 명단을 한 번에 붙여넣어 등록할 수도 있습니다.
         </p>
       </div>
 
@@ -278,11 +284,18 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
             </div>
             <div>
               <label className="text-[11px] font-bold text-muted-foreground">나이(연생) (선택)</label>
-              <select value={addForm.birthYear} onChange={(e) => setAddForm((f) => ({ ...f, birthYear: e.target.value }))}
-                className="h-9 mt-1 w-full rounded-md bg-input border border-border/30 px-2 text-sm">
-                <option value="">선택 안 함</option>
-                {BIRTH_YEARS.map((y) => <option key={y} value={y}>{y}년생</option>)}
-              </select>
+              <Input
+                value={addForm.birthYear}
+                onChange={(e) => setAddForm((f) => ({ ...f, birthYear: e.target.value.replace(/[^0-9]/g, "").slice(0, 4) }))}
+                placeholder="연생 입력 (예: 94, 01)"
+                inputMode="numeric"
+                className="h-9 mt-1 bg-input border-border/30"
+              />
+              {addForm.birthYear && normalizeBirthYear(addForm.birthYear) && (
+                <span className="mt-0.5 block text-[10px] text-muted-foreground">
+                  {normalizeBirthYear(addForm.birthYear)}년생 · 만 {CURRENT_YEAR - normalizeBirthYear(addForm.birthYear)!}세
+                </span>
+              )}
             </div>
           </div>
           <div className="flex items-center justify-between gap-2">
@@ -347,11 +360,6 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
           </button>
           <div className="h-4 w-px bg-border/40" />
           <button disabled={selected.size === 0}
-            onClick={() => setConfirm({ type: "codeReset", ids: [...selected], label: `${selected.size}명` })}
-            className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold border border-border/60 text-foreground hover:bg-accent/40 transition-all active:scale-95 disabled:opacity-40">
-            <KeyRound className="size-3.5" /> 코드 초기화
-          </button>
-          <button disabled={selected.size === 0}
             onClick={() => setConfirm({ type: "delete", ids: [...selected], label: `${selected.size}명` })}
             className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold border border-destructive/40 text-destructive hover:bg-destructive/10 transition-all active:scale-95 disabled:opacity-40">
             <Trash2 className="size-3.5" /> 삭제
@@ -363,15 +371,6 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
             </Button>
           </div>
         </div>
-
-        {/* 코드 초기화 안내 */}
-        <p className="text-[11px] text-muted-foreground flex items-start gap-1.5 px-1">
-          <HelpCircle className="size-3.5 mt-0.5 shrink-0 text-neon-blue" />
-          <span>
-            <b className="text-foreground">개인 코드</b>는 회원이 [회원 열람 화면]에서 자기 카드(닉네임 등)를 수정할 때 쓰는 비밀번호예요.
-            회원이 코드를 잊었을 때 <b className="text-foreground">초기화</b>하면 새 코드를 다시 정할 수 있습니다. (전적·닉네임은 그대로)
-          </span>
-        </p>
 
         {/* 편집 표 */}
         <div className="overflow-x-auto rounded-xl border border-border/30">
@@ -428,8 +427,18 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
                           className="h-8 w-20 bg-input border-border/30" />
                       )}
                     </td>
-                    <td className="px-2 py-1.5 text-center text-muted-foreground tabular-nums">
-                      {s.birthYear ? `${CURRENT_YEAR - s.birthYear}세` : "-"}
+                    <td className="px-2 py-1.5">
+                      <div className="flex items-center justify-center gap-1">
+                        <Input
+                          value={r.birthYearInput}
+                          onChange={(e) => setField(s, { birthYearInput: e.target.value.replace(/[^0-9]/g, "").slice(0, 4) })}
+                          placeholder="연생"
+                          inputMode="numeric"
+                          className="h-8 w-14 text-center bg-input border-border/30 p-0" />
+                        <span className="w-7 text-[10px] text-muted-foreground tabular-nums">
+                          {(() => { const by = normalizeBirthYear(r.birthYearInput); return by ? `${CURRENT_YEAR - by}세` : ""; })()}
+                        </span>
+                      </div>
                     </td>
                     <td className="px-2 py-1.5">
                       <div className="flex items-center justify-center gap-1">
@@ -459,6 +468,7 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
                             group: r.group || null,
                             gender: r.gender,
                             rp: r.rp,
+                            birthYear: normalizeBirthYear(r.birthYearInput),
                           });
                           setDraft((prev) => { const n = { ...prev }; delete n[s.id]; return n; });
                         }}
@@ -474,23 +484,33 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
                       return (
                         <td className="px-2 py-1.5 text-center whitespace-nowrap">
                           {isOwnerRow ? (
-                            <span className="text-[10px] font-black text-neon-blue">방장</span>
+                            <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 text-[10px] font-black text-amber-500">
+                              <Crown className="size-3" /> 방장
+                            </span>
                           ) : !linked ? (
                             <span className="text-[10px] text-muted-foreground/60" title="구글 연동된 회원만 관리자로 승격할 수 있어요">미연동</span>
                           ) : isAdminRow ? (
-                            <button type="button"
-                              onClick={() => { if (window.confirm(`${r.nickname || s.name || "이 회원"} 님을 관리자에서 일반 회원으로 강등하시겠습니까?`)) setMemberAdmin(s.userId!, false); }}
-                              title="일반 멤버로 강등"
-                              className="inline-flex items-center gap-1 rounded-md border border-border/40 px-2 h-7 text-[10px] font-bold text-muted-foreground hover:text-foreground hover:bg-accent/40 active:scale-95">
-                              <ShieldOff className="size-3.5" /> 강등
-                            </button>
+                            <div className="flex flex-col items-center gap-0.5">
+                              <span className="inline-flex items-center gap-1 rounded-full border border-neon-blue/35 bg-neon-blue/15 px-2 py-0.5 text-[10px] font-black text-neon-blue">
+                                <ShieldCheck className="size-3" /> 관리자
+                              </span>
+                              <button type="button"
+                                onClick={() => { if (window.confirm(`${r.nickname || s.name || "이 회원"} 님을 관리자에서 일반 회원으로 강등하시겠습니까?`)) setMemberAdmin(s.userId!, false); }}
+                                className="text-[10px] font-bold text-muted-foreground underline-offset-2 hover:text-destructive hover:underline">
+                                일반으로 강등
+                              </button>
+                            </div>
                           ) : (
-                            <button type="button"
-                              onClick={() => { if (window.confirm(`${r.nickname || s.name || "이 회원"} 님을 공동 관리자로 승격하시겠습니까?`)) setMemberAdmin(s.userId!, true); }}
-                              title="공동 관리자로 승격"
-                              className="inline-flex items-center gap-1 rounded-md border border-neon-blue/40 px-2 h-7 text-[10px] font-bold text-neon-blue hover:bg-neon-blue/10 active:scale-95">
-                              <ShieldCheck className="size-3.5" /> 승격
-                            </button>
+                            <div className="flex flex-col items-center gap-0.5">
+                              <span className="inline-flex items-center rounded-full border border-border/50 bg-muted/40 px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                                일반
+                              </span>
+                              <button type="button"
+                                onClick={() => { if (window.confirm(`${r.nickname || s.name || "이 회원"} 님을 공동 관리자로 승격하시겠습니까?`)) setMemberAdmin(s.userId!, true); }}
+                                className="text-[10px] font-bold text-neon-blue underline-offset-2 hover:underline">
+                                관리자 승격
+                              </button>
+                            </div>
                           )}
                         </td>
                       );
@@ -571,22 +591,19 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
       <AlertDialog open={!!confirm} onOpenChange={(o) => { if (!o) setConfirm(null); }}>
         <AlertDialogContent className="border-border/40 bg-background/95 max-w-md shadow-2xl rounded-2xl backdrop-blur-xl">
           <AlertDialogHeader>
-            <AlertDialogTitle className={cn("text-lg font-black flex items-center gap-2", confirm?.type === "delete" && "text-destructive")}>
-              {confirm?.type === "delete" ? <ShieldAlert className="size-5" /> : <KeyRound className="size-5 text-neon-blue" />}
-              {confirm?.type === "delete" ? `회원 ${confirm?.label} 삭제` : `개인 코드 초기화 (${confirm?.label})`}
+            <AlertDialogTitle className="text-lg font-black flex items-center gap-2 text-destructive">
+              <ShieldAlert className="size-5" />
+              회원 {confirm?.label} 삭제
             </AlertDialogTitle>
             <AlertDialogDescription className="text-sm text-muted-foreground mt-2 leading-relaxed">
-              {confirm?.type === "delete"
-                ? "선택한 회원과 관련 경기 기록이 삭제되고 RP가 롤백됩니다. 되돌릴 수 없습니다."
-                : "선택한 회원들의 개인 코드가 초기화되어 다시 새 코드를 정할 수 있게 됩니다. (닉네임·전적은 유지)"}
+              선택한 회원과 관련 경기 기록이 삭제되고 RP가 롤백됩니다. 되돌릴 수 없습니다.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="mt-6 gap-2">
             <AlertDialogCancel className="font-bold border-border/80 rounded-xl h-11 px-5">취소</AlertDialogCancel>
             <AlertDialogAction onClick={(e) => { e.preventDefault(); runConfirm(); }}
-              className={cn("font-black rounded-xl h-11 px-5",
-                confirm?.type === "delete" ? "bg-destructive hover:bg-destructive/80 text-white" : "bg-neon-blue hover:bg-neon-blue/80 text-primary-foreground")}>
-              {confirm?.type === "delete" ? "삭제" : "초기화"}
+              className="font-black rounded-xl h-11 px-5 bg-destructive hover:bg-destructive/80 text-white">
+              삭제
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

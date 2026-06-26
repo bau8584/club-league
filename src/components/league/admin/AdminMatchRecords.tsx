@@ -43,13 +43,18 @@ export function AdminMatchRecords({
 
   type PlayerLike = { name: string; nickname?: string | null };
   const requestDeleteMatch = (m: Match, playerA: PlayerLike, playerB: PlayerLike, playerA2: PlayerLike | null | undefined, playerB2: PlayerLike | null | undefined, aWon: boolean) => {
-    const deltaWinner = aWon ? (m.rpDeltaA !== undefined ? Math.abs(m.rpDeltaA) : 25) : (m.rpDeltaB !== undefined ? Math.abs(m.rpDeltaB) : 25);
-    const deltaLoser = !aWon ? (m.rpDeltaA !== undefined ? Math.abs(m.rpDeltaA) : 20) : (m.rpDeltaB !== undefined ? Math.abs(m.rpDeltaB) : 20);
-    const playersA = playerA2 ? `${displayName(playerA)} & ${displayName(playerA2)}` : displayName(playerA);
-    const playersB = playerB2 ? `${displayName(playerB)} & ${displayName(playerB2)}` : displayName(playerB);
+    // 삭제 시 각 선수에게 적용되는 변동 = 기록 시 받은 변동의 반대(-rpDelta). 선수별로 다르므로 개별 표기.
+    const fmt = (n: number) => `${n >= 0 ? "+" : ""}${n}`;
+    const rollback = (delta: number | undefined, won: boolean) =>
+      delta !== undefined ? -delta : (won ? -25 : 20); // 저장된 개별 변동이 없으면(레거시) 근사치
+    const lines: string[] = [];
+    lines.push(`· ${displayName(playerA)}: RP ${fmt(rollback(m.rpDeltaA, aWon))}`);
+    if (playerA2) lines.push(`· ${displayName(playerA2)}: RP ${fmt(rollback(m.rpDeltaA2, aWon))}`);
+    lines.push(`· ${displayName(playerB)}: RP ${fmt(rollback(m.rpDeltaB, !aWon))}`);
+    if (playerB2) lines.push(`· ${displayName(playerB2)}: RP ${fmt(rollback(m.rpDeltaB2, !aWon))}`);
     setPendingDelete({
       id: m.id,
-      desc: `이 경기 기록을 삭제하면 모든 참여 선수의 RP가 경기 이전 상태로 롤백 복원됩니다.\n· ${playersA}: RP ${aWon ? "-" : "+"}${deltaWinner}\n· ${playersB}: RP ${!aWon ? "-" : "+"}${deltaLoser}\n이 작업은 되돌릴 수 없습니다.`,
+      desc: `이 경기 기록을 삭제하면 참여 선수 각자의 RP·전적이 경기 이전 상태로 롤백됩니다. (선수마다 변동량이 다릅니다)\n${lines.join("\n")}\n이 작업은 되돌릴 수 없습니다.`,
     });
   };
 

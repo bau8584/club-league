@@ -190,7 +190,7 @@ export function RecordMatch({
         icon: "⚔️",
         label: "기본 승리",
         value: p.baseWin,
-        desc: `${p.finalTier} 티어 매치 승리`
+        desc: `${getTierLabelInKorean(p.finalTier)} 티어 매치 승리`
       });
     }
 
@@ -201,7 +201,7 @@ export function RecordMatch({
         icon: "⚔️",
         label: "기본 차감",
         value: -p.baseLoss,
-        desc: `${p.finalTier} 티어 매치 패배`
+        desc: `${getTierLabelInKorean(p.finalTier)} 티어 매치 패배`
       });
     }
     
@@ -1189,13 +1189,19 @@ export function RecordMatch({
                       {p.group ? p.group : "선수"}
                     </div>
 
-                    {/* Rank Info (e.g. 실버 4 -> 실버 3) */}
+                    {/* Rank Info — 변동이 있을 때만 화살표로 표시, 없으면 현재 티어만 */}
                     <div className="text-[10px] text-soft font-mono mt-0.5 flex items-center gap-1">
-                      <span>{getTierLabelInKorean(p.prevTier)} {prevSub}</span>
-                      <span>➔</span>
-                      <span className={isLosing ? "text-loss font-bold" : "text-neon-blue font-bold"}>
-                        {getTierLabelInKorean(p.finalTier)} {finalSub}
-                      </span>
+                      {(p.prevTier !== p.finalTier || prevSub !== finalSub) ? (
+                        <>
+                          <span>{getTierLabelInKorean(p.prevTier)} {prevSub}</span>
+                          <span>➔</span>
+                          <span className={isLosing ? "text-loss font-bold" : "text-neon-blue font-bold"}>
+                            {getTierLabelInKorean(p.finalTier)} {finalSub}
+                          </span>
+                        </>
+                      ) : (
+                        <span>{getTierLabelInKorean(p.finalTier)} {finalSub}</span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1228,9 +1234,9 @@ export function RecordMatch({
                 )}>
                   <Sparkles className="size-3 shrink-0" />
                   <span>
-                    {isMajorRankChange 
-                      ? `티어 승급 달성! (${getTierLabelInKorean(p.finalTier)})` 
-                      : `${getTierLabelInKorean(p.finalTier)} ${finalSub}단계 상승!`
+                    {isMajorRankChange
+                      ? `티어 승급 달성! (${getTierLabelInKorean(p.finalTier)})`
+                      : `${getTierLabelInKorean(p.finalTier)} ${finalSub}단계 도달!`
                     }
                   </span>
                 </div>
@@ -1243,41 +1249,8 @@ export function RecordMatch({
                 </div>
               )}
 
-              {/* Rewards list (compacted and stylish inline badges) */}
-              {rewards.length > 0 && (
-                <div className={cn(
-                  "relative z-10 border-t pt-2 mt-0.5",
-                  isLosing ? "border-loss/10" : "border-neon-blue/10"
-                )}>
-                  <div className="text-[9px] uppercase tracking-wider text-muted-foreground font-bold mb-1">
-                    {isLosing ? "변동 상세 내역" : "획득 보너스"}
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {rewards.map((item) => {
-                      const isNegative = item.value < 0;
-                      return (
-                        <div 
-                          key={item.id} 
-                          className={cn(
-                            "inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm border",
-                            isNegative 
-                              ? "bg-loss/10 text-loss border-loss/20" 
-                              : "bg-neon-blue/10 text-neon-blue border-neon-blue/20"
-                          )}
-                        >
-                          <span>{item.icon} {item.label}</span>
-                          <span className={cn(
-                            "font-mono",
-                            isNegative ? "text-loss" : "text-neon-blue"
-                          )}>
-                            {isNegative ? "" : "+"}{item.value}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+              {/* Rewards list — 항목 클릭 시 설명 토글 */}
+              <RewardList rewards={rewards} isLosing={isLosing} />
             </div>
           );
         };
@@ -1469,79 +1442,6 @@ export function RecordMatch({
               <div className="absolute -top-40 -left-40 size-96 rounded-full blur-[120px] pointer-events-none transition-all duration-500" style={{ backgroundColor: isRankUp ? details.colorHex + '20' : 'rgba(6, 182, 212, 0.1)' }} />
               <div className="absolute -bottom-40 -right-40 size-96 rounded-full blur-[120px] pointer-events-none transition-all duration-500" style={{ backgroundColor: isRankUp ? details.colorHex + '20' : 'rgba(6, 182, 212, 0.1)' }} />
 
-              {/* Header Title Banner */}
-              {(() => {
-                const majorPromotions = [resultData.winner, resultData.winner2]
-                  .filter(Boolean)
-                  .filter(p => p!.promoted && p!.prevTier !== p!.finalTier);
-
-                const minorPromotions = [resultData.winner, resultData.winner2]
-                  .filter(Boolean)
-                  .filter(p => p!.promoted && p!.prevTier === p!.finalTier);
-
-                if (majorPromotions.length > 0) {
-                  const p = majorPromotions[0]!;
-                  const tierNameK = getTierLabelInKorean(p.finalTier);
-                  const details = getTierDetails(p.finalTier as TierName);
-                  
-                  return (
-                    <div className="relative z-10 flex flex-col items-center text-center mb-4 shrink-0 animate-scale-up-bounce">
-                      <div className={cn(
-                        "relative flex size-16 items-center justify-center rounded-full border bg-background/90 shadow-[0_0_30px_rgba(255,255,255,0.15)] mb-2 shrink-0",
-                        details.glow
-                      )}>
-                        <div className="absolute inset-0 rounded-full bg-current opacity-15 animate-ping pointer-events-none" />
-                        <div className="scale-100">
-                          <GeometricRankCrest tier={p.finalTier} rp={p.finalRp} thresholds={thresholds} size={48} />
-                        </div>
-                      </div>
-                      <h2 className={cn(
-                        "text-2xl md:text-3xl font-black uppercase tracking-[0.2em] mb-1 animate-glow-rankup",
-                        details.color
-                      )}>
-                        TIER UPGRADE!
-                      </h2>
-                      <p className="text-xs text-foreground max-w-lg leading-relaxed font-black bg-surface-deep px-5 py-1.5 rounded-full border border-neon-blue/20 shadow-lg">
-                        🎉 축하합니다! <span className={details.color}>{p.name}</span> 선수가 <span className={details.color}>{tierNameK}</span> 티어로 승급했습니다! 🎉
-                      </p>
-                    </div>
-                  );
-                }
-
-                if (minorPromotions.length > 0) {
-                  const p = minorPromotions[0]!;
-                  const finalSub = getTierSubdivision(p.finalRp, thresholds);
-                  const tierNameK = getTierLabelInKorean(p.finalTier);
-                  
-                  return (
-                    <div className="relative z-10 flex flex-col items-center text-center mb-4 shrink-0 animate-scale-up-bounce">
-                      <div className="flex size-10 items-center justify-center rounded-full bg-neon-blue/15 border border-neon-blue/30 text-neon-blue shadow-[0_0_15px_rgba(6,182,212,0.2)] mb-2 shrink-0">
-                        <Sparkles className="size-5 text-neon-blue animate-spin" style={{ animationDuration: '6s' }} />
-                      </div>
-                      <h2 className="text-xl md:text-2xl font-black uppercase tracking-[0.2em] text-neon-blue animate-glow-victory mb-1">
-                        DIVISION UP
-                      </h2>
-                      <p className="text-[11px] text-soft font-bold bg-surface-deep px-4 py-1.5 rounded-full border border-border/30 shadow-lg">
-                        실력이 상승하여 <span className="text-neon-blue font-black">{p.name}</span> 선수가 <span className="text-neon-blue font-black">{tierNameK} {finalSub}</span> 단계에 도달했습니다.
-                      </p>
-                    </div>
-                  );
-                }
-
-                return (
-                  <div className="relative z-10 flex flex-col items-center text-center mb-4 shrink-0 animate-scale-up-bounce">
-                    <div className="flex size-10 items-center justify-center rounded-full bg-neon-blue/15 border border-neon-blue/30 text-neon-blue glow-primary mb-2 shrink-0">
-                      <Trophy className="size-5 text-neon-blue animate-bounce" />
-                    </div>
-                    <h2 className="text-xl md:text-2xl font-black uppercase tracking-[0.25em] text-foreground animate-glow-victory mb-0.5">
-                      MATCH RECORDED
-                    </h2>
-                    <p className="text-[10px] text-soft max-w-md leading-relaxed uppercase tracking-wider">
-                      포인트 변동 내역 및 획득 결과
-                    </p>
-                  </div>
-                );
-              })()}
 
               {/* LOL Rank Result Layout: 2-Column Contrast View */}
               <div className="relative z-10 w-full flex flex-col md:flex-row items-stretch gap-4 md:gap-6 px-1 md:px-4 mt-1">
@@ -1754,6 +1654,55 @@ function TeamBlock({ title, accent, cols, children }: { title: string; accent: A
 }
 
 // 슬롯: 선택됨이면 컴팩트 카드, 비었으면 "선수 선택" 버튼
+// 보너스/패널티 목록 — 각 배지를 누르면 설명이 토글로 펼쳐지고 다시 누르면 접힘.
+function RewardList({ rewards, isLosing }: {
+  rewards: { id: string; icon: string; label: string; value: number; desc?: string }[];
+  isLosing: boolean;
+}) {
+  const [open, setOpen] = useState<string | null>(null);
+  if (!rewards || rewards.length === 0) return null;
+  const openItem = open ? rewards.find((r) => r.id === open) : null;
+  return (
+    <div className={cn("relative z-10 border-t pt-2 mt-0.5", isLosing ? "border-loss/10" : "border-neon-blue/10")}>
+      <div className="text-[9px] uppercase tracking-wider text-muted-foreground font-bold mb-1">
+        {isLosing ? "변동 상세 내역" : "획득 보너스"}
+        <span className="ml-1 normal-case tracking-normal text-muted-foreground/60">· 항목을 누르면 설명</span>
+      </div>
+      <div className="flex flex-wrap gap-1">
+        {rewards.map((item) => {
+          const isNegative = item.value < 0;
+          const isOpen = open === item.id;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setOpen(isOpen ? null : item.id)}
+              className={cn(
+                "inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm border transition-all active:scale-95 cursor-pointer",
+                isNegative ? "bg-loss/10 text-loss border-loss/20" : "bg-neon-blue/10 text-neon-blue border-neon-blue/20",
+                isOpen && "ring-1 ring-inset ring-current"
+              )}
+            >
+              <span>{item.icon} {item.label}</span>
+              <span className={cn("font-mono", isNegative ? "text-loss" : "text-neon-blue")}>
+                {isNegative ? "" : "+"}{item.value}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {openItem?.desc && (
+        <div className="mt-1.5 rounded-md border border-border/40 bg-surface-deep px-2 py-1.5 text-[10px] leading-relaxed text-soft animate-in fade-in slide-in-from-top-1 duration-150">
+          <b className={cn(openItem.value < 0 ? "text-loss" : "text-neon-blue")}>{openItem.icon} {openItem.label}</b>
+          <span className="mx-1 text-muted-foreground/50">—</span>
+          {openItem.desc}
+          <span className="ml-1 font-mono text-muted-foreground">({openItem.value < 0 ? "" : "+"}{openItem.value} RP)</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Slot({ accent, label, player, active, locked, onOpen, onClear, thresholds }: {
   accent: Accent; label: string; player: Student | null; active: boolean; locked?: boolean;
   onOpen: () => void; onClear: () => void; thresholds?: Record<string, number>;

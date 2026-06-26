@@ -59,9 +59,11 @@ create table if not exists public.leagues (
   member_uids uuid[] not null default '{}',   -- 일반 멤버(동호인)
   name        text not null,
   settings    jsonb not null default '{}'::jsonb,
+  join_code   text,            -- 6자리 초대 코드(트리거 자동 부여)
   is_deleted  boolean not null default false,
   created_at  timestamptz not null default now()
 );
+create unique index if not exists uq_leagues_join_code on public.leagues (join_code);
 alter table public.leagues enable row level security;
 
 -- ── 2) players : 선수(동호인) ─────────────────────────────────
@@ -116,13 +118,6 @@ create table if not exists public.league_secrets (
 create unique index if not exists uq_league_secrets_league on public.league_secrets (league_id);
 alter table public.league_secrets enable row level security;
 
--- ── 5) player_secrets : 개인 코드(PIN) ───────────────────────
-create table if not exists public.player_secrets (
-  player_id   uuid primary key references public.players(id) on delete cascade,
-  access_code text not null
-);
-alter table public.player_secrets enable row level security;
-
 -- ── 6) season_standings : 과거 시즌 순위 스냅샷 ──────────────
 create table if not exists public.season_standings (
   id           uuid primary key default gen_random_uuid(),
@@ -141,6 +136,9 @@ create table if not exists public.season_standings (
 );
 create index if not exists idx_season_standings_league_season
   on public.season_standings (league_id, season);
+-- 한 시즌에 같은 선수 스냅샷이 중복 저장되지 않도록 보장
+create unique index if not exists uq_season_standings_player
+  on public.season_standings (league_id, season, player_id);
 alter table public.season_standings enable row level security;
 
 -- ── 7) players_public : 본명(name) 제외 공개 뷰 ──────────────
@@ -229,12 +227,6 @@ drop policy if exists "owner write league secret" on public.league_secrets;
 create policy "owner write league secret" on public.league_secrets for all to authenticated
   using (public.is_class_owner(league_id)) with check (public.is_class_owner(league_id));
 
--- player_secrets : 권한자 관리
-drop policy if exists "recorders manage player secrets" on public.player_secrets;
-create policy "recorders manage player secrets" on public.player_secrets for all to authenticated
-  using (exists (select 1 from public.players p where p.id = player_secrets.player_id and public.is_class_recorder(p.league_id)))
-  with check (exists (select 1 from public.players p where p.id = player_secrets.player_id and public.is_class_recorder(p.league_id)));
-
 -- season_standings : 관리자 읽기
 drop policy if exists "teachers read season standings" on public.season_standings;
 create policy "teachers read season standings" on public.season_standings for select to authenticated
@@ -301,15 +293,6 @@ language sql stable security definer set search_path = public, extensions as $$
   order by rp desc;
 $$;
 
-create or replace function public.restore_season(p_class_id uuid, p_target_season text)
-returns text language plpgsql security definer set search_path = public, extensions as $$
-begin
-  if not public.is_class_teacher(p_class_id) then raise exception '권한이 없습니다.'; end if;
-  update public.leagues set settings = coalesce(settings,'{}'::jsonb) || jsonb_build_object('season', p_target_season)
-   where id = p_class_id;
-  return p_target_season;
-end; $$;
-
 create or replace function public.rename_season(p_class_id uuid, p_old text, p_new text)
 returns void language plpgsql security definer set search_path = public, extensions as $$
 begin
@@ -358,6 +341,53 @@ begin
   insert into public.players select * from jsonb_populate_recordset(null::public.players, p_students);
   insert into public.matches select * from jsonb_populate_recordset(null::public.matches, p_matches);
   return jsonb_build_object('ok', true);
+end; $$;
+
+-- 6자리 초대 코드 생성/자동부여 + 코드로 참여
+create or replace function public.gen_unique_join_code()
+returns text language plpgsql security definer set search_path = public, extensions as $$
+declare
+  v_alphabet text := '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+  v_code text; v_i int;
+begin
+  loop
+    v_code := '';
+    for v_i in 1..6 loop
+      v_code := v_code || substr(v_alphabet, 1 + floor(random() * length(v_alphabet))::int, 1);
+    end loop;
+    exit when not exists (select 1 from public.leagues where join_code = v_code);
+  end loop;
+  return v_code;
+end; $$;
+
+create or replace function public.set_join_code()
+returns trigger language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if new.join_code is null or btrim(new.join_code) = '' then
+    new.join_code := public.gen_unique_join_code();
+  end if;
+  return new;
+end; $$;
+
+drop trigger if exists trg_set_join_code on public.leagues;
+create trigger trg_set_join_code before insert on public.leagues
+  for each row execute function public.set_join_code();
+
+create or replace function public.join_league_by_code(p_code text)
+returns table(id uuid, class_name text, is_owner boolean)
+language plpgsql security definer set search_path = public, extensions as $$
+declare v_id uuid; v_owner uuid; v_members uuid[];
+begin
+  select l.id, l.owner_uid, coalesce(l.member_uids,'{}'::uuid[])
+    into v_id, v_owner, v_members
+  from public.leagues l
+  where upper(btrim(l.join_code)) = upper(btrim(p_code))
+    and coalesce(l.is_deleted, false) = false;
+  if v_id is null then raise exception '리그를 찾을 수 없습니다. 코드를 다시 확인해 주세요.'; end if;
+  if v_owner <> auth.uid() and not (auth.uid() = any(v_members)) then
+    update public.leagues set member_uids = array_append(v_members, auth.uid()) where leagues.id = v_id;
+  end if;
+  return query select l.id, l.name, (l.owner_uid = auth.uid()) from public.leagues l where l.id = v_id;
 end; $$;
 
 create or replace function public.join_league(p_class_id uuid)
@@ -427,41 +457,71 @@ begin
 end; $$;
 
 -- ============================================================
--- 개인 코드(PIN) RPC
+-- 휴면 감점(decay) 로그 + 수동 실시 RPC
 -- ============================================================
-create or replace function public.student_has_code(p_student_id uuid)
-returns boolean language sql stable security definer set search_path = public, extensions as $$
-  select exists(select 1 from public.player_secrets where player_id = p_student_id);
+create table if not exists public.decay_log (
+  id          uuid primary key default gen_random_uuid(),
+  league_id   uuid not null references public.leagues(id) on delete cascade,
+  batch_id    uuid not null,
+  player_id   uuid references public.players(id) on delete set null,
+  player_name text,
+  tier        text,
+  rp_before   int,
+  rp_after    int,
+  decay_rp    int,
+  season      text,
+  applied_by  uuid default auth.uid(),
+  applied_at  timestamptz not null default now()
+);
+create index if not exists idx_decay_log_league on public.decay_log (league_id, applied_at desc);
+alter table public.decay_log enable row level security;
+
+drop policy if exists "teachers read decay log" on public.decay_log;
+create policy "teachers read decay log" on public.decay_log for select to authenticated
+  using (public.is_class_teacher(league_id));
+
+create or replace function public.apply_dormancy_decay(p_class_id uuid, p_season text, p_entries jsonb)
+returns uuid
+language plpgsql security definer set search_path = public, extensions as $$
+declare
+  v_batch  uuid := gen_random_uuid();
+  v_entry  jsonb;
+  v_pid    uuid;
+  v_decay  int;
+  v_before int;
+  v_after  int;
+begin
+  if not public.is_class_owner(p_class_id) then
+    raise exception '권한이 없습니다 (소유자 전용)';
+  end if;
+
+  for v_entry in select * from jsonb_array_elements(coalesce(p_entries, '[]'::jsonb))
+  loop
+    v_pid   := (v_entry->>'player_id')::uuid;
+    v_decay := greatest(0, coalesce((v_entry->>'decay_rp')::int, 0));
+    if v_pid is null or v_decay = 0 then continue; end if;
+
+    select rp into v_before from public.players
+      where id = v_pid and league_id = p_class_id;
+    if v_before is null then continue; end if;
+
+    v_after := greatest(0, v_before - v_decay);
+    if v_after = v_before then continue; end if;
+
+    update public.players set rp = v_after where id = v_pid;
+
+    insert into public.decay_log(
+      league_id, batch_id, player_id, player_name, tier,
+      rp_before, rp_after, decay_rp, season
+    ) values (
+      p_class_id, v_batch, v_pid, v_entry->>'player_name', v_entry->>'tier',
+      v_before, v_after, v_before - v_after, p_season
+    );
+  end loop;
+
+  return v_batch;
+end;
 $$;
-
-create or replace function public.verify_student_code(p_student_id uuid, p_code text)
-returns boolean language sql stable security definer set search_path = public, extensions as $$
-  select exists(select 1 from public.player_secrets where player_id = p_student_id and access_code = crypt(p_code, access_code));
-$$;
-
-create or replace function public.claim_student(p_student_id uuid, p_code text, p_nickname text default null)
-returns void language plpgsql security definer set search_path = public, extensions as $$
-declare v_nick text := nullif(btrim(coalesce(p_nickname,'')),'');
-begin
-  if exists(select 1 from public.player_secrets where player_id = p_student_id) then raise exception '이미 코드가 설정되어 있습니다.'; end if;
-  if not exists(select 1 from public.players where id = p_student_id and coalesce(is_deleted,false) = false) then raise exception '선수를 찾을 수 없습니다.'; end if;
-  insert into public.player_secrets(player_id, access_code) values (p_student_id, crypt(p_code, gen_salt('bf')));
-  if v_nick is not null then update public.players set nickname = left(v_nick,20) where id = p_student_id; end if;
-end; $$;
-
-create or replace function public.update_student_nickname(p_student_id uuid, p_code text, p_nickname text)
-returns void language plpgsql security definer set search_path = public, extensions as $$
-begin
-  if not public.verify_student_code(p_student_id, p_code) then raise exception '코드가 올바르지 않습니다.'; end if;
-  update public.players set nickname = left(nullif(btrim(coalesce(p_nickname,'')),''),20) where id = p_student_id;
-end; $$;
-
-create or replace function public.change_student_code(p_student_id uuid, p_old_code text, p_new_code text)
-returns void language plpgsql security definer set search_path = public, extensions as $$
-begin
-  if not public.verify_student_code(p_student_id, p_old_code) then raise exception '코드가 올바르지 않습니다.'; end if;
-  update public.player_secrets set access_code = crypt(p_new_code, gen_salt('bf')) where player_id = p_student_id;
-end; $$;
 
 -- ============================================================
 -- 실행 권한 + Data API 권한
@@ -470,28 +530,24 @@ grant execute on function public.current_season_of(uuid)            to authentic
 grant execute on function public.start_new_season(uuid, text)       to authenticated;
 grant execute on function public.list_class_seasons(uuid)           to authenticated, anon;
 grant execute on function public.get_season_standings_public(uuid, text) to authenticated, anon;
-grant execute on function public.restore_season(uuid, text)         to authenticated;
 grant execute on function public.rename_season(uuid, text, text)    to authenticated;
 grant execute on function public.delete_season(uuid, text, boolean) to authenticated;
 grant execute on function public.record_match_transaction(uuid, uuid, uuid, uuid, jsonb, uuid, uuid, int, int) to authenticated;
 grant execute on function public.restore_class_data(uuid, jsonb, jsonb) to authenticated;
 grant execute on function public.join_league(uuid)                  to authenticated;
+grant execute on function public.join_league_by_code(text)          to authenticated;
 grant execute on function public.leave_league(uuid)                 to authenticated;
 grant execute on function public.set_player_level(uuid, text, text) to authenticated;
 grant execute on function public.get_league_members(uuid)           to authenticated;
 grant execute on function public.remove_league_member(uuid, uuid)   to authenticated;
-grant execute on function public.student_has_code(uuid)             to authenticated, anon;
-grant execute on function public.verify_student_code(uuid, text)    to authenticated, anon;
-grant execute on function public.claim_student(uuid, text, text)    to authenticated, anon;
-grant execute on function public.update_student_nickname(uuid, text, text) to authenticated, anon;
-grant execute on function public.change_student_code(uuid, text, text)     to authenticated, anon;
+grant execute on function public.apply_dormancy_decay(uuid, text, jsonb) to authenticated;
 
 grant select, insert, update, delete on public.leagues        to authenticated;
 grant select, insert, update, delete on public.players        to authenticated;
 grant select, insert, update, delete on public.matches        to authenticated;
 grant select, insert, update, delete on public.league_secrets to authenticated;
-grant select, insert, update, delete on public.player_secrets to authenticated;
 grant select                          on public.season_standings to authenticated;
+grant select                          on public.decay_log         to authenticated;
 grant select on public.players_public to anon, authenticated;
 
 commit;

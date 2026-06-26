@@ -255,12 +255,16 @@ export function Lobby() {
     const fromUrl = raw.match(/classId=([0-9a-f-]{36})/i)?.[1];
     const code = fromUrl || raw;
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(code);
-    if (!isUuid) {
-      return toast.error("올바른 리그 코드가 아닙니다. 개설자에게 받은 코드(또는 초대 링크)를 붙여넣어 주세요.");
+    // 6자리 짧은 코드(영문 대문자+숫자) 또는 UUID/링크 모두 허용
+    const isShort = /^[A-Za-z0-9]{6}$/.test(code);
+    if (!isUuid && !isShort) {
+      return toast.error("올바른 리그 코드가 아닙니다. 개설자에게 받은 6자리 코드(또는 초대 링크)를 입력해 주세요.");
     }
     setJoining(true);
     try {
-      const { data, error } = await supabase.rpc("join_league", { p_class_id: code });
+      const { data, error } = isUuid
+        ? await supabase.rpc("join_league", { p_class_id: code })
+        : await supabase.rpc("join_league_by_code", { p_code: code.toUpperCase() });
       if (error) throw error;
       const row = Array.isArray(data) ? data[0] : data;
       toast.success(row?.is_owner ? "내가 개설한 리그입니다." : `'${row?.name ?? "리그"}'에 참여했습니다!`);
@@ -875,7 +879,7 @@ export function Lobby() {
                   required
                   value={joinCode}
                   onChange={(e) => setJoinCode(e.target.value)}
-                  placeholder="리그 코드 또는 초대 링크 붙여넣기"
+                  placeholder="6자리 리그 코드 또는 초대 링크"
                   className="h-10 border-border/60 focus:border-neon-green transition-all font-mono text-xs"
                 />
                 <p className="text-[10px] text-muted-foreground leading-snug">
@@ -913,14 +917,23 @@ export function Lobby() {
             </div>
             <div className="space-y-3">
               <div className="space-y-1.5">
-                <Label className="text-xs font-bold text-foreground">리그 코드</Label>
+                <Label className="text-xs font-bold text-foreground">리그 코드 (6자리)</Label>
                 <div className="flex gap-2">
-                  <Input readOnly value={inviteLeague.id} className="h-10 font-mono text-[11px]" />
-                  <Button type="button" onClick={() => { navigator.clipboard.writeText(inviteLeague.id); toast.success("리그 코드가 복사되었습니다!"); }}
-                    className="h-10 px-3 bg-neon-green hover:bg-neon-green/90 text-primary-foreground font-bold shrink-0">
+                  <Input
+                    readOnly
+                    value={inviteLeague.join_code ?? inviteLeague.id}
+                    className="h-12 font-mono text-center text-2xl font-black tracking-[0.4em] uppercase"
+                  />
+                  <Button type="button" onClick={() => { navigator.clipboard.writeText(inviteLeague.join_code ?? inviteLeague.id); toast.success("리그 코드가 복사되었습니다!"); }}
+                    className="h-12 px-3 bg-neon-green hover:bg-neon-green/90 text-primary-foreground font-bold shrink-0">
                     <Copy className="size-4" />
                   </Button>
                 </div>
+                {!inviteLeague.join_code && (
+                  <p className="text-[10px] text-amber-500 leading-snug">
+                    ※ 이 리그는 코드 마이그레이션 적용 전에 만들어져 임시로 긴 코드를 사용합니다. 마이그레이션 적용 후 6자리 코드가 표시됩니다.
+                  </p>
+                )}
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs font-bold text-muted-foreground">또는 초대 링크</Label>

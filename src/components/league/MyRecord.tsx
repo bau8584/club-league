@@ -1,6 +1,8 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { TierBadge } from "./TierBadge";
+import { TierCrest } from "./TierCrest";
+import { ScoreStrategyGuide } from "./ScoreStrategyGuide";
 import { GenderMark } from "./GenderMark";
 import { cn } from "@/lib/utils";
 import { 
@@ -70,6 +72,9 @@ export function MyRecord({
       .filter((m) => m.playerAId === me.id || m.playerBId === me.id || m.playerA2Id === me.id || m.playerB2Id === me.id)
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [me, matches]);
+
+  // 최근 경기 더보기: 기본 5개, 버튼마다 +5
+  const [visibleCount, setVisibleCount] = useState(5);
 
   // 3. 승률 및 티어 진척도 계산
   const stats = useMemo(() => {
@@ -209,15 +214,16 @@ export function MyRecord({
           <CardHeader className="pb-3 relative z-10">
             <div className="flex items-center justify-between gap-3">
               <div className="space-y-0.5">
-                <span className="text-[10px] font-black uppercase tracking-wider text-neon-blue">Student Profile</span>
+                <span className="text-[10px] font-black uppercase tracking-wider text-neon-blue">회원 프로필</span>
                 <CardTitle className="text-2xl font-black tracking-tight text-foreground flex items-center gap-2">
                   <GenderMark gender={me.gender} />
                   <span>{me.name}</span>
                 </CardTitle>
               </div>
               
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2.5">
                 <TierBadge rp={me.rp} thresholds={thresholds} />
+                <TierCrest rp={me.rp} thresholds={thresholds} size={60} />
               </div>
             </div>
           </CardHeader>
@@ -359,6 +365,9 @@ export function MyRecord({
         </Card>
       </div>
 
+      {/* 점수 전략 가이드 (최근 전적 위) */}
+      <ScoreStrategyGuide rp={me.rp} />
+
       {/* 3. 최근 전적 타임라인 리스트 */}
       <Card className="border-border/60 bg-card/45 backdrop-blur-xl shadow-lg">
         <CardHeader className="pb-3 border-b border-border/30">
@@ -385,7 +394,7 @@ export function MyRecord({
             </div>
           ) : (
             <div className="divide-y divide-border/30">
-              {myMatches.map((m) => {
+              {myMatches.slice(0, visibleCount).map((m) => {
                 // 내 소속 팀이 Team A인지 확인
                 const isTeamA = m.playerAId === me.id || m.playerA2Id === me.id;
                 
@@ -493,6 +502,17 @@ export function MyRecord({
                   </div>
                 );
               })}
+            </div>
+          )}
+          {myMatches.length > visibleCount && (
+            <div className="border-t border-border/30 p-3">
+              <button
+                type="button"
+                onClick={() => setVisibleCount((c) => c + 5)}
+                className="w-full rounded-lg border border-border/50 bg-card/40 py-2 text-xs font-bold text-muted-foreground transition-all hover:border-neon-blue/40 hover:text-neon-blue active:scale-[0.99]"
+              >
+                전적 더보기 ({Math.min(5, myMatches.length - visibleCount)}개 더 · 남은 {myMatches.length - visibleCount}건)
+              </button>
             </div>
           )}
         </CardContent>

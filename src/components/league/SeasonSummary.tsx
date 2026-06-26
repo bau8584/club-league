@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
-import { Trophy, Flame, Target, Swords, Users, TrendingUp, Crown, Medal, Handshake } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Trophy, Flame, Target, Swords, Users, TrendingUp, Crown, Medal, Handshake, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Student, Match, TierName } from "@/lib/league-types";
 
@@ -128,6 +129,53 @@ export function SeasonSummary({
     };
   }, [filtered, thresholds]);
 
+  // 선수 상세 조회 (닉네임 검색)
+  const [query, setQuery] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const rankedAll = useMemo(() => [...students].sort((a, b) => b.rp - a.rp), [students]);
+  const searchResults = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    return students.filter((s) => nameOf(s).toLowerCase().includes(q)).slice(0, 8);
+  }, [students, query]);
+  const selected = useMemo(() => students.find((s) => s.id === selectedId) || null, [students, selectedId]);
+  const detail = useMemo(() => {
+    if (!selected) return null;
+    const id = selected.id;
+    const isWinSide = (m: Match) => m.playerAId === id || m.playerA2Id === id;
+    const isLoseSide = (m: Match) => m.playerBId === id || m.playerB2Id === id;
+    const myMatches = matches
+      .filter((m) => isWinSide(m) || isLoseSide(m))
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    let cur = 0, best = 0;
+    for (const m of myMatches) { cur = isWinSide(m) ? cur + 1 : 0; if (cur > best) best = cur; }
+    const h2h = new Map<string, { w: number; l: number }>();
+    for (const m of myMatches) {
+      const won = isWinSide(m);
+      const oppIds = won ? [m.playerBId, m.playerB2Id] : [m.playerAId, m.playerA2Id];
+      for (const oid of oppIds) {
+        if (!oid) continue;
+        const e = h2h.get(oid) || { w: 0, l: 0 };
+        if (won) e.w++; else e.l++;
+        h2h.set(oid, e);
+      }
+    }
+    const h2hList = [...h2h.entries()]
+      .map(([oid, rec]) => ({ opp: students.find((s) => s.id === oid) || null, ...rec }))
+      .filter((x) => x.opp)
+      .sort((a, b) => (b.w + b.l) - (a.w + a.l));
+    const games = selected.wins + selected.losses;
+    return {
+      rank: rankedAll.findIndex((s) => s.id === id) + 1,
+      tier: tierOf(selected.rp, thresholds),
+      winRate: games > 0 ? Math.round((selected.wins / games) * 100) : 0,
+      longest: best,
+      totalMatches: myMatches.length,
+      recent: myMatches.slice(-5).reverse().map((m) => (isWinSide(m) ? "W" : "L")),
+      h2hList,
+    };
+  }, [selected, matches, students, rankedAll, thresholds]);
+
   if (students.length === 0) {
     return (
       <Card className="border border-border/60 bg-card/60 p-10 text-center backdrop-blur shadow-xl">
@@ -145,6 +193,80 @@ export function SeasonSummary({
         <Trophy className="size-5 text-neon-blue" />
         <h3 className="text-lg font-black tracking-tight">시즌 요약 · {season}</h3>
       </div>
+
+      {/* 선수 상세 조회 */}
+      <Card className="border border-border/60 bg-card/60 p-4 backdrop-blur shadow-md space-y-3">
+        <div className="flex items-center gap-2 text-neon-blue">
+          <Search className="size-4" />
+          <span className="text-xs font-bold uppercase tracking-wider">선수 상세 조회</span>
+        </div>
+        <Input
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); setSelectedId(null); }}
+          placeholder="닉네임으로 검색해 시즌 상세 통계 보기..."
+          className="h-9 bg-input border-border/40 text-sm"
+        />
+        {query.trim() && !selected && (
+          <div className="flex flex-wrap gap-1.5">
+            {searchResults.length === 0 ? (
+              <span className="px-1 py-1 text-xs text-muted-foreground">검색 결과가 없습니다.</span>
+            ) : searchResults.map((s) => (
+              <button key={s.id} type="button" onClick={() => setSelectedId(s.id)}
+                className="inline-flex items-center gap-1 rounded-full border border-border/50 bg-card/60 px-2.5 py-1 text-xs font-bold transition-all hover:border-neon-blue/50 active:scale-95">
+                {nameOf(s)}{s.group && <span className="text-[10px] text-muted-foreground">· {s.group}</span>}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {selected && detail && (
+          <div className="rounded-xl border border-neon-blue/30 bg-neon-blue/[0.04] p-4 space-y-3 animate-in fade-in slide-in-from-top-1 duration-150">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-lg font-black">{nameOf(selected)}</span>
+                  <span className={cn("text-xs font-black shrink-0", TIER_COLOR[detail.tier])}>{TIER_LABEL[detail.tier]}</span>
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  {selected.group || "레벨 미지정"}{detail.rank > 0 ? ` · 시즌 ${detail.rank}위` : ""}
+                </div>
+              </div>
+              <button type="button" onClick={() => { setSelectedId(null); setQuery(""); }} className="text-muted-foreground hover:text-foreground shrink-0"><X className="size-4" /></button>
+            </div>
+
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+              <Stat label="RP" value={`${selected.rp}`} />
+              <Stat label="전적" value={`${selected.wins}승 ${selected.losses}패`} />
+              <Stat label="승률" value={`${detail.winRate}%`} />
+              <Stat label="경기" value={`${detail.totalMatches}`} />
+              <Stat label="최장 연승" value={detail.longest > 1 ? `${detail.longest}연승` : "-"} />
+            </div>
+
+            {detail.recent.length > 0 && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-bold text-muted-foreground">최근</span>
+                {detail.recent.map((r, i) => (
+                  <span key={i} className={cn("flex size-5 items-center justify-center rounded-full text-[10px] font-bold", r === "W" ? "bg-win/20 text-win" : "bg-loss/20 text-loss")}>{r}</span>
+                ))}
+              </div>
+            )}
+
+            {detail.h2hList.length > 0 && (
+              <div>
+                <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">상대 전적</div>
+                <div className="space-y-1 max-h-44 overflow-y-auto">
+                  {detail.h2hList.map(({ opp, w, l }) => (
+                    <div key={opp!.id} className="flex items-center justify-between gap-2 rounded-md border border-border/30 bg-muted/15 px-2.5 py-1 text-xs">
+                      <span className="truncate font-bold">{nameOf(opp!)}</span>
+                      <span className="font-mono shrink-0"><span className="text-win">{w}승</span> <span className="text-loss">{l}패</span></span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </Card>
 
       {/* 전체 / 레벨 필터 */}
       {availableGroups.length > 0 && (
@@ -260,6 +382,15 @@ function FilterChip({ active, onClick, children, accent = "blue" }: { active: bo
     >
       {children}
     </button>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-border/30 bg-card/40 px-2 py-1.5 text-center">
+      <div className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">{label}</div>
+      <div className="mt-0.5 text-sm font-black tabular-nums">{value}</div>
+    </div>
   );
 }
 

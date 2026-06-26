@@ -145,6 +145,7 @@ export type Class = {
   owner_uid: string; // 방장 UID
   admin_uids: string[] | null; // 공동 관리자 UID 목록 -> DB: admin_uids
   member_uids: string[] | null; // 멤버(동호인) UID 목록 -> DB: member_uids
+  join_code?: string | null; // 6자리 초대 코드 -> DB: join_code
   name: string; // 리그명 -> DB: name
   settings: {
     season?: string; // 시즌 텍스트 정보 (예: "2026-1")
