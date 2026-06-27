@@ -403,6 +403,22 @@ begin
   return query select l.id, l.name, (l.owner_uid = auth.uid()) from public.leagues l where l.id = p_class_id;
 end; $$;
 
+-- 최고관리자(방장) 위임: owner_uid 단일이므로 소유권 이전 + 기존 방장은 공동관리자로 강등
+create or replace function public.transfer_ownership(p_class_id uuid, p_new_owner uuid)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+declare v_old uuid;
+begin
+  if not public.is_class_owner(p_class_id) then raise exception '권한이 없습니다 (방장 전용).'; end if;
+  v_old := auth.uid();
+  if p_new_owner = v_old then raise exception '이미 최고관리자입니다.'; end if;
+  update public.leagues
+     set owner_uid   = p_new_owner,
+         admin_uids  = array_remove(array_remove(coalesce(admin_uids,'{}'::uuid[]), p_new_owner), v_old)
+                         || array[v_old],
+         member_uids = array_remove(coalesce(member_uids,'{}'::uuid[]), p_new_owner)
+   where id = p_class_id;
+end; $$;
+
 create or replace function public.leave_league(p_class_id uuid)
 returns void language plpgsql security definer set search_path = public, extensions as $$
 begin
@@ -537,6 +553,7 @@ grant execute on function public.restore_class_data(uuid, jsonb, jsonb) to authe
 grant execute on function public.join_league(uuid)                  to authenticated;
 grant execute on function public.join_league_by_code(text)          to authenticated;
 grant execute on function public.leave_league(uuid)                 to authenticated;
+grant execute on function public.transfer_ownership(uuid, uuid)     to authenticated;
 grant execute on function public.set_player_level(uuid, text, text) to authenticated;
 grant execute on function public.get_league_members(uuid)           to authenticated;
 grant execute on function public.remove_league_member(uuid, uuid)   to authenticated;

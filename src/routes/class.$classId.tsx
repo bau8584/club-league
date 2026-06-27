@@ -127,7 +127,7 @@ function Index() {
   // 선수 탭 접근 통제 보안 가드 (myRecord, recommend, myAchievements + 허용 시 memberRecord)
   useEffect(() => {
     if (session && session.role === "STUDENT") {
-      const allowed = ["recommend", "myRecord", "myAchievements", ...(memberCanRecord ? ["memberRecord"] : [])];
+      const allowed = ["leaderboard", "recommend", "myRecord", "myAchievements", ...(memberCanRecord ? ["memberRecord"] : [])];
       if (!allowed.includes(tab)) {
         setTab("myRecord");
       }
@@ -380,6 +380,11 @@ function Index() {
                 <TabButton active={tab === "myAchievements"} onClick={() => setTab("myAchievements")} icon={<Award className="size-4" />}>
                   나의 업적
                 </TabButton>
+
+                {/* 4. 티어 순위표 (회원도 열람 가능) */}
+                <TabButton active={tab === "leaderboard"} onClick={() => setTab("leaderboard")} icon={<Trophy className="size-4" />}>
+                  티어 순위표
+                </TabButton>
               </>
             ) : (
               <>
@@ -458,7 +463,7 @@ function Index() {
           />
         )}
 
-        {tab === "leaderboard" && session.role !== "STUDENT" && (
+        {tab === "leaderboard" && (
           <Leaderboard
             students={students}
             thresholds={tierThresholds}

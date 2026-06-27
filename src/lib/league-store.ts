@@ -37,6 +37,7 @@ import {
   apiClaimPlayer,
   apiSetPlayerLevel,
   apiSetMemberAdmin,
+  apiTransferOwnership,
   apiListSeasons,
   apiStartNewSeason,
   apiFetchSeasonStandings,
@@ -2452,6 +2453,21 @@ function useLeagueStoreInternal() {
     return true;
   }, []);
 
+  // 최고관리자(방장) 위임 — 소유권 이전 후 본인은 공동관리자로 강등됨
+  const transferOwnership = useCallback(async (uid: string): Promise<boolean> => {
+    if (!isClassOwnerRef.current) {
+      toast.error("권한이 없습니다. 방장만 최고관리자를 위임할 수 있습니다.");
+      return false;
+    }
+    const cid = currentClassIdRef.current;
+    if (!cid) return false;
+    const { error } = await apiTransferOwnership(cid, uid);
+    if (error) { toast.error("최고관리자 위임에 실패했습니다: " + error.message); return false; }
+    toast.success("최고관리자를 위임했습니다. 본인은 공동관리자로 변경됩니다.");
+    await loadClassDataRef.current?.(cid, true);
+    return true;
+  }, []);
+
   // Decay settings save function
   const saveDecaySettings = useCallback(async (enabled: boolean, days: number, amount: number, tiers: TierName[], perTierRp?: Partial<Record<TierName, number>>) => {
     if (currentViewSeasonRef.current !== "현재 시즌") {
@@ -2987,6 +3003,7 @@ function useLeagueStoreInternal() {
     ownerUid,
     adminUids,
     setMemberAdmin,
+    transferOwnership,
     recordMatch,
     upsertStudents,
     deleteMatch,

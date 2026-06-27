@@ -330,6 +330,11 @@ export async function apiSetMemberAdmin(classId: string, uid: string, makeAdmin:
   return supabase.rpc("set_member_admin", { p_class_id: classId, p_uid: uid, p_make_admin: makeAdmin });
 }
 
+// 방장(최고관리자) 위임 — 소유권 이전 + 기존 방장은 공동관리자로 강등
+export async function apiTransferOwnership(classId: string, newOwner: string) {
+  return supabase.rpc("transfer_ownership", { p_class_id: classId, p_new_owner: newOwner });
+}
+
 // 레벨 이름변경/삭제 시 그 레벨이던 회원들의 group_label 일괄 이전(p_new=null이면 정리)
 export async function apiSetPlayerLevel(classId: string, oldName: string, newName: string | null) {
   return supabase.rpc("set_player_level", { p_class_id: classId, p_old: oldName, p_new: newName });
