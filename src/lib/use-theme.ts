@@ -16,7 +16,7 @@ const STORAGE_KEY = "ui-theme";
 function normalize(v: string | null | undefined): ThemeName {
   if (v === "pastel") return "clay";
   if (v === "glass") return "modern";
-  return (VALID as string[]).includes(v ?? "") ? (v as ThemeName) : "game";
+  return (VALID as string[]).includes(v ?? "") ? (v as ThemeName) : "modern";
 }
 
 function readTheme(): ThemeName {
@@ -24,12 +24,12 @@ function readTheme(): ThemeName {
     const attr = document.documentElement.getAttribute("data-theme");
     if (attr && (VALID as string[]).includes(attr)) return attr as ThemeName;
   }
-  try { return normalize(localStorage.getItem(STORAGE_KEY)); } catch { return "game"; }
+  try { return normalize(localStorage.getItem(STORAGE_KEY)); } catch { return "modern"; }
 }
 
 // 테마 읽기/변경 훅. data-theme 속성 + localStorage 동기화.
 export function useTheme() {
-  const [theme, setThemeState] = useState<ThemeName>("game");
+  const [theme, setThemeState] = useState<ThemeName>("modern");
 
   // 초기 마운트 시 현재 적용된 테마로 동기화 (SSR/무플래시 스크립트가 미리 설정)
   useEffect(() => { setThemeState(readTheme()); }, []);

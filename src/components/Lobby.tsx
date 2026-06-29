@@ -136,7 +136,7 @@ export function Lobby() {
       const { data: joined, error: joinedErr } = await supabase
         .from("leagues")
         .select("*")
-        .or(`member_uids.cs.{${uid}},admin_uids.cs.{${uid}}`)
+        .or(`member_uids.cs.{${uid}},admin_uids.cs.{${uid}},co_owner_uids.cs.{${uid}}`)
         .neq("is_deleted", true)
         .order("created_at", { ascending: false });
       if (joinedErr) throw joinedErr;

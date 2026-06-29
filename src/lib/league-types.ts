@@ -41,6 +41,20 @@ export type Student = {
 /**
  * Match 인터페이스 - Supabase 'matches' 테이블 스키마와 대응
  */
+// 대진 호출(예정 경기) — RP/통계와 무관한 별도 엔티티
+export type ScheduledMatch = {
+  id: string;
+  league_id: string;
+  match_type: "single" | "double";
+  player_a_id: string | null;
+  player_b_id: string | null;
+  player_a2_id: string | null;
+  player_b2_id: string | null;
+  court: string | null;
+  status: "waiting" | "called" | "done" | "cancelled";
+  created_at: string;
+};
+
 export type Match = {
   // --- Supabase DB 테이블 스키마 속성 ---
   id: string; // UUID (Primary Key)
@@ -143,6 +157,7 @@ export type Class = {
   id: string; // UUID (Primary Key)
   season_id?: string | null; // 시즌 외래키
   owner_uid: string; // 방장 UID
+  co_owner_uids?: string[] | null; // 공동방장 UID 목록 -> DB: co_owner_uids
   admin_uids: string[] | null; // 공동 관리자 UID 목록 -> DB: admin_uids
   member_uids: string[] | null; // 멤버(동호인) UID 목록 -> DB: member_uids
   join_code?: string | null; // 6자리 초대 코드 -> DB: join_code

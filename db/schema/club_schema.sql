@@ -55,6 +55,7 @@ drop function if exists public.change_student_code(uuid, text, text);
 create table if not exists public.leagues (
   id          uuid primary key default gen_random_uuid(),
   owner_uid   uuid not null references auth.users(id) on delete cascade,
+  co_owner_uids uuid[] not null default '{}', -- 공동방장(원조 방장과 같은 방장 권한)
   admin_uids  uuid[] not null default '{}',   -- 공동 관리자
   member_uids uuid[] not null default '{}',   -- 일반 멤버(동호인)
   name        text not null,
@@ -150,36 +151,50 @@ create or replace view public.players_public as
 -- ============================================================
 -- 권한 헬퍼
 -- ============================================================
--- 기록 권한자 = 소유자 / 공동관리자 / 멤버 (동호회는 멤버도 기록 가능)
+-- 기록 권한자 = 방장(원조/공동) / 공동관리자 / 멤버 (동호회는 멤버도 기록 가능)
 create or replace function public.is_class_recorder(p_class_id uuid)
 returns boolean language sql stable security definer set search_path = public, extensions as $$
   select exists (
     select 1 from public.leagues l
     where l.id = p_class_id
       and (l.owner_uid = auth.uid()
+           or auth.uid() = any(coalesce(l.co_owner_uids, '{}'::uuid[]))
            or auth.uid() = any(coalesce(l.admin_uids, '{}'::uuid[]))
            or auth.uid() = any(coalesce(l.member_uids, '{}'::uuid[])))
   );
 $$;
 
--- 관리 권한자 = 소유자 / 공동관리자
+-- 관리 권한자 = 방장(원조/공동) / 공동관리자
 create or replace function public.is_class_teacher(p_class_id uuid)
 returns boolean language sql stable security definer set search_path = public, extensions as $$
   select exists (
     select 1 from public.leagues l
     where l.id = p_class_id
       and (l.owner_uid = auth.uid()
+           or auth.uid() = any(coalesce(l.co_owner_uids, '{}'::uuid[]))
            or auth.uid() = any(coalesce(l.admin_uids, '{}'::uuid[])))
   );
 $$;
 
--- 소유자 전용
+-- 방장 권한 = 원조 방장 + 공동방장
 create or replace function public.is_class_owner(p_class_id uuid)
+returns boolean language sql stable security definer set search_path = public, extensions as $$
+  select exists (
+    select 1 from public.leagues l
+    where l.id = p_class_id
+      and (l.owner_uid = auth.uid()
+           or auth.uid() = any(coalesce(l.co_owner_uids, '{}'::uuid[])))
+  );
+$$;
+
+-- 원조 방장 전용 (소유권 위임 · 공동방장 관리 · 리그 삭제)
+create or replace function public.is_class_primary_owner(p_class_id uuid)
 returns boolean language sql stable security definer set search_path = public, extensions as $$
   select exists (select 1 from public.leagues l where l.id = p_class_id and l.owner_uid = auth.uid());
 $$;
 
 grant execute on function public.is_class_recorder(uuid) to authenticated;
+grant execute on function public.is_class_primary_owner(uuid) to authenticated;
 grant execute on function public.is_class_teacher(uuid)  to authenticated;
 grant execute on function public.is_class_owner(uuid)    to authenticated;
 
@@ -403,19 +418,42 @@ begin
   return query select l.id, l.name, (l.owner_uid = auth.uid()) from public.leagues l where l.id = p_class_id;
 end; $$;
 
--- 최고관리자(방장) 위임: owner_uid 단일이므로 소유권 이전 + 기존 방장은 공동관리자로 강등
+-- 공동방장 지정/해제 (원조 방장 전용)
+create or replace function public.set_co_owner(p_class_id uuid, p_uid uuid, p_make boolean)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if not public.is_class_primary_owner(p_class_id) then raise exception '권한이 없습니다 (원조 방장 전용).'; end if;
+  if p_uid = (select owner_uid from public.leagues where id = p_class_id) then
+    raise exception '원조 방장은 공동방장으로 지정할 수 없습니다.';
+  end if;
+  if p_make then
+    update public.leagues
+       set co_owner_uids = (select array(select distinct e from unnest(coalesce(co_owner_uids,'{}'::uuid[]) || array[p_uid]) e)),
+           admin_uids    = array_remove(coalesce(admin_uids,'{}'::uuid[]),  p_uid),
+           member_uids   = array_remove(coalesce(member_uids,'{}'::uuid[]), p_uid)
+     where id = p_class_id;
+  else
+    update public.leagues
+       set co_owner_uids = array_remove(coalesce(co_owner_uids,'{}'::uuid[]), p_uid),
+           member_uids   = (select array(select distinct e from unnest(coalesce(member_uids,'{}'::uuid[]) || array[p_uid]) e))
+     where id = p_class_id;
+  end if;
+end; $$;
+
+-- 소유권 위임(원조 방장 전용): 새 방장 지정 + 이전 방장은 공동방장으로 환원
 create or replace function public.transfer_ownership(p_class_id uuid, p_new_owner uuid)
 returns void language plpgsql security definer set search_path = public, extensions as $$
 declare v_old uuid;
 begin
-  if not public.is_class_owner(p_class_id) then raise exception '권한이 없습니다 (방장 전용).'; end if;
+  if not public.is_class_primary_owner(p_class_id) then raise exception '권한이 없습니다 (원조 방장 전용).'; end if;
   v_old := auth.uid();
-  if p_new_owner = v_old then raise exception '이미 최고관리자입니다.'; end if;
+  if p_new_owner = v_old then raise exception '이미 원조 방장입니다.'; end if;
   update public.leagues
-     set owner_uid   = p_new_owner,
-         admin_uids  = array_remove(array_remove(coalesce(admin_uids,'{}'::uuid[]), p_new_owner), v_old)
-                         || array[v_old],
-         member_uids = array_remove(coalesce(member_uids,'{}'::uuid[]), p_new_owner)
+     set owner_uid     = p_new_owner,
+         co_owner_uids = (select array(select distinct e
+                            from unnest(array_remove(coalesce(co_owner_uids,'{}'::uuid[]), p_new_owner) || array[v_old]) e)),
+         admin_uids    = array_remove(coalesce(admin_uids,'{}'::uuid[]),  p_new_owner),
+         member_uids   = array_remove(coalesce(member_uids,'{}'::uuid[]), p_new_owner)
    where id = p_class_id;
 end; $$;
 
@@ -540,6 +578,36 @@ end;
 $$;
 
 -- ============================================================
+-- 대진 호출(예정 경기) — RP/통계와 분리된 별도 테이블
+-- ============================================================
+create table if not exists public.scheduled_matches (
+  id            uuid primary key default gen_random_uuid(),
+  league_id     uuid not null references public.leagues(id) on delete cascade,
+  match_type    text not null default 'single',  -- single | double
+  player_a_id   uuid references public.players(id) on delete cascade,
+  player_b_id   uuid references public.players(id) on delete cascade,
+  player_a2_id  uuid references public.players(id) on delete set null,
+  player_b2_id  uuid references public.players(id) on delete set null,
+  court         text,
+  status        text not null default 'waiting', -- waiting | called | done | cancelled
+  created_by    uuid default auth.uid(),
+  created_at    timestamptz not null default now()
+);
+create index if not exists idx_sched_league on public.scheduled_matches (league_id, status);
+alter table public.scheduled_matches enable row level security;
+
+drop policy if exists "recorders read scheduled" on public.scheduled_matches;
+create policy "recorders read scheduled" on public.scheduled_matches for select to authenticated
+  using (public.is_class_recorder(league_id));
+drop policy if exists "teachers manage scheduled" on public.scheduled_matches;
+create policy "teachers manage scheduled" on public.scheduled_matches for all to authenticated
+  using (public.is_class_teacher(league_id)) with check (public.is_class_teacher(league_id));
+
+do $$ begin
+  alter publication supabase_realtime add table public.scheduled_matches;
+exception when duplicate_object then null; when undefined_object then null; end $$;
+
+-- ============================================================
 -- 실행 권한 + Data API 권한
 -- ============================================================
 grant execute on function public.current_season_of(uuid)            to authenticated, anon;
@@ -554,6 +622,7 @@ grant execute on function public.join_league(uuid)                  to authentic
 grant execute on function public.join_league_by_code(text)          to authenticated;
 grant execute on function public.leave_league(uuid)                 to authenticated;
 grant execute on function public.transfer_ownership(uuid, uuid)     to authenticated;
+grant execute on function public.set_co_owner(uuid, uuid, boolean)  to authenticated;
 grant execute on function public.set_player_level(uuid, text, text) to authenticated;
 grant execute on function public.get_league_members(uuid)           to authenticated;
 grant execute on function public.remove_league_member(uuid, uuid)   to authenticated;
@@ -565,6 +634,7 @@ grant select, insert, update, delete on public.matches        to authenticated;
 grant select, insert, update, delete on public.league_secrets to authenticated;
 grant select                          on public.season_standings to authenticated;
 grant select                          on public.decay_log         to authenticated;
+grant select, insert, update, delete  on public.scheduled_matches to authenticated;
 grant select on public.players_public to anon, authenticated;
 
 commit;

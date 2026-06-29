@@ -1,10 +1,12 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { Swords, Search, Calendar, Users, Pencil, Trash2, ShieldAlert } from "lucide-react";
+import { Swords, Calendar, Users, Pencil, Trash2, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Calendar as DayCalendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { Gender, Student, Match } from "@/lib/league-types";
 import {
   AlertDialog,
@@ -58,15 +60,31 @@ export function AdminMatchRecords({
     });
   };
 
-  // Filtering states
-  const [matchFilterType, setMatchFilterType] = useState<"recent" | "student" | "date" | "class">("recent");
-  const [matchSearchStudent, setMatchSearchStudent] = useState("");
-  const [matchSearchDate, setMatchSearchDate] = useState("");
-  const [matchSearchGradeClass, setMatchSearchGradeClass] = useState("");
+  // Filtering states — 회원(급수 칩 + 회원 선택) / 날짜(달력)
+  const [matchFilterType, setMatchFilterType] = useState<"recent" | "member" | "date">("recent");
+  const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
+  const [selectedMemberId, setSelectedMemberId] = useState<string>("");
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
+  const [dateOpen, setDateOpen] = useState(false);
+  // 목록 페이지네이션 (더보기 +20)
+  const [visibleCount, setVisibleCount] = useState(20);
 
-  const [appliedSearchStudent, setAppliedSearchStudent] = useState("");
-  const [appliedSearchDate, setAppliedSearchDate] = useState("");
-  const [appliedSearchGradeClass, setAppliedSearchGradeClass] = useState("");
+  // 급수(레벨) 목록 — Leaderboard 칩 패턴과 동일
+  const availableGroups = useMemo(() => {
+    const set = new Set<string>();
+    students.forEach((s) => { if (s.group) set.add(s.group); });
+    return Array.from(set).sort();
+  }, [students]);
+  const toggleGroup = (g: string) =>
+    setSelectedGroups((p) => (p.includes(g) ? p.filter((x) => x !== g) : [...p, g]));
+
+  // 선택한 급수에 속한 회원만 셀렉트 후보로 (급수 미선택 시 전체)
+  const memberOptions = useMemo(() => {
+    const list = selectedGroups.length
+      ? students.filter((s) => s.group && selectedGroups.includes(s.group))
+      : students;
+    return [...list].sort((a, b) => displayName(a).localeCompare(displayName(b)));
+  }, [students, selectedGroups]);
 
   const handleSaveScoreEdit = () => {
     if (!editingMatchId) return;
@@ -91,90 +109,45 @@ export function AdminMatchRecords({
     if (!matches) return [];
 
     let result = [...matches];
-
-    // Sort all matches initially by date descending
+    // 최신순 정렬
     result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     if (matchFilterType === "recent") {
-      return result.slice(0, 20);
+      return result; // 페이지네이션(visibleCount)으로 제한
     }
 
-    if (matchFilterType === "student") {
-      const query = appliedSearchStudent.trim().toLowerCase();
-      if (!query) return [];
-      return result.filter((m) => {
-        const playerA = students.find((s) => s.id === m.playerAId);
-        const playerB = students.find((s) => s.id === m.playerBId);
-        const playerA2 = m.playerA2Id ? students.find((s) => s.id === m.playerA2Id) : null;
-        const playerB2 = m.playerB2Id ? students.find((s) => s.id === m.playerB2Id) : null;
-        return (
-          (playerA && displayName(playerA).toLowerCase().includes(query)) ||
-          (playerB && displayName(playerB).toLowerCase().includes(query)) ||
-          (playerA2 && displayName(playerA2).toLowerCase().includes(query)) ||
-          (playerB2 && displayName(playerB2).toLowerCase().includes(query))
+    if (matchFilterType === "member") {
+      const involves = (m: Match, id: string) =>
+        m.playerAId === id || m.playerBId === id || m.playerA2Id === id || m.playerB2Id === id;
+      if (selectedMemberId) return result.filter((m) => involves(m, selectedMemberId));
+      if (selectedGroups.length) {
+        const inGroup = (id?: string | null) => {
+          const s = id ? students.find((x) => x.id === id) : null;
+          return !!s?.group && selectedGroups.includes(s.group);
+        };
+        return result.filter((m) =>
+          inGroup(m.playerAId) || inGroup(m.playerBId) || inGroup(m.playerA2Id) || inGroup(m.playerB2Id)
         );
-      });
+      }
+      return [];
     }
 
     if (matchFilterType === "date") {
-      const query = appliedSearchDate.trim();
-      if (!query) return [];
-      return result.filter((m) => {
-        const mDate = new Date(m.date);
-        const mMonth = mDate.getMonth() + 1;
-        const mDay = mDate.getDate();
-
-        // 1. Month/Day combo formats: "6/2", "6-2", "6.2", "6 2"
-        const parts = query.split(/[\/\-\.\s]+/);
-        if (parts.length === 2) {
-          const qMonth = parseInt(parts[0], 10);
-          const qDay = parseInt(parts[1], 10);
-          if (!isNaN(qMonth) && !isNaN(qDay)) {
-            return mMonth === qMonth && mDay === qDay;
-          }
-        }
-
-        // 2. Single digit e.g. "2" -> match month OR day
-        if (/^\d+$/.test(query)) {
-          const qNum = parseInt(query, 10);
-          return mMonth === qNum || mDay === qNum;
-        }
-
-        // 3. String representations
-        const localDateStr = mDate.toLocaleString("ko-KR", { month: "long", day: "numeric" });
-        const localDateShort = mDate.toLocaleString("ko-KR", { month: "short", day: "numeric" });
-        const isoStr = mDate.toISOString().split("T")[0];
-
-        return (
-          localDateStr.toLowerCase().includes(query.toLowerCase()) ||
-          localDateShort.toLowerCase().includes(query.toLowerCase()) ||
-          isoStr.includes(query)
-        );
-      });
-    }
-
-    if (matchFilterType === "class") {
-      const query = appliedSearchGradeClass.trim().toLowerCase();
-      if (!query) return [];
-
-      // 레벨(group) 문자열 부분 일치 검색
-      return result.filter((m) => {
-        const playerA = students.find((s) => s.id === m.playerAId);
-        const playerB = students.find((s) => s.id === m.playerBId);
-        const playerA2 = m.playerA2Id ? students.find((s) => s.id === m.playerA2Id) : null;
-        const playerB2 = m.playerB2Id ? students.find((s) => s.id === m.playerB2Id) : null;
-        const grp = (s: Student | null | undefined) => (s?.group ?? "").toLowerCase();
-        return (
-          (!!playerA && grp(playerA).includes(query)) ||
-          (!!playerB && grp(playerB).includes(query)) ||
-          (!!playerA2 && grp(playerA2).includes(query)) ||
-          (!!playerB2 && grp(playerB2).includes(query))
-        );
-      });
+      if (!selectedDate) return [];
+      const sameDay = (d: Date) =>
+        d.getFullYear() === selectedDate.getFullYear() &&
+        d.getMonth() === selectedDate.getMonth() &&
+        d.getDate() === selectedDate.getDate();
+      return result.filter((m) => sameDay(new Date(m.date)));
     }
 
     return result;
-  }, [matches, students, matchFilterType, appliedSearchStudent, appliedSearchDate, appliedSearchGradeClass]);
+  }, [matches, students, matchFilterType, selectedMemberId, selectedGroups, selectedDate]);
+
+  // 필터 조건이 바뀌면 더보기 카운트 리셋
+  useEffect(() => { setVisibleCount(20); }, [matchFilterType, selectedMemberId, selectedGroups, selectedDate]);
+
+  const visibleMatches = filteredMatches.slice(0, visibleCount);
 
   return (
     <>
@@ -192,197 +165,99 @@ export function AdminMatchRecords({
         {/* Category Selector Tabs */}
         <div className="mb-5 space-y-3">
           <div className="p-1 bg-muted/40 border border-border/20 rounded-xl flex flex-wrap gap-1.5 w-full md:w-max">
-            <button
-              onClick={() => {
-                setMatchFilterType("recent");
-                setMatchSearchStudent("");
-                setMatchSearchDate("");
-                setMatchSearchGradeClass("");
-                setAppliedSearchStudent("");
-                setAppliedSearchDate("");
-                setAppliedSearchGradeClass("");
-              }}
-              className={cn(
-                "px-3.5 py-2 text-xs font-black rounded-lg flex items-center gap-1.5 transition-all active:scale-95",
-                matchFilterType === "recent"
-                  ? "bg-neon-blue/15 text-neon-blue border border-neon-blue/35 shadow-sm shadow-neon-blue/10"
-                  : "text-muted-foreground hover:text-foreground border border-transparent hover:bg-muted/50"
-              )}
-            >
-              <Swords className="size-3.5" />
-              최근 20경기
-            </button>
-            <button
-              onClick={() => {
-                setMatchFilterType("student");
-                setMatchSearchStudent("");
-                setMatchSearchDate("");
-                setMatchSearchGradeClass("");
-                setAppliedSearchStudent("");
-                setAppliedSearchDate("");
-                setAppliedSearchGradeClass("");
-              }}
-              className={cn(
-                "px-3.5 py-2 text-xs font-black rounded-lg flex items-center gap-1.5 transition-all active:scale-95",
-                matchFilterType === "student"
-                  ? "bg-neon-blue/15 text-neon-blue border border-neon-blue/35 shadow-sm shadow-neon-blue/10"
-                  : "text-muted-foreground hover:text-foreground border border-transparent hover:bg-muted/50"
-              )}
-            >
-              <Search className="size-3.5" />
-              선수 이름 검색
-            </button>
-            <button
-              onClick={() => {
-                setMatchFilterType("date");
-                setMatchSearchStudent("");
-                setMatchSearchDate("");
-                setMatchSearchGradeClass("");
-                setAppliedSearchStudent("");
-                setAppliedSearchDate("");
-                setAppliedSearchGradeClass("");
-              }}
-              className={cn(
-                "px-3.5 py-2 text-xs font-black rounded-lg flex items-center gap-1.5 transition-all active:scale-95",
-                matchFilterType === "date"
-                  ? "bg-neon-blue/15 text-neon-blue border border-neon-blue/35 shadow-sm shadow-neon-blue/10"
-                  : "text-muted-foreground hover:text-foreground border border-transparent hover:bg-muted/50"
-              )}
-            >
-              <Calendar className="size-3.5" />
-              날짜 검색 (6/2 등)
-            </button>
-            <button
-              onClick={() => {
-                setMatchFilterType("class");
-                setMatchSearchStudent("");
-                setMatchSearchDate("");
-                setMatchSearchGradeClass("");
-                setAppliedSearchStudent("");
-                setAppliedSearchDate("");
-                setAppliedSearchGradeClass("");
-              }}
-              className={cn(
-                "px-3.5 py-2 text-xs font-black rounded-lg flex items-center gap-1.5 transition-all active:scale-95",
-                matchFilterType === "class"
-                  ? "bg-neon-blue/15 text-neon-blue border border-neon-blue/35 shadow-sm shadow-neon-blue/10"
-                  : "text-muted-foreground hover:text-foreground border border-transparent hover:bg-muted/50"
-              )}
-            >
-              <Users className="size-3.5" />
-              레벨 검색
-            </button>
+            {([
+              { id: "recent", label: "최근 경기", icon: Swords },
+              { id: "member", label: "회원 검색", icon: Users },
+              { id: "date", label: "날짜 검색", icon: Calendar },
+            ] as const).map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                onClick={() => setMatchFilterType(id)}
+                className={cn(
+                  "px-3.5 py-2 text-xs font-black rounded-lg flex items-center gap-1.5 transition-all active:scale-95",
+                  matchFilterType === id
+                    ? "bg-neon-blue/15 text-neon-blue border border-neon-blue/35 shadow-sm shadow-neon-blue/10"
+                    : "text-muted-foreground hover:text-foreground border border-transparent hover:bg-muted/50"
+                )}
+              >
+                <Icon className="size-3.5" />
+                {label}
+              </button>
+            ))}
           </div>
 
-          {/* Conditional search inputs */}
-          {matchFilterType === "student" && (
-            <div className="flex gap-2 max-w-md w-full animate-in fade-in slide-in-from-top-1 duration-200">
-              <div className="relative flex-1">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground/75" />
-                <Input
-                  type="text"
-                  placeholder="조회할 선수 이름을 입력하세요..."
-                  value={matchSearchStudent}
-                  onChange={(e) => setMatchSearchStudent(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      setAppliedSearchStudent(matchSearchStudent);
-                    }
-                  }}
-                  className="pl-10 pr-16 h-10 border-border/50 bg-input hover:bg-input focus:bg-input transition-all font-sans text-xs"
-                />
-                {matchSearchStudent && (
-                  <button
-                    onClick={() => {
-                      setMatchSearchStudent("");
-                      setAppliedSearchStudent("");
-                    }}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-muted-foreground hover:text-foreground bg-muted/65 hover:bg-muted px-2 py-1 rounded-md transition-colors"
-                  >
-                    지우기
-                  </button>
-                )}
-              </div>
-              <Button
-                onClick={() => setAppliedSearchStudent(matchSearchStudent)}
-                className="bg-neon-blue hover:bg-neon-blue/80 text-primary-foreground font-bold h-10 px-4 shrink-0 transition-all active:scale-95 rounded-xl shadow-md font-sans text-xs"
+          {/* 회원 검색: 급수 칩 다중선택 → 해당 급수 회원 선택 */}
+          {matchFilterType === "member" && (
+            <div className="space-y-2.5 animate-in fade-in slide-in-from-top-1 duration-200">
+              {availableGroups.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[10px] font-bold text-muted-foreground mr-0.5">급수</span>
+                  {availableGroups.map((g) => {
+                    const on = selectedGroups.includes(g);
+                    return (
+                      <button
+                        key={g}
+                        onClick={() => { toggleGroup(g); setSelectedMemberId(""); }}
+                        className={cn(
+                          "px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-all active:scale-95",
+                          on ? "border-neon-blue/50 bg-neon-blue/15 text-neon-blue" : "border-border/40 text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        {g}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              <select
+                value={selectedMemberId}
+                onChange={(e) => setSelectedMemberId(e.target.value)}
+                className="h-10 w-full max-w-md rounded-xl border border-border/50 bg-input px-3 text-xs font-sans focus:border-neon-blue"
               >
-                검색
-              </Button>
+                <option value="">
+                  {selectedGroups.length ? "급수 내 회원 선택 (전체 보기 = 미선택)" : "회원 선택 (또는 급수 칩으로 좁히기)"}
+                </option>
+                {memberOptions.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {displayName(s)}{s.group ? ` · ${s.group}` : ""}
+                  </option>
+                ))}
+              </select>
             </div>
           )}
 
+          {/* 날짜 검색: 달력 팝오버 */}
           {matchFilterType === "date" && (
-            <div className="flex gap-2 max-w-md w-full animate-in fade-in slide-in-from-top-1 duration-200">
-              <div className="relative flex-1">
-                <Calendar className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground/75" />
-                <Input
-                  type="text"
-                  placeholder="조회할 날짜를 입력하세요 (예: 6/2, 6월 2일)..."
-                  value={matchSearchDate}
-                  onChange={(e) => setMatchSearchDate(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      setAppliedSearchDate(matchSearchDate);
-                    }
-                  }}
-                  className="pl-10 pr-16 h-10 border-border/50 bg-input hover:bg-input focus:bg-input transition-all font-sans text-xs"
-                />
-                {matchSearchDate && (
-                  <button
-                    onClick={() => {
-                      setMatchSearchDate("");
-                      setAppliedSearchDate("");
-                    }}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-muted-foreground hover:text-foreground bg-muted/65 hover:bg-muted px-2 py-1 rounded-md transition-colors"
+            <div className="flex items-center gap-2 animate-in fade-in slide-in-from-top-1 duration-200">
+              <Popover open={dateOpen} onOpenChange={setDateOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="h-10 justify-start gap-2 font-sans text-xs min-w-[200px] border-border/50"
                   >
-                    지우기
-                  </button>
-                )}
-              </div>
-              <Button
-                onClick={() => setAppliedSearchDate(matchSearchDate)}
-                className="bg-neon-blue hover:bg-neon-blue/80 text-primary-foreground font-bold h-10 px-4 shrink-0 transition-all active:scale-95 rounded-xl shadow-md font-sans text-xs"
-              >
-                검색
-              </Button>
-            </div>
-          )}
-
-          {matchFilterType === "class" && (
-            <div className="flex gap-2 max-w-md w-full animate-in fade-in slide-in-from-top-1 duration-200">
-              <div className="relative flex-1">
-                <Users className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground/75" />
-                <Input
-                  type="text"
-                  placeholder="조회할 레벨를 입력하세요..."
-                  value={matchSearchGradeClass}
-                  onChange={(e) => setMatchSearchGradeClass(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      setAppliedSearchGradeClass(matchSearchGradeClass);
-                    }
-                  }}
-                  className="pl-10 pr-16 h-10 border-border/50 bg-input hover:bg-input focus:bg-input transition-all font-sans text-xs"
-                />
-                {matchSearchGradeClass && (
-                  <button
-                    onClick={() => {
-                      setMatchSearchGradeClass("");
-                      setAppliedSearchGradeClass("");
-                    }}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-muted-foreground hover:text-foreground bg-muted/65 hover:bg-muted px-2 py-1 rounded-md transition-colors"
-                  >
-                    지우기
-                  </button>
-                )}
-              </div>
-              <Button
-                onClick={() => setAppliedSearchGradeClass(matchSearchGradeClass)}
-                className="bg-neon-blue hover:bg-neon-blue/80 text-primary-foreground font-bold h-10 px-4 shrink-0 transition-all active:scale-95 rounded-xl shadow-md font-sans text-xs"
-              >
-                검색
-              </Button>
+                    <Calendar className="size-4 text-muted-foreground" />
+                    {selectedDate
+                      ? selectedDate.toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" })
+                      : "날짜를 선택하세요"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <DayCalendar
+                    mode="single"
+                    selected={selectedDate}
+                    onSelect={(d) => { setSelectedDate(d); setDateOpen(false); }}
+                    autoFocus
+                  />
+                </PopoverContent>
+              </Popover>
+              {selectedDate && (
+                <button
+                  onClick={() => setSelectedDate(undefined)}
+                  className="text-[10px] font-bold text-muted-foreground hover:text-foreground bg-muted/65 hover:bg-muted px-2.5 py-2 rounded-lg transition-colors"
+                >
+                  지우기
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -390,7 +265,7 @@ export function AdminMatchRecords({
         {/* 경기 목록 — 한 행에 핵심만(대결 요약 · 점수 · 작업). 모바일·데스크톱 공통 컴팩트 행. */}
         <div className="space-y-1.5">
           {filteredMatches && filteredMatches.length > 0 ? (
-            filteredMatches.map((m) => {
+            visibleMatches.map((m) => {
               const playerA = students.find((s) => s.id === m.playerAId) ?? { name: "알 수 없는 멤버", nickname: null, group: null, gender: "U" as Gender };
               const playerB = students.find((s) => s.id === m.playerBId) ?? { name: "알 수 없는 멤버", nickname: null, group: null, gender: "U" as Gender };
               const playerA2 = m.playerA2Id ? students.find((s) => s.id === m.playerA2Id) : null;
@@ -442,10 +317,23 @@ export function AdminMatchRecords({
             <div className="py-10 text-center text-muted-foreground text-xs border border-dashed border-border/30 rounded-xl bg-muted/5">
               {matchFilterType === "recent"
                 ? "기록된 경기 내역이 없습니다."
-                : ((matchFilterType === "student" && appliedSearchStudent) || (matchFilterType === "date" && appliedSearchDate) || (matchFilterType === "class" && appliedSearchGradeClass))
+                : (matchFilterType === "member" && (selectedMemberId || selectedGroups.length)) || (matchFilterType === "date" && selectedDate)
                   ? "조건과 일치하는 경기가 없습니다."
-                  : "검색어를 입력하고 '검색'(또는 엔터)을 누르세요."}
+                  : matchFilterType === "member"
+                    ? "급수 칩을 고르거나 회원을 선택하세요."
+                    : "달력에서 날짜를 선택하세요."}
             </div>
+          )}
+
+          {/* 더보기 — 검색/최근 공통 페이지네이션 */}
+          {filteredMatches.length > visibleCount && (
+            <button
+              type="button"
+              onClick={() => setVisibleCount((c) => c + 20)}
+              className="mt-1 w-full rounded-lg border border-border/50 bg-card/40 py-2.5 text-xs font-bold text-muted-foreground transition-all hover:border-neon-blue/40 hover:text-neon-blue active:scale-[0.99]"
+            >
+              경기 더보기 ({Math.min(20, filteredMatches.length - visibleCount)}건 더 · 남은 {filteredMatches.length - visibleCount}건)
+            </button>
           )}
         </div>
       </Card>

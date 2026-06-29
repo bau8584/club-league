@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef, createContext, useContext } from "react";
-import type { Student, Match, Gender, TierName, TierSettings, DynamicBonuses, DynamicPenalties, TiersRecord, DecaySettingsRecord, Achievement, MatchInputMode } from "./league-types";
+import type { Student, Match, ScheduledMatch, Gender, TierName, TierSettings, DynamicBonuses, DynamicPenalties, TiersRecord, DecaySettingsRecord, Achievement, MatchInputMode } from "./league-types";
 import { studentKey, getTier, getTierSubdivision, getFullTierLabel, TIER_ORDER } from "./league-types";
 import { toast } from "sonner";
 import { supabase } from "../supabaseClient";
@@ -38,6 +38,7 @@ import {
   apiSetPlayerLevel,
   apiSetMemberAdmin,
   apiTransferOwnership,
+  apiSetCoOwner,
   apiListSeasons,
   apiStartNewSeason,
   apiFetchSeasonStandings,
@@ -45,7 +46,11 @@ import {
   apiRenameSeason,
   apiDeleteSeason,
   apiApplyDormancyDecay,
-  apiFetchDecayLog
+  apiFetchDecayLog,
+  apiFetchScheduledMatches,
+  apiCreateScheduledMatch,
+  apiUpdateScheduledStatus,
+  apiDeleteScheduledMatch
 } from "@/services/league-api";
 import {
   DEFAULT_TIERS,
@@ -120,11 +125,17 @@ function useLeagueStoreInternal() {
   const [hydrated, setHydrated] = useState(false);
   const [students, setStudents] = useState<Student[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
+  const [scheduledMatches, setScheduledMatches] = useState<ScheduledMatch[]>([]);
+  const loadScheduledRef = useRef<((classId: string) => void) | null>(null);
   const [title, setTitle] = useState<string>("2026 초등 리그전");
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [isClassOwner, setIsClassOwner] = useState<boolean>(false);
   const isClassOwnerRef = useRef(false);
   useEffect(() => { isClassOwnerRef.current = isClassOwner; }, [isClassOwner]);
+  // 원조 방장 전용 판정 (소유권 위임·공동방장 관리·리그 삭제). isClassOwner는 공동방장 포함.
+  const [isClassPrimaryOwner, setIsClassPrimaryOwner] = useState<boolean>(false);
+  const isClassPrimaryOwnerRef = useRef(false);
+  useEffect(() => { isClassPrimaryOwnerRef.current = isClassPrimaryOwner; }, [isClassPrimaryOwner]);
   // 관리 권한자: 소유자/공동관리자/기록원 — 선수·경기 관리 가능 (리그 글로벌 설정·시즌·복원은 소유자 전용)
   const [isClassManager, setIsClassManager] = useState<boolean>(false);
   const isClassManagerRef = useRef(false);
@@ -178,8 +189,10 @@ function useLeagueStoreInternal() {
       const { data: classData, error: classErr } = await apiFetchClass(classId);
       if (classErr) throw classErr;
 
-      // 권한 판별: 관리자 = 소유자/공동관리자(admin_uids) / 일반회원 = member_uids(가입자)
+      // 권한 판별: 방장 = 원조 방장(owner_uid) + 공동방장(co_owner_uids)
+      //            관리자 = 방장 + 공동관리자(admin_uids) / 일반회원 = member_uids(가입자)
       let isOwner = false;
+      let isPrimaryOwner = false;
       let isManager = false;
       let isMember = false;
       let myUid: string | null = null;
@@ -190,7 +203,9 @@ function useLeagueStoreInternal() {
           authResolved = true;
           myUid = user.id;
           const uid = user.id;
-          isOwner = classData.owner_uid === uid;
+          isPrimaryOwner = classData.owner_uid === uid;
+          isOwner = isPrimaryOwner
+            || (Array.isArray(classData.co_owner_uids) && classData.co_owner_uids.includes(uid));
           isManager = isOwner
             || (Array.isArray(classData.admin_uids) && classData.admin_uids.includes(uid));
           isMember = isManager
@@ -202,13 +217,16 @@ function useLeagueStoreInternal() {
       // 백그라운드(실시간) 재로딩 중 인증이 일시적으로 실패하면 권한을 강등하지 말고 직전 권한 유지.
       if (!authResolved && isBackground) {
         isOwner = isClassOwnerRef.current;
+        isPrimaryOwner = isClassPrimaryOwnerRef.current;
         isManager = isClassManagerRef.current;
         isMember = isClassMemberRef.current;
       }
       setIsClassOwner(isOwner);
+      setIsClassPrimaryOwner(isPrimaryOwner);
       setIsClassManager(isManager);
       setIsClassMember(isMember);
       isClassOwnerRef.current = isOwner;
+      isClassPrimaryOwnerRef.current = isPrimaryOwner;
       isClassManagerRef.current = isManager;
       isClassMemberRef.current = isMember;
 
@@ -216,6 +234,7 @@ function useLeagueStoreInternal() {
         setTitle(classData.name);
         setOwnerUid(classData.owner_uid ?? "");
         setAdminUids(Array.isArray(classData.admin_uids) ? classData.admin_uids : []);
+        setCoOwnerUids(Array.isArray(classData.co_owner_uids) ? classData.co_owner_uids : []);
 
         if (classData.settings) {
           const s = classData.settings;
@@ -348,6 +367,12 @@ function useLeagueStoreInternal() {
       const sortedMatches = [...matchesList].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       setMatches(sortedMatches);
 
+      // 대진 호출(예정 경기) — 별도 테이블, RP/통계와 무관
+      try {
+        const { data: sched } = await apiFetchScheduledMatches(classId);
+        setScheduledMatches((sched || []) as ScheduledMatch[]);
+      } catch { /* 비치명적 */ }
+
       setCurrentClassId(classId);
 
       // 시즌 목록 채우기: ["현재 시즌", ...과거 시즌 라벨]
@@ -383,6 +408,13 @@ function useLeagueStoreInternal() {
           { event: "*", schema: "public", table: "matches", filter: `league_id=eq.${classId}` },
           () => {
             loadClassDataRef.current?.(classId, true);
+          }
+        )
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "scheduled_matches", filter: `league_id=eq.${classId}` },
+          () => {
+            loadScheduledRef.current?.(classId);
           }
         )
         .subscribe();
@@ -452,6 +484,7 @@ function useLeagueStoreInternal() {
   // 권한 판정용: 리그 소유자/공동관리자 UID (선수 명단의 userId 와 대조)
   const [ownerUid, setOwnerUid] = useState<string>("");
   const [adminUids, setAdminUids] = useState<string[]>([]);
+  const [coOwnerUids, setCoOwnerUids] = useState<string[]>([]);
   const matchInputModeRef = useRef<MatchInputMode>("admin-only");
   useEffect(() => { matchInputModeRef.current = matchInputMode; }, [matchInputMode]);
 
@@ -2453,17 +2486,32 @@ function useLeagueStoreInternal() {
     return true;
   }, []);
 
-  // 최고관리자(방장) 위임 — 소유권 이전 후 본인은 공동관리자로 강등됨
+  // 최고관리자(원조 방장) 위임 — 소유권 이전 후 본인은 공동방장으로 환원됨 (원조 방장 전용)
   const transferOwnership = useCallback(async (uid: string): Promise<boolean> => {
-    if (!isClassOwnerRef.current) {
-      toast.error("권한이 없습니다. 방장만 최고관리자를 위임할 수 있습니다.");
+    if (!isClassPrimaryOwnerRef.current) {
+      toast.error("권한이 없습니다. 원조 방장만 소유권을 위임할 수 있습니다.");
       return false;
     }
     const cid = currentClassIdRef.current;
     if (!cid) return false;
     const { error } = await apiTransferOwnership(cid, uid);
     if (error) { toast.error("최고관리자 위임에 실패했습니다: " + error.message); return false; }
-    toast.success("최고관리자를 위임했습니다. 본인은 공동관리자로 변경됩니다.");
+    toast.success("최고관리자를 위임했습니다. 본인은 공동방장으로 변경됩니다.");
+    await loadClassDataRef.current?.(cid, true);
+    return true;
+  }, []);
+
+  // 공동방장 지정/해제 — 원조 방장 전용
+  const setCoOwner = useCallback(async (uid: string, make: boolean): Promise<boolean> => {
+    if (!isClassPrimaryOwnerRef.current) {
+      toast.error("권한이 없습니다. 원조 방장만 공동방장을 지정할 수 있습니다.");
+      return false;
+    }
+    const cid = currentClassIdRef.current;
+    if (!cid) return false;
+    const { error } = await apiSetCoOwner(cid, uid, make);
+    if (error) { toast.error("공동방장 변경에 실패했습니다: " + error.message); return false; }
+    toast.success(make ? "공동방장으로 지정했습니다." : "공동방장을 해제했습니다.");
     await loadClassDataRef.current?.(cid, true);
     return true;
   }, []);
@@ -2751,6 +2799,53 @@ function useLeagueStoreInternal() {
     return (data || []) as DecayLogRow[];
   }, [currentClassId]);
 
+  // ── 대진 호출(예정 경기) ──────────────────────────────
+  const loadScheduled = useCallback(async (classId: string) => {
+    try {
+      const { data } = await apiFetchScheduledMatches(classId);
+      setScheduledMatches((data || []) as ScheduledMatch[]);
+    } catch { /* 비치명적 */ }
+  }, []);
+  useEffect(() => { loadScheduledRef.current = loadScheduled; }, [loadScheduled]);
+
+  // 대진 추가 (운영진) — waiting 상태로 저장
+  const createScheduledMatch = useCallback(async (payload: {
+    matchType: "single" | "double";
+    playerAId: string; playerBId: string;
+    playerA2Id?: string | null; playerB2Id?: string | null;
+    court?: string | null;
+  }): Promise<boolean> => {
+    if (!isClassManagerRef.current) { toast.error("권한이 없습니다."); return false; }
+    const cid = currentClassIdRef.current;
+    if (!cid) return false;
+    const { error } = await apiCreateScheduledMatch({ classId: cid, ...payload });
+    if (error) { toast.error("대진 추가 실패: " + error.message); return false; }
+    await loadScheduled(cid);
+    toast.success("대진을 추가했습니다.");
+    return true;
+  }, [loadScheduled]);
+
+  // 입장 호출 (waiting → called) — 해당 회원 화면에 실시간 배너
+  const callScheduledMatch = useCallback(async (id: string): Promise<boolean> => {
+    if (!isClassManagerRef.current) { toast.error("권한이 없습니다."); return false; }
+    const cid = currentClassIdRef.current;
+    const { error } = await apiUpdateScheduledStatus(id, "called");
+    if (error) { toast.error("호출 실패: " + error.message); return false; }
+    if (cid) await loadScheduled(cid);
+    toast.success("입장 호출을 보냈습니다.");
+    return true;
+  }, [loadScheduled]);
+
+  // 대진 제거 (완료/취소) — 행 삭제
+  const removeScheduledMatch = useCallback(async (id: string): Promise<boolean> => {
+    if (!isClassManagerRef.current) { toast.error("권한이 없습니다."); return false; }
+    const cid = currentClassIdRef.current;
+    const { error } = await apiDeleteScheduledMatch(id);
+    if (error) { toast.error("삭제 실패: " + error.message); return false; }
+    if (cid) await loadScheduled(cid);
+    return true;
+  }, [loadScheduled]);
+
   // 선수용 '나의 업적' 자동 연산 함수 (Derived State)
   const calculateAchievements = useCallback((studentId: string): Achievement[] => {
     return calculateAchievementsPure(students, matches, tierThresholds, studentId);
@@ -3002,8 +3097,11 @@ function useLeagueStoreInternal() {
     sport,
     ownerUid,
     adminUids,
+    coOwnerUids,
+    isClassPrimaryOwner,
     setMemberAdmin,
     transferOwnership,
+    setCoOwner,
     recordMatch,
     upsertStudents,
     deleteMatch,
@@ -3060,6 +3158,10 @@ function useLeagueStoreInternal() {
     previewDormancyDecay,
     applyDormancyDecay,
     fetchDecayLog,
+    scheduledMatches,
+    createScheduledMatch,
+    callScheduledMatch,
+    removeScheduledMatch,
     tierSettings,
     setTierSettings,
     dynamicBonuses,

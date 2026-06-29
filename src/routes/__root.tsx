@@ -144,11 +144,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 });
 
 // 페인트 전에 저장된 테마를 적용해 깜빡임 방지
-const THEME_INIT = `(function(){try{var t=localStorage.getItem('ui-theme');if(t==='pastel')t='clay';if(t==='glass')t='modern';if(['black','modern','clay'].indexOf(t)<0)t='game';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();`;
+const THEME_INIT = `(function(){try{var t=localStorage.getItem('ui-theme');if(t==='pastel')t='clay';if(t==='glass')t='modern';if(['game','black','modern','clay'].indexOf(t)<0)t='modern';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();`;
 
 function RootShell({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ko" data-theme="game" suppressHydrationWarning>
+    <html lang="ko" data-theme="modern" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT }} />
         <HeadContent />

@@ -67,12 +67,12 @@ function normalizeBirthYear(raw: string): number | null {
 const yy2 = (year?: number | null) => (year ? String(year % 100).padStart(2, "0") : "");
 
 export function AdminStudentManage({ students, onDeleteStudent, thresholds }: AdminStudentManageProps) {
-  const { upsertStudents, updateStudentInfo, bulkUpdateStudents, fetchDeletedStudents, restoreDeletedStudent, hardDeleteStudent, levelMode, levels, ownerUid, adminUids, setMemberAdmin, transferOwnership, isClassOwner } = useLeagueStore();
+  const { upsertStudents, updateStudentInfo, bulkUpdateStudents, fetchDeletedStudents, restoreDeletedStudent, hardDeleteStudent, levelMode, levels, ownerUid, adminUids, setMemberAdmin, transferOwnership, setCoOwner, coOwnerUids, isClassPrimaryOwner, isClassOwner } = useLeagueStore();
 
-  // 최고관리자(방장) 위임 — 되돌리기 어려우므로 2단계 확인
+  // 최고관리자(원조 방장) 위임 — 되돌리기 어려우므로 2단계 확인
   const handleTransferOwnership = (uid: string, label: string) => {
-    if (!window.confirm(`${label} 님을 최고관리자(방장)로 위임하시겠습니까?\n\n• 모든 리그 권한이 ${label} 님에게 넘어갑니다.\n• 본인은 공동 관리자로 변경됩니다.`)) return;
-    if (!window.confirm(`정말 진행할까요? 이 작업은 되돌리려면 새 방장이 다시 위임해야 합니다.`)) return;
+    if (!window.confirm(`${label} 님을 최고관리자(원조 방장)로 위임하시겠습니까?\n\n• 모든 리그 권한이 ${label} 님에게 넘어갑니다.\n• 본인은 공동방장으로 변경됩니다.`)) return;
+    if (!window.confirm(`정말 진행할까요? 되돌리려면 새 방장이 다시 위임해야 합니다.`)) return;
     transferOwnership(uid);
   };
   const usePresetLevels = levelMode === "preset" && levels.length > 0;
@@ -486,8 +486,25 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
                     </td>
                     {isClassOwner && (() => {
                       const linked = !!s.userId;
+                      const label = r.nickname || s.name || "이 회원";
                       const isOwnerRow = linked && s.userId === ownerUid;
+                      const isCoOwnerRow = linked && coOwnerUids.includes(s.userId!);
                       const isAdminRow = linked && adminUids.includes(s.userId!);
+                      // 원조 방장 전용 버튼: 공동방장 지정/해제 + 최고관리자 위임
+                      const CoOwnerSet = () => (
+                        <button type="button"
+                          onClick={() => { if (window.confirm(`${label} 님을 공동방장으로 지정하시겠습니까?\n방장과 동일한 권한(글로벌 설정·시즌·휴면 등)을 함께 행사합니다.`)) setCoOwner(s.userId!, true); }}
+                          className="inline-flex items-center gap-0.5 text-[10px] font-bold text-amber-500 underline-offset-2 hover:underline">
+                          <Crown className="size-2.5" /> 공동방장 지정
+                        </button>
+                      );
+                      const TransferBtn = () => (
+                        <button type="button"
+                          onClick={() => handleTransferOwnership(s.userId!, label)}
+                          className="text-[10px] font-bold text-muted-foreground underline-offset-2 hover:text-amber-500 hover:underline">
+                          최고관리자 위임
+                        </button>
+                      );
                       return (
                         <td className="px-2 py-1.5 text-center whitespace-nowrap">
                           {isOwnerRow ? (
@@ -495,22 +512,32 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
                               <Crown className="size-3" /> 방장
                             </span>
                           ) : !linked ? (
-                            <span className="text-[10px] text-muted-foreground/60" title="구글 연동된 회원만 관리자로 승격할 수 있어요">미연동</span>
+                            <span className="text-[10px] text-muted-foreground/60" title="구글 연동된 회원만 권한을 부여할 수 있어요">미연동</span>
+                          ) : isCoOwnerRow ? (
+                            <div className="flex flex-col items-center gap-0.5">
+                              <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-black text-amber-500">
+                                <Crown className="size-3" /> 공동방장
+                              </span>
+                              {isClassPrimaryOwner && (
+                                <button type="button"
+                                  onClick={() => { if (window.confirm(`${label} 님의 공동방장을 해제하시겠습니까?\n일반 회원으로 변경됩니다.`)) setCoOwner(s.userId!, false); }}
+                                  className="text-[10px] font-bold text-muted-foreground underline-offset-2 hover:text-destructive hover:underline">
+                                  공동방장 해제
+                                </button>
+                              )}
+                            </div>
                           ) : isAdminRow ? (
                             <div className="flex flex-col items-center gap-0.5">
                               <span className="inline-flex items-center gap-1 rounded-full border border-neon-blue/35 bg-neon-blue/15 px-2 py-0.5 text-[10px] font-black text-neon-blue">
                                 <ShieldCheck className="size-3" /> 관리자
                               </span>
                               <button type="button"
-                                onClick={() => { if (window.confirm(`${r.nickname || s.name || "이 회원"} 님을 관리자에서 일반 회원으로 강등하시겠습니까?`)) setMemberAdmin(s.userId!, false); }}
+                                onClick={() => { if (window.confirm(`${label} 님을 관리자에서 일반 회원으로 강등하시겠습니까?`)) setMemberAdmin(s.userId!, false); }}
                                 className="text-[10px] font-bold text-muted-foreground underline-offset-2 hover:text-destructive hover:underline">
                                 일반으로 강등
                               </button>
-                              <button type="button"
-                                onClick={() => handleTransferOwnership(s.userId!, r.nickname || s.name || "이 회원")}
-                                className="inline-flex items-center gap-0.5 text-[10px] font-bold text-amber-500 underline-offset-2 hover:underline">
-                                <Crown className="size-2.5" /> 최고관리자 위임
-                              </button>
+                              {isClassPrimaryOwner && <CoOwnerSet />}
+                              {isClassPrimaryOwner && <TransferBtn />}
                             </div>
                           ) : (
                             <div className="flex flex-col items-center gap-0.5">
@@ -518,15 +545,12 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
                                 일반
                               </span>
                               <button type="button"
-                                onClick={() => { if (window.confirm(`${r.nickname || s.name || "이 회원"} 님을 공동 관리자로 승격하시겠습니까?`)) setMemberAdmin(s.userId!, true); }}
+                                onClick={() => { if (window.confirm(`${label} 님을 공동 관리자로 승격하시겠습니까?`)) setMemberAdmin(s.userId!, true); }}
                                 className="text-[10px] font-bold text-neon-blue underline-offset-2 hover:underline">
                                 관리자 승격
                               </button>
-                              <button type="button"
-                                onClick={() => handleTransferOwnership(s.userId!, r.nickname || s.name || "이 회원")}
-                                className="inline-flex items-center gap-0.5 text-[10px] font-bold text-amber-500 underline-offset-2 hover:underline">
-                                <Crown className="size-2.5" /> 최고관리자 위임
-                              </button>
+                              {isClassPrimaryOwner && <CoOwnerSet />}
+                              {isClassPrimaryOwner && <TransferBtn />}
                             </div>
                           )}
                         </td>

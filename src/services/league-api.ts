@@ -69,6 +69,44 @@ export async function apiFetchMatches(classId: string, season?: string) {
   return { data: all, error: null };
 }
 
+// --- 대진 호출(예정 경기) ---
+export async function apiFetchScheduledMatches(classId: string) {
+  return supabase
+    .from("scheduled_matches")
+    .select("*")
+    .eq("league_id", classId)
+    .in("status", ["waiting", "called"])
+    .order("created_at", { ascending: true });
+}
+
+export async function apiCreateScheduledMatch(payload: {
+  classId: string;
+  matchType: "single" | "double";
+  playerAId: string;
+  playerBId: string;
+  playerA2Id?: string | null;
+  playerB2Id?: string | null;
+  court?: string | null;
+}) {
+  return supabase.from("scheduled_matches").insert({
+    league_id: payload.classId,
+    match_type: payload.matchType,
+    player_a_id: payload.playerAId,
+    player_b_id: payload.playerBId,
+    player_a2_id: payload.playerA2Id ?? null,
+    player_b2_id: payload.playerB2Id ?? null,
+    court: payload.court ?? null,
+  });
+}
+
+export async function apiUpdateScheduledStatus(id: string, status: "waiting" | "called" | "done" | "cancelled") {
+  return supabase.from("scheduled_matches").update({ status }).eq("id", id);
+}
+
+export async function apiDeleteScheduledMatch(id: string) {
+  return supabase.from("scheduled_matches").delete().eq("id", id);
+}
+
 export async function apiInsertMatch(classId: string, winnerId: string, loserId: string) {
   return supabase
     .from("matches")
@@ -330,9 +368,14 @@ export async function apiSetMemberAdmin(classId: string, uid: string, makeAdmin:
   return supabase.rpc("set_member_admin", { p_class_id: classId, p_uid: uid, p_make_admin: makeAdmin });
 }
 
-// 방장(최고관리자) 위임 — 소유권 이전 + 기존 방장은 공동관리자로 강등
+// 방장(최고관리자) 위임 — 소유권 이전 + 기존 방장은 공동방장으로 환원
 export async function apiTransferOwnership(classId: string, newOwner: string) {
   return supabase.rpc("transfer_ownership", { p_class_id: classId, p_new_owner: newOwner });
+}
+
+// 공동방장 지정/해제 (원조 방장 전용)
+export async function apiSetCoOwner(classId: string, uid: string, make: boolean) {
+  return supabase.rpc("set_co_owner", { p_class_id: classId, p_uid: uid, p_make: make });
 }
 
 // 레벨 이름변경/삭제 시 그 레벨이던 회원들의 group_label 일괄 이전(p_new=null이면 정리)

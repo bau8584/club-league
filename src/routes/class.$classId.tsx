@@ -3,6 +3,8 @@ import { useState, useEffect } from "react";
 import { useLeagueStore } from "@/lib/league-store";
 import { toast } from "sonner";
 import { Leaderboard } from "@/features/leaderboard/Leaderboard";
+import { DailyResults } from "@/components/league/DailyResults";
+import { ScheduledMatchBanner } from "@/components/league/ScheduledMatchBanner";
 import { RecordMatch } from "@/components/league/RecordMatch";
 import { AdminPanel } from "@/components/league/AdminPanel";
 import { MatchRecommend } from "@/components/league/MatchRecommend";
@@ -12,7 +14,7 @@ import { SeasonSummary } from "@/components/league/SeasonSummary";
 import { Toaster } from "@/components/ui/sonner";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { Crown, Swords, Trophy, Users, Pencil, Target, LogOut, School, ShieldAlert, Award, BarChart3, ArrowLeft, Lock, MoreVertical, Palette } from "lucide-react";
+import { Crown, Swords, Trophy, Users, Pencil, Target, LogOut, School, ShieldAlert, Award, BarChart3, ArrowLeft, Lock, MoreVertical, Palette, CalendarDays } from "lucide-react";
 import { MyAchievements } from "@/components/league/MyAchievements";
 import { ThemePicker } from "@/components/ThemePicker";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
@@ -27,7 +29,7 @@ export const Route = createFileRoute("/class/$classId")({
   component: Index,
 });
 
-type Tab = "leaderboard" | "recommend" | "record" | "memberRecord" | "admin" | "myRecord" | "myAchievements" | "seasonSummary";
+type Tab = "leaderboard" | "daily" | "recommend" | "record" | "memberRecord" | "admin" | "myRecord" | "myAchievements" | "seasonSummary";
 
 function Index() {
   const { classId } = Route.useParams();
@@ -127,7 +129,7 @@ function Index() {
   // 선수 탭 접근 통제 보안 가드 (myRecord, recommend, myAchievements + 허용 시 memberRecord)
   useEffect(() => {
     if (session && session.role === "STUDENT") {
-      const allowed = ["leaderboard", "recommend", "myRecord", "myAchievements", ...(memberCanRecord ? ["memberRecord"] : [])];
+      const allowed = ["leaderboard", "daily", "recommend", "myRecord", "myAchievements", ...(memberCanRecord ? ["memberRecord"] : [])];
       if (!allowed.includes(tab)) {
         setTab("myRecord");
       }
@@ -385,6 +387,11 @@ function Index() {
                 <TabButton active={tab === "leaderboard"} onClick={() => setTab("leaderboard")} icon={<Trophy className="size-4" />}>
                   티어 순위표
                 </TabButton>
+
+                {/* 5. 오늘의 경기 (전원 열람) */}
+                <TabButton active={tab === "daily"} onClick={() => setTab("daily")} icon={<CalendarDays className="size-4" />}>
+                  오늘의 경기
+                </TabButton>
               </>
             ) : (
               <>
@@ -413,7 +420,12 @@ function Index() {
                 <TabButton active={tab === "leaderboard"} onClick={() => setTab("leaderboard")} icon={<Trophy className="size-4" />}>
                   티어 순위표
                 </TabButton>
-                
+
+                {/* 3-b. 오늘의 경기 (전원 열람) */}
+                <TabButton active={tab === "daily"} onClick={() => setTab("daily")} icon={<CalendarDays className="size-4" />}>
+                  오늘의 경기
+                </TabButton>
+
                 {/* 4. 관리자 (관리자 전용) */}
                 {currentViewSeason === "현재 시즌" && isClassManager && (
                   <TabButton active={tab === "admin"} onClick={() => setTab("admin")} icon={<Users className="size-4" />}>
@@ -453,6 +465,9 @@ function Index() {
             </button>
           </div>
         )}
+        {/* 내가 배정된 호출 대진 입장 배너 (전 역할 공통) */}
+        <ScheduledMatchBanner />
+
         {/* Tenant Panels */}
         {tab === "seasonSummary" && currentViewSeason !== "현재 시즌" && (
           <SeasonSummary
@@ -469,7 +484,9 @@ function Index() {
             thresholds={tierThresholds}
           />
         )}
-        
+
+        {tab === "daily" && <DailyResults />}
+
         {tab === "recommend" && (
           <MatchRecommend
             students={students}
