@@ -14,7 +14,7 @@ import { SeasonSummary } from "@/components/league/SeasonSummary";
 import { Toaster } from "@/components/ui/sonner";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { Crown, Swords, Trophy, Users, Pencil, Target, LogOut, School, ShieldAlert, Award, BarChart3, ArrowLeft, Lock, MoreVertical, Palette, CalendarDays } from "lucide-react";
+import { Crown, Swords, Trophy, Users, User, Pencil, Target, LogOut, School, ShieldAlert, Award, BarChart3, ArrowLeft, Lock, MoreVertical, Palette, CalendarDays } from "lucide-react";
 import { MyAchievements } from "@/components/league/MyAchievements";
 import { ThemePicker } from "@/components/ThemePicker";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
@@ -88,6 +88,9 @@ function Index() {
   const [tab, setTab] = useState<Tab>("leaderboard");
   // 일반회원(가입했지만 관리자 아님)인데 아직 내 선수 미연동 → 프로필 설정 온보딩
   const needsOnboarding = isClassMember && !isClassManager && !myPlayerId;
+  // 관리자도 선수와 연동돼 있으면 '나의 기록'을 볼 수 있고, 미연동이면 직접 연동할 수 있다.
+  const myLinked = !!myPlayerId;
+  const [linkOpen, setLinkOpen] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [recommendInitials, setRecommendInitials] = useState<{
     playerAId: string;
@@ -426,6 +429,28 @@ function Index() {
                   오늘의 경기
                 </TabButton>
 
+                {/* 관리자가 선수와 연동된 경우: 나의 기록 / 나의 업적 */}
+                {myLinked && (
+                  <>
+                    <TabButton active={tab === "myRecord"} onClick={() => setTab("myRecord")} icon={<Trophy className="size-4" />}>
+                      나의 기록
+                    </TabButton>
+                    <TabButton active={tab === "myAchievements"} onClick={() => setTab("myAchievements")} icon={<Award className="size-4" />}>
+                      나의 업적
+                    </TabButton>
+                  </>
+                )}
+                {/* 미연동 관리자: 선수로 참가(연동) */}
+                {!myLinked && currentViewSeason === "현재 시즌" && (
+                  <button
+                    type="button"
+                    onClick={() => setLinkOpen(true)}
+                    className="flex items-center gap-2 whitespace-nowrap rounded-xl border border-neon-green/40 bg-neon-green/10 px-3.5 py-2 text-xs font-bold text-neon-green transition-all hover:bg-neon-green/20 active:scale-95"
+                  >
+                    <User className="size-4" /> 선수 연동
+                  </button>
+                )}
+
                 {/* 4. 관리자 (관리자 전용) */}
                 {currentViewSeason === "현재 시즌" && isClassManager && (
                   <TabButton active={tab === "admin"} onClick={() => setTab("admin")} icon={<Users className="size-4" />}>
@@ -440,15 +465,26 @@ function Index() {
 
       {/* Main Panel Content Routing */}
       <main className="mx-auto max-w-7xl px-4 pt-3 pb-8 sm:px-6 lg:px-8">
-        {needsOnboarding ? (
-          <Onboarding
-            students={students}
-            thresholds={tierThresholds}
-            levelMode={levelMode}
-            levels={levels}
-            onClaim={claimPlayer}
-            onCreate={createMyPlayer}
-          />
+        {(needsOnboarding || linkOpen) ? (
+          <div>
+            {linkOpen && !needsOnboarding && (
+              <button
+                type="button"
+                onClick={() => setLinkOpen(false)}
+                className="mb-3 inline-flex items-center gap-1.5 rounded-lg border border-border/50 px-3 py-1.5 text-xs font-bold text-muted-foreground transition-all hover:text-foreground active:scale-95"
+              >
+                <ArrowLeft className="size-3.5" /> 취소하고 돌아가기
+              </button>
+            )}
+            <Onboarding
+              students={students}
+              thresholds={tierThresholds}
+              levelMode={levelMode}
+              levels={levels}
+              onClaim={async (pid) => { const ok = await claimPlayer(pid); if (ok) setLinkOpen(false); return ok; }}
+              onCreate={async (profile) => { const ok = await createMyPlayer(profile); if (ok) setLinkOpen(false); return ok; }}
+            />
+          </div>
         ) : (<>
         {/* Read-Only Warning Banner */}
         {currentViewSeason !== "현재 시즌" && (
@@ -507,7 +543,7 @@ function Index() {
           />
         )}
         
-        {session.role === "STUDENT" && tab === "myRecord" && (
+        {(session.role === "STUDENT" || myLinked) && tab === "myRecord" && (
           <MyRecord
             session={session}
             students={students}
@@ -516,12 +552,13 @@ function Index() {
             rpVariables={rpVariables}
             decaySettings={decaySettings}
             decayAppliedDates={decayAppliedDates}
+            playerId={session.role === "STUDENT" ? undefined : myPlayerId}
           />
         )}
 
-        {session.role === "STUDENT" && tab === "myAchievements" && (
+        {(session.role === "STUDENT" || myLinked) && tab === "myAchievements" && (
           <MyAchievements
-            studentId={session.studentId || ""}
+            studentId={session.studentId || myPlayerId || ""}
           />
         )}
         

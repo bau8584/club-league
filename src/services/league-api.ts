@@ -75,8 +75,25 @@ export async function apiFetchScheduledMatches(classId: string) {
     .from("scheduled_matches")
     .select("*")
     .eq("league_id", classId)
-    .in("status", ["waiting", "called"])
+    .in("status", ["waiting", "called", "challenge"])
     .order("created_at", { ascending: true });
+}
+
+// 도전장 생성 (회원이 상대 지목) / 응답(수락→called, 거절→cancelled)
+export async function apiCreateChallenge(payload: {
+  classId: string; challengerId: string; targetId: string; matchType?: "single" | "double";
+}) {
+  return supabase.from("scheduled_matches").insert({
+    league_id: payload.classId,
+    player_a_id: payload.challengerId,
+    player_b_id: payload.targetId,
+    match_type: payload.matchType ?? "single",
+    status: "challenge",
+  });
+}
+
+export async function apiRespondChallenge(id: string, accept: boolean) {
+  return supabase.from("scheduled_matches").update({ status: accept ? "called" : "cancelled" }).eq("id", id);
 }
 
 export async function apiCreateScheduledMatch(payload: {

@@ -51,7 +51,7 @@ export type ScheduledMatch = {
   player_a2_id: string | null;
   player_b2_id: string | null;
   court: string | null;
-  status: "waiting" | "called" | "done" | "cancelled";
+  status: "waiting" | "called" | "done" | "cancelled" | "challenge";
   created_at: string;
 };
 
@@ -180,6 +180,7 @@ export type Class = {
     dynamicBonuses?: DynamicBonuses; // 동적 보너스 세부 설정
     dynamicPenalties?: DynamicPenalties; // 상위 티어 패배 패널티 설정
     activeBonuses?: ActiveBonuses; // 활성화된 보너스 룰셋
+    placement?: { enabled: boolean; games: number }; // 배치고사(언랭크) 설정
     [key: string]: any;
   } | null;
   is_deleted?: boolean; // 소프트 딜리트 여부

@@ -4,6 +4,7 @@ import { TierBadge } from "./TierBadge";
 import { TierCrest } from "./TierCrest";
 import { ScoreStrategyGuide } from "./ScoreStrategyGuide";
 import { GenderMark } from "./GenderMark";
+import { useLeagueStore } from "@/lib/league-store";
 import { cn } from "@/lib/utils";
 import { 
   Trophy, 
@@ -44,6 +45,7 @@ interface MyRecordProps {
   rpVariables?: { winDelta: number; loseDelta: number };
   decaySettings?: DecaySettingsRecord;
   decayAppliedDates?: Record<string, string>;
+  playerId?: string | null; // 관리자가 선수와 연동된 경우 이 id로 '나'를 지정
 }
 
 export function MyRecord({
@@ -53,17 +55,21 @@ export function MyRecord({
   thresholds,
   rpVariables = { winDelta: 25, loseDelta: 20 },
   decaySettings,
-  decayAppliedDates = {}
+  decayAppliedDates = {},
+  playerId
 }: MyRecordProps) {
-  
+  const { placementEnabled, placementGames } = useLeagueStore();
+
   // 1. 현재 접속한 선수 정보 매칭 (동명이인 처리 포함)
   const me = useMemo(() => {
+    // 관리자가 선수와 연동된 경우: playerId 우선
+    if (playerId) return students.find((s) => s.id === playerId) ?? null;
     if (!session || session.role !== "STUDENT") return null;
     if (session.studentId) {
       return students.find((s) => s.id === session.studentId) ?? null;
     }
     return students.find((s) => s.name === session.userName) ?? null;
-  }, [session, students]);
+  }, [session, students, playerId]);
 
   // 2. 본인이 참여한 최근 경기 목록 (최신순)
   const myMatches = useMemo(() => {
@@ -221,10 +227,21 @@ export function MyRecord({
                 </CardTitle>
               </div>
               
-              <div className="flex items-center gap-2.5">
-                <TierBadge rp={me.rp} thresholds={thresholds} />
-                <TierCrest rp={me.rp} thresholds={thresholds} size={60} />
-              </div>
+              {(() => {
+                const myTotal = me.wins + me.losses;
+                const unranked = placementEnabled && myTotal < placementGames;
+                return (
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex flex-col items-end gap-1">
+                      <TierBadge rp={me.rp} thresholds={thresholds} unranked={unranked} />
+                      {unranked && (
+                        <span className="text-[10px] font-bold text-muted-foreground">배치 {myTotal}/{placementGames}경기</span>
+                      )}
+                    </div>
+                    {!unranked && <TierCrest rp={me.rp} thresholds={thresholds} size={60} />}
+                  </div>
+                );
+              })()}
             </div>
           </CardHeader>
 

@@ -50,7 +50,9 @@ import {
   apiFetchScheduledMatches,
   apiCreateScheduledMatch,
   apiUpdateScheduledStatus,
-  apiDeleteScheduledMatch
+  apiDeleteScheduledMatch,
+  apiCreateChallenge,
+  apiRespondChallenge
 } from "@/services/league-api";
 import {
   DEFAULT_TIERS,
@@ -255,6 +257,12 @@ function useLeagueStoreInternal() {
              if (migrated.dynamicPenalties !== undefined) setDynamicPenalties(migrated.dynamicPenalties);
             if (migrated.activeBonuses !== undefined) setActiveBonuses(migrated.activeBonuses);
             if (migrated.matchInputMode !== undefined) setMatchInputMode(migrated.matchInputMode);
+            if (migrated.placement) {
+              setPlacementEnabled(!!migrated.placement.enabled);
+              if (typeof migrated.placement.games === "number") setPlacementGames(migrated.placement.games);
+            } else {
+              setPlacementEnabled(false);
+            }
           }
           // 레벨 체계는 마이그레이션 대상이 아니므로 settings에서 직접 읽음
           setLevelMode(s.levelMode === "preset" ? "preset" : "free");
@@ -477,6 +485,9 @@ function useLeagueStoreInternal() {
 
   // 경기 입력 방식 (관리자 제어). 기존 리그는 클럽형(관리자만) 기본값.
   const [matchInputMode, setMatchInputMode] = useState<MatchInputMode>("admin-only");
+  // 배치고사(언랭크): 신규 회원은 N경기 전까지 티어 비공개
+  const [placementEnabled, setPlacementEnabled] = useState<boolean>(false);
+  const [placementGames, setPlacementGames] = useState<number>(3);
   // 레벨 체계 (구 구분조): preset=정의된 목록만 / free=자유 입력
   const [levelMode, setLevelMode] = useState<"preset" | "free">("free");
   const [levels, setLevels] = useState<{ name: string; description?: string }[]>([]);
@@ -2424,6 +2435,32 @@ function useLeagueStoreInternal() {
     }
   }, [currentClassId, isClassOwner]);
 
+  // 배치고사(언랭크) 설정 저장 (소유자/공동방장)
+  const savePlacement = useCallback(async (enabled: boolean, games: number) => {
+    if (!isClassOwner) {
+      toast.error("권한이 없습니다. 방장만 이 작업을 수행할 수 있습니다.");
+      return;
+    }
+    const prevE = placementEnabled, prevG = placementGames;
+    setPlacementEnabled(enabled);
+    setPlacementGames(games);
+    if (currentClassId) {
+      try {
+        const { data: currentClass } = await apiFetchClassSettings(currentClassId);
+        const { error } = await apiUpdateClassSettings(currentClassId, {
+          ...(currentClass?.settings || {}),
+          placement: { enabled, games },
+        });
+        if (error) throw error;
+        toast.success("배치고사 설정이 저장되었습니다.");
+      } catch (err: any) {
+        console.error("Failed to save placement:", err.message);
+        toast.error("배치고사 설정 저장에 실패했습니다: " + err.message);
+        setPlacementEnabled(prevE); setPlacementGames(prevG);
+      }
+    }
+  }, [currentClassId, isClassOwner, placementEnabled, placementGames]);
+
   // 레벨 체계 저장 (관리자: 소유자/공동관리자). 이름/설명 수정·추가·삭제 + 체계 모드 변경.
   //  migrations: 레벨 rename/삭제 시 그 레벨이던 회원의 group_label 일괄 이전/정리.
   //    { from, to } — to=null 이면 정리(빈값).
@@ -2577,108 +2614,7 @@ function useLeagueStoreInternal() {
     }
   }, [currentClassId, isClassOwner]);
 
-  // Client-side auto decay calculation & sync on mount (runs once per day)
-  const checkAndApplyAutomaticDecay = useCallback(async () => {
-    const isAnyDecayEnabled = Object.values(decaySettings).some((d) => d.enabled);
-    if (!isAnyDecayEnabled) return;
-    if (currentViewSeasonRef.current !== "현재 시즌") return;
-    if (!currentClassId) return;
-
-    // Get today's local date YYYY-MM-DD
-    const today = new Date();
-    const offset = today.getTimezoneOffset();
-    const localToday = new Date(today.getTime() - (offset * 60 * 1000));
-    const todayStr = localToday.toISOString().split("T")[0];
-
-    if (lastDecayDate === todayStr) {
-      console.log("Auto decay already processed for today:", todayStr);
-      return;
-    }
-
-    const now = Date.now();
-    const targetIds: string[] = [];
-    const decayDeltas: Record<string, number> = {};
-
-    students.forEach((s) => {
-      const studentTier = getTier(s.rp, tierThresholds);
-      const tierKey = studentTier.toLowerCase() as 'bronze'|'silver'|'gold'|'platinum'|'diamond';
-      const setting = decaySettings[tierKey];
-
-      if (!setting || !setting.enabled) return;
-      if (!s.lastMatchDate) return;
-
-      // 사이클당 1회: 마지막 경기일과 마지막 감점일 중 더 최근 시점부터 기준일수가 지나야 감점.
-      // (경기하면 lastMatchDate 갱신으로 리셋, 안 하면 감점 후 다시 기준일수 경과해야 다음 1회)
-      const msThreshold = setting.inactiveDays * 24 * 60 * 60 * 1000;
-      const lastMatchTime = new Date(s.lastMatchDate).getTime();
-      const appliedStr = decayAppliedDates[s.id];
-      const lastAppliedTime = appliedStr ? new Date(appliedStr).getTime() : 0;
-      const baseline = Math.max(lastMatchTime, lastAppliedTime);
-      const elapsed = now - baseline;
-      if (elapsed >= msThreshold) {
-        targetIds.push(s.id);
-        decayDeltas[s.id] = setting.decayRp;
-      }
-    });
-
-    if (targetIds.length === 0) {
-      // Cooldown prevention: save lastDecayDate even if no targets found
-      setLastDecayDate(todayStr);
-      try {
-        const { data: currentClass } = await apiFetchClassSettings(currentClassId);
-
-        const newSettings = {
-          ...(currentClass?.settings || {}),
-          lastDecayDate: todayStr
-        };
-
-        await apiUpdateClassSettings(currentClassId, newSettings);
-      } catch (e) {
-        console.warn("Failed to save lastDecayDate to Supabase:", e);
-      }
-      return;
-    }
-
-    try {
-      setIsSyncing(true);
-      // Apply decay in Supabase + 선수별 감점일(decayApplied) 기록
-      const nextApplied = { ...decayAppliedDates };
-      for (const id of targetIds) {
-        const s = students.find((st) => st.id === id);
-        if (s) {
-          const amount = decayDeltas[id] || 5;
-          const nextRp = Math.max(0, s.rp - amount);
-          await apiUpdateStudentRp(id, nextRp);
-          nextApplied[id] = todayStr;
-        }
-      }
-
-      // 로컬 선수 RP 즉시 반영 (리로드 전에도 카운트다운/리더보드 정합)
-      setStudents((prev) => prev.map((s) =>
-        targetIds.includes(s.id) ? { ...s, rp: Math.max(0, s.rp - (decayDeltas[s.id] || 5)) } : s
-      ));
-      setDecayAppliedDates(nextApplied);
-
-      // Update class settings lastDecayDate + decayApplied
-      const { data: currentClass } = await apiFetchClassSettings(currentClassId);
-
-      const newSettings = {
-        ...(currentClass?.settings || {}),
-        lastDecayDate: todayStr,
-        decayApplied: nextApplied
-      };
-
-      await apiUpdateClassSettings(currentClassId, newSettings);
-
-      setLastDecayDate(todayStr);
-
-      toast.success(`자동 휴면 차감 완료: 총 ${targetIds.length}명의 선수 RP가 각각 차감되었습니다.`, { duration: 5000 });
-    } catch (e) {
-      console.error("Failed executing automatic RP decay in Supabase:", e);
-    } finally {
-      setIsSyncing(false);
-    }
-  }, [students, decaySettings, lastDecayDate, decayAppliedDates, currentClassId, tierThresholds]);
+  // (자동 휴면 감점은 제거됨 — 운영진이 '휴면 감점' 탭에서 수동으로 실시한다.)
 
   // 휴면 감점 대상 미리보기 — matches에서 각 선수의 최근 활동일을 직접 계산해
   // 티어별 설정(enabled/inactiveDays/decayRp)과 사이클(마지막 감점일) 기준으로 판정.
@@ -2843,6 +2779,29 @@ function useLeagueStoreInternal() {
     const { error } = await apiDeleteScheduledMatch(id);
     if (error) { toast.error("삭제 실패: " + error.message); return false; }
     if (cid) await loadScheduled(cid);
+    return true;
+  }, [loadScheduled]);
+
+  // 도전장 보내기 (회원) — 내 연동 선수가 상대를 지목
+  const createChallenge = useCallback(async (targetPlayerId: string): Promise<boolean> => {
+    const cid = currentClassIdRef.current;
+    if (!cid) return false;
+    if (!myPlayerId) { toast.error("연동된 선수가 없어 도전장을 보낼 수 없습니다."); return false; }
+    if (myPlayerId === targetPlayerId) { toast.error("자신에게는 도전할 수 없습니다."); return false; }
+    const { error } = await apiCreateChallenge({ classId: cid, challengerId: myPlayerId, targetId: targetPlayerId });
+    if (error) { toast.error("도전장 전송 실패: " + error.message); return false; }
+    await loadScheduled(cid);
+    toast.success("도전장을 보냈습니다! ⚔️");
+    return true;
+  }, [myPlayerId, loadScheduled]);
+
+  // 도전장 응답 (지목당한 회원) — 수락(입장)/거절
+  const respondChallenge = useCallback(async (id: string, accept: boolean): Promise<boolean> => {
+    const cid = currentClassIdRef.current;
+    const { error } = await apiRespondChallenge(id, accept);
+    if (error) { toast.error("응답 실패: " + error.message); return false; }
+    if (cid) await loadScheduled(cid);
+    toast.success(accept ? "도전을 수락했습니다. 입장하세요!" : "도전을 거절했습니다.");
     return true;
   }, [loadScheduled]);
 
@@ -3090,6 +3049,9 @@ function useLeagueStoreInternal() {
     setTitle, 
     matchInputMode,
     saveMatchInputMode,
+    placementEnabled,
+    placementGames,
+    savePlacement,
     levelMode,
     levels,
     setLevels,
@@ -3154,7 +3116,6 @@ function useLeagueStoreInternal() {
     setLastDecayDate,
     decayAppliedDates,
     saveDecaySettings,
-    checkAndApplyAutomaticDecay,
     previewDormancyDecay,
     applyDormancyDecay,
     fetchDecayLog,
@@ -3162,6 +3123,8 @@ function useLeagueStoreInternal() {
     createScheduledMatch,
     callScheduledMatch,
     removeScheduledMatch,
+    createChallenge,
+    respondChallenge,
     tierSettings,
     setTierSettings,
     dynamicBonuses,

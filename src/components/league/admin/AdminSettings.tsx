@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Save, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { TierName, TierSettings, DynamicBonuses, DynamicPenalties, MatchInputMode } from "@/lib/league-types";
-import type { ActiveBonuses } from "@/lib/league-store";
+import { useLeagueStore, type ActiveBonuses } from "@/lib/league-store";
 import {
   THRESHOLD_PRESETS, WINLOSS_PRESETS, BONUS_PRESETS, PENALTY_PRESETS,
   detectThresholdPreset, detectWinlossPreset, detectBonusPreset, detectPenaltyPreset,
@@ -351,6 +351,18 @@ export function AdminSettings({
 
   // League environment settings
   const [localTitle, setLocalTitle] = useState(title || "");
+
+  // 배치고사(언랭크) — store에서 직접 읽고 저장
+  const { placementEnabled, placementGames, savePlacement } = useLeagueStore();
+  const [localPlacementEnabled, setLocalPlacementEnabled] = useState(placementEnabled);
+  const [localPlacementGames, setLocalPlacementGames] = useState(String(placementGames));
+  useEffect(() => { setLocalPlacementEnabled(placementEnabled); }, [placementEnabled]);
+  useEffect(() => { setLocalPlacementGames(String(placementGames)); }, [placementGames]);
+  const handleSavePlacement = () => {
+    const g = parseInt(localPlacementGames, 10);
+    if (localPlacementEnabled && (isNaN(g) || g < 1)) return toast.error("배치 경기 수는 1 이상의 정수여야 합니다.");
+    savePlacement(localPlacementEnabled, isNaN(g) ? placementGames : g);
+  };
   const [localBonuses, setLocalBonuses] = useState<ActiveBonuses>({
     firstWin: activeBonuses?.firstWin ?? true,
     revenge: activeBonuses?.revenge ?? true,
@@ -630,6 +642,50 @@ export function AdminSettings({
             <Button
               onClick={handleSaveTitle}
               className="bg-neon-blue hover:bg-neon-blue/80 text-primary-foreground font-black px-4 h-10 shrink-0 transition-all active:scale-95 rounded-xl shadow-md font-sans text-[11px]"
+            >
+              <Save className="size-3.5 mr-1" /> 저장
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      {/* 1-B. 배치고사(언랭크) 설정 — 리그 이름과 티어 설정 사이 */}
+      <Card className={cn(
+        "border p-6 backdrop-blur shadow-xl transition-colors",
+        localPlacementEnabled ? "border-neon-blue/40 bg-neon-blue/[0.05]" : "border-border/60 bg-card/60"
+      )}>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="space-y-0.5">
+              <span className="text-xs font-bold text-neon-blue uppercase tracking-wider block">🎯 배치고사 (언랭크)</span>
+              <span className="text-[10px] text-muted-foreground leading-snug block">
+                신규 회원은 <b>배치 경기 수</b>를 채우기 전까지 티어가 <b>언랭크</b>로 표시됩니다. (RP는 그대로 오르내리고, 경기를 채우면 티어가 공개됩니다)
+              </span>
+            </div>
+            <ToggleSwitch checked={localPlacementEnabled} onChange={() => setLocalPlacementEnabled(!localPlacementEnabled)} />
+          </div>
+
+          {localPlacementEnabled && (
+            <div className="flex items-end gap-2 pt-1">
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-muted-foreground block">배치 경기 수</label>
+                <div className="relative max-w-[150px]">
+                  <Input
+                    type="number" min={1}
+                    value={localPlacementGames}
+                    onChange={(e) => setLocalPlacementGames(e.target.value)}
+                    className="h-9 border-border/50 bg-input pr-12 font-sans text-xs"
+                  />
+                  <span className="absolute right-2 top-2 text-[10px] font-bold text-muted-foreground">경기</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-end border-t border-border/10 pt-2">
+            <Button
+              onClick={handleSavePlacement}
+              className="bg-neon-blue hover:bg-neon-blue/80 text-primary-foreground font-black px-4 h-9 transition-all active:scale-95 rounded-xl shadow-md font-sans text-[11px]"
             >
               <Save className="size-3.5 mr-1" /> 저장
             </Button>

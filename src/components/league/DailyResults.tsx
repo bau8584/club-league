@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { useLeagueStore } from "@/lib/league-store";
 import { Calendar as DayCalendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { getTier, TIER_ORDER } from "@/lib/league-types";
 import type { Match, Student } from "@/lib/league-types";
 
 const displayName = (p: { name: string; nickname?: string | null }) => p.nickname || p.name;
@@ -14,7 +15,7 @@ const sameDay = (a: Date, b: Date) =>
 const addDays = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
 
 export function DailyResults() {
-  const { matches, students } = useLeagueStore();
+  const { matches, students, tierThresholds } = useLeagueStore();
   const [date, setDate] = useState<Date>(() => new Date());
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -47,6 +48,61 @@ export function DailyResults() {
     for (const [id, wins] of winCount) if (!topWinner || wins > topWinner.wins) topWinner = { id, wins };
     return { total: dayMatches.length, players: players.size, singles, doubles, topWinner };
   }, [dayMatches]);
+
+  // 오늘의 인물 키워드 (그날 경기 + 현재 티어만으로 계산 — 추가 쿼리 없음)
+  const awards = useMemo(() => {
+    const asc = [...dayMatches].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const inc = (m: Map<string, number>, id?: string | null) => { if (id) m.set(id, (m.get(id) ?? 0) + 1); };
+    const tierRank = (id?: string | null) => { const s = id ? byId.get(id) : null; return s ? TIER_ORDER.indexOf(getTier(s.rp, tierThresholds)) : -1; };
+
+    const butcher = new Map<string, number>();   // 점수차 5+ 압승
+    const upset = new Map<string, number>();      // 상위 티어 격파
+    const nail = new Map<string, number>();       // 1~3점차 진땀승
+    const attend = new Map<string, number>();     // 출전
+    const streakCur = new Map<string, number>();
+    const streakMax = new Map<string, number>();
+    const duo = new Map<string, { ids: string[]; w: number }>();
+
+    for (const m of asc) {
+      const margin = Math.abs(m.scoreA - m.scoreB);
+      const winners = [m.playerAId, m.playerA2Id].filter(Boolean) as string[];
+      const losers = [m.playerBId, m.playerB2Id].filter(Boolean) as string[];
+      [...winners, ...losers].forEach((id) => inc(attend, id));
+      const loserRank = Math.max(-1, ...losers.map(tierRank));
+      for (const w of winners) {
+        if (margin >= 5) inc(butcher, w);
+        if (margin >= 1 && margin <= 3) inc(nail, w);
+        if (tierRank(w) >= 0 && loserRank > tierRank(w)) inc(upset, w);
+        const c = (streakCur.get(w) ?? 0) + 1;
+        streakCur.set(w, c);
+        streakMax.set(w, Math.max(streakMax.get(w) ?? 0, c));
+      }
+      losers.forEach((l) => streakCur.set(l, 0));
+      if (m.matchType === "double" && m.playerA2Id) {
+        const ids = [m.playerAId, m.playerA2Id].sort();
+        const key = ids.join("|");
+        const cur = duo.get(key) ?? { ids, w: 0 };
+        cur.w++; duo.set(key, cur);
+      }
+    }
+
+    const top = (mp: Map<string, number>, min: number) => {
+      let best: { id: string; c: number } | null = null;
+      for (const [id, c] of mp) if (c >= min && (!best || c > best.c)) best = { id, c };
+      return best;
+    };
+    let topDuo: { ids: string[]; w: number } | null = null;
+    for (const v of duo.values()) if (v.w >= 2 && (!topDuo || v.w > topDuo.w)) topDuo = v;
+
+    const list: { emoji: string; key: string; id?: string; ids?: string[]; detail: string }[] = [];
+    const b = top(butcher, 1); if (b) list.push({ emoji: "🔪", key: "학살자", id: b.id, detail: `5점차↑ 압승 ${b.c}회` });
+    const u = top(upset, 1); if (u) list.push({ emoji: "🎯", key: "대이변러", id: u.id, detail: `상위 티어 격파 ${u.c}회` });
+    const st = top(streakMax, 2); if (st) list.push({ emoji: "🔥", key: "연승왕", id: st.id, detail: `${st.c}연승` });
+    const n = top(nail, 1); if (n) list.push({ emoji: "😤", key: "진땀승 장인", id: n.id, detail: `1~3점차 ${n.c}승` });
+    const at = top(attend, 1); if (at) list.push({ emoji: "🏃", key: "개근왕", id: at.id, detail: `${at.c}경기 출전` });
+    if (topDuo) list.push({ emoji: "🤝", key: "환상의 복식조", ids: topDuo.ids, detail: `복식 ${topDuo.w}승` });
+    return list;
+  }, [dayMatches, byId, tierThresholds]);
 
   const isToday = sameDay(date, new Date());
   const dateLabel = date.toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "short" });
@@ -95,6 +151,32 @@ export function DailyResults() {
           value={stats.topWinner ? `${displayName(byId.get(stats.topWinner.id) ?? { name: "?" })} (${stats.topWinner.wins})` : "—"}
         />
       </div>
+
+      {/* 오늘의 인물 — 키워드 부여 */}
+      {awards.length > 0 && (
+        <div className="space-y-2">
+          <span className="flex items-center gap-1.5 text-sm font-black text-foreground">🏅 오늘의 인물</span>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {awards.map((a) => {
+              const name = a.ids
+                ? a.ids.map((id) => displayName(byId.get(id) ?? { name: "?" })).join("·")
+                : displayName(byId.get(a.id!) ?? { name: "?" });
+              return (
+                <div key={a.key} className="flex items-center gap-2.5 rounded-xl border border-border/40 bg-card/50 px-3 py-2.5">
+                  <span className="text-xl">{a.emoji}</span>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="rounded-md bg-neon-blue/15 px-1.5 py-0.5 text-[10px] font-black text-neon-blue">{a.key}</span>
+                      <span className="truncate text-sm font-black text-foreground">{name}</span>
+                    </div>
+                    <span className="text-[10px] text-muted-foreground">{a.detail}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* 경기 목록 */}
       <Card className="border border-border/40 bg-card/50 p-4 backdrop-blur shadow-lg">

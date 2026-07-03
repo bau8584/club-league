@@ -603,6 +603,26 @@ drop policy if exists "teachers manage scheduled" on public.scheduled_matches;
 create policy "teachers manage scheduled" on public.scheduled_matches for all to authenticated
   using (public.is_class_teacher(league_id)) with check (public.is_class_teacher(league_id));
 
+-- 도전장: 회원이 본인 발신 challenge 생성 / 지목당한 회원이 수락·거절
+drop policy if exists "members create challenge" on public.scheduled_matches;
+create policy "members create challenge" on public.scheduled_matches for insert to authenticated
+  with check (
+    public.is_class_recorder(league_id)
+    and status = 'challenge'
+    and created_by = auth.uid()
+    and exists (select 1 from public.players p where p.id = player_a_id and p.user_id = auth.uid())
+  );
+drop policy if exists "target responds challenge" on public.scheduled_matches;
+create policy "target responds challenge" on public.scheduled_matches for update to authenticated
+  using (
+    status = 'challenge'
+    and exists (select 1 from public.players p where p.id = player_b_id and p.user_id = auth.uid())
+  )
+  with check (
+    status in ('called', 'cancelled')
+    and exists (select 1 from public.players p where p.id = player_b_id and p.user_id = auth.uid())
+  );
+
 do $$ begin
   alter publication supabase_realtime add table public.scheduled_matches;
 exception when duplicate_object then null; when undefined_object then null; end $$;

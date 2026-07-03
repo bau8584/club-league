@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { TierBadge } from "@/components/league/TierBadge";
 import { GenderMark } from "@/components/league/GenderMark";
 import { cn } from "@/lib/utils";
-import { Search, SlidersHorizontal, ChevronDown, X } from "lucide-react";
+import { Search, SlidersHorizontal, ChevronDown, X, Swords } from "lucide-react";
 import { getTier, TIER_ORDER, TIER_STYLES, type TierName, type Student } from "@/lib/league-types";
 
 type GenderFilter = "all" | "M" | "F";
@@ -41,7 +41,12 @@ export function Leaderboard({
 
   // 이중 보안 상태 및 자동 잠금 훅
   const [isUnlocked, setIsUnlocked] = useState(false);
-  const { session } = useLeagueStore();
+  const { session, placementEnabled, placementGames, myPlayerId, createChallenge } = useLeagueStore();
+  const handleChallenge = (targetId: string, name: string) => {
+    if (window.confirm(`${name} 님에게 도전장을 보낼까요? ⚔️\n상대가 수락하면 양쪽에 입장 알림이 뜹니다.`)) {
+      createChallenge(targetId);
+    }
+  };
   const isDemo = session?.loginId === "guest" || session?.schoolName?.includes("꿈나무");
 
   useEffect(() => {
@@ -193,6 +198,7 @@ export function Leaderboard({
               {visible.map(({ student: s, rank }) => {
                 const total = s.wins + s.losses;
                 const winRate = total === 0 ? 0 : Math.round((s.wins / total) * 100);
+                const unranked = placementEnabled && total < placementGames;
                 return (
                   <tr key={s.id} className="border-b border-border/30 transition-colors hover:bg-accent/40">
                     <td className="px-4 py-3 font-bold tabular-nums w-12 sm:w-16">
@@ -218,9 +224,22 @@ export function Leaderboard({
                             🔥 {getWinStreak(s.recent)}연승
                           </span>
                         )}
+                        {myPlayerId && s.id !== myPlayerId && (
+                          <button
+                            type="button"
+                            onClick={() => handleChallenge(s.id, s.nickname || s.name)}
+                            title="도전장 보내기"
+                            className="inline-flex items-center gap-0.5 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-black text-amber-500 transition-all hover:bg-amber-500/20 active:scale-95"
+                          >
+                            <Swords className="size-3" /> 도전
+                          </button>
+                        )}
                       </div>
                     </td>
-                    <td className="px-4 py-3"><TierBadge rp={s.rp} thresholds={thresholds} /></td>
+                    <td className="px-4 py-3">
+                      <TierBadge rp={s.rp} thresholds={thresholds} unranked={unranked} />
+                      {unranked && <span className="ml-1 text-[9px] text-muted-foreground">배치 {total}/{placementGames}</span>}
+                    </td>
                     <td className="px-4 py-3 text-right font-mono font-bold text-neon-blue text-glow-blue">{s.rp}</td>
                     <td className="px-4 py-3 hidden md:table-cell">
                       <div className="flex items-center justify-center gap-1">
