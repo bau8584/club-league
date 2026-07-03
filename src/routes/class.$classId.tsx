@@ -44,7 +44,6 @@ function Index() {
     upsertStudents,
     deleteMatch,
     resetStudent,
-    resetAllData,
     updateStudentRP,
     isSyncing,
     isClassOwner,
@@ -597,7 +596,6 @@ function Index() {
             count={students.length}
             onDeleteMatch={deleteMatch}
             onResetStudent={resetStudent}
-            onResetAll={resetAllData}
             onUpdateRP={updateStudentRP}
             thresholds={tierThresholds}
             rpVariables={rpVariables}

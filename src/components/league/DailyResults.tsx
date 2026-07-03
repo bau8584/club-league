@@ -58,6 +58,8 @@ export function DailyResults() {
     const butcher = new Map<string, number>();   // 점수차 5+ 압승
     const upset = new Map<string, number>();      // 상위 티어 격파
     const nail = new Map<string, number>();       // 1~3점차 진땀승
+    const nailLoss = new Map<string, number>();   // 1~3점차 아쉬운 패배
+    const lossCount = new Map<string, number>();  // 패배 수
     const attend = new Map<string, number>();     // 출전
     const streakCur = new Map<string, number>();
     const streakMax = new Map<string, number>();
@@ -77,7 +79,11 @@ export function DailyResults() {
         streakCur.set(w, c);
         streakMax.set(w, Math.max(streakMax.get(w) ?? 0, c));
       }
-      losers.forEach((l) => streakCur.set(l, 0));
+      for (const l of losers) {
+        streakCur.set(l, 0);
+        inc(lossCount, l);
+        if (margin >= 1 && margin <= 3) inc(nailLoss, l);
+      }
       if (m.matchType === "double" && m.playerA2Id) {
         const ids = [m.playerAId, m.playerA2Id].sort();
         const key = ids.join("|");
@@ -95,12 +101,15 @@ export function DailyResults() {
     for (const v of duo.values()) if (v.w >= 2 && (!topDuo || v.w > topDuo.w)) topDuo = v;
 
     const list: { emoji: string; key: string; id?: string; ids?: string[]; detail: string }[] = [];
-    const b = top(butcher, 1); if (b) list.push({ emoji: "🔪", key: "학살자", id: b.id, detail: `5점차↑ 압승 ${b.c}회` });
-    const u = top(upset, 1); if (u) list.push({ emoji: "🎯", key: "대이변러", id: u.id, detail: `상위 티어 격파 ${u.c}회` });
-    const st = top(streakMax, 2); if (st) list.push({ emoji: "🔥", key: "연승왕", id: st.id, detail: `${st.c}연승` });
-    const n = top(nail, 1); if (n) list.push({ emoji: "😤", key: "진땀승 장인", id: n.id, detail: `1~3점차 ${n.c}승` });
-    const at = top(attend, 1); if (at) list.push({ emoji: "🏃", key: "개근왕", id: at.id, detail: `${at.c}경기 출전` });
-    if (topDuo) list.push({ emoji: "🤝", key: "환상의 복식조", ids: topDuo.ids, detail: `복식 ${topDuo.w}승` });
+    const b = top(butcher, 1); if (b) list.push({ emoji: "🔪", key: "학살자", id: b.id, detail: `5점차 이상으로 ${b.c}번이나 상대를 완파했어요.` });
+    const u = top(upset, 1); if (u) list.push({ emoji: "🎯", key: "대이변러", id: u.id, detail: `자기보다 높은 티어를 ${u.c}번 꺾은 대이변의 주인공.` });
+    const st = top(streakMax, 2); if (st) list.push({ emoji: "🔥", key: "연승왕", id: st.id, detail: `쉬지 않고 ${st.c}연승을 내달렸어요.` });
+    const n = top(nail, 1); if (n) list.push({ emoji: "😤", key: "진땀승 장인", id: n.id, detail: `1~3점 차 손에 땀 쥐는 승부를 ${n.c}번 잡아냈어요.` });
+    const at = top(attend, 1); if (at) list.push({ emoji: "🏃", key: "개근왕", id: at.id, detail: `오늘 ${at.c}경기, 끝까지 코트를 지킨 출석왕.` });
+    if (topDuo) list.push({ emoji: "🤝", key: "환상의 복식조", ids: topDuo.ids, detail: `복식에서 ${topDuo.w}번 함께 이긴 환상의 짝꿍.` });
+    // 패자 격려 — 위로/응원 카테고리
+    const nl = top(nailLoss, 1); if (nl) list.push({ emoji: "💪", key: "근성상", id: nl.id, detail: `1~3점 차로 ${nl.c}번 아깝게 놓쳤어요. 다음 판은 당신 겁니다!` });
+    const lc = top(lossCount, 2); if (lc && lc.id !== st?.id) list.push({ emoji: "🌱", key: "성장 중", id: lc.id, detail: `오늘 ${lc.c}패, 누구보다 많이 부딪히며 성장하는 중!` });
     return list;
   }, [dayMatches, byId, tierThresholds]);
 
@@ -140,8 +149,10 @@ export function DailyResults() {
         </div>
       </div>
 
-      {/* 통계 카드 */}
-      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+      {/* 경기 요약 */}
+      <div className="space-y-2">
+        <span className="flex items-center gap-1.5 text-sm font-black text-foreground">📊 경기 요약</span>
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
         <StatCard icon={<Swords className="size-4" />} label="총 경기" value={`${stats.total}`} />
         <StatCard icon={<Users className="size-4" />} label="참여 인원" value={`${stats.players}`} />
         <StatCard icon={<span className="text-[11px] font-black">단·복</span>} label="단식 / 복식" value={`${stats.singles} / ${stats.doubles}`} />
@@ -150,27 +161,29 @@ export function DailyResults() {
           label="최다승"
           value={stats.topWinner ? `${displayName(byId.get(stats.topWinner.id) ?? { name: "?" })} (${stats.topWinner.wins})` : "—"}
         />
+        </div>
       </div>
 
       {/* 오늘의 인물 — 키워드 부여 */}
       {awards.length > 0 && (
         <div className="space-y-2">
           <span className="flex items-center gap-1.5 text-sm font-black text-foreground">🏅 오늘의 인물</span>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
             {awards.map((a) => {
               const name = a.ids
                 ? a.ids.map((id) => displayName(byId.get(id) ?? { name: "?" })).join("·")
                 : displayName(byId.get(a.id!) ?? { name: "?" });
               return (
-                <div key={a.key} className="flex items-center gap-2.5 rounded-xl border border-border/40 bg-card/50 px-3 py-2.5">
-                  <span className="text-xl">{a.emoji}</span>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="rounded-md bg-neon-blue/15 px-1.5 py-0.5 text-[10px] font-black text-neon-blue">{a.key}</span>
-                      <span className="truncate text-sm font-black text-foreground">{name}</span>
-                    </div>
-                    <span className="text-[10px] text-muted-foreground">{a.detail}</span>
+                <div key={a.key} className="flex flex-col gap-1 rounded-xl border border-border/40 bg-card/50 px-3 py-2.5">
+                  {/* 닉네임 (강조·상단) */}
+                  <span className="truncate text-xl font-black leading-tight text-foreground">{name}</span>
+                  {/* 이모지 + 키워드 */}
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-base">{a.emoji}</span>
+                    <span className="rounded-md bg-neon-blue/15 px-1.5 py-0.5 text-[11px] font-black text-neon-blue">{a.key}</span>
                   </div>
+                  {/* 설명 */}
+                  <span className="text-[11px] leading-snug text-muted-foreground">{a.detail}</span>
                 </div>
               );
             })}
@@ -178,16 +191,19 @@ export function DailyResults() {
         </div>
       )}
 
-      {/* 경기 목록 */}
-      <Card className="border border-border/40 bg-card/50 p-4 backdrop-blur shadow-lg">
-        {dayMatches.length === 0 ? (
-          <p className="py-10 text-center text-xs text-muted-foreground">이 날에 기록된 경기가 없습니다.</p>
-        ) : (
-          <div className="space-y-1.5">
-            {dayMatches.map((m) => <MatchRow key={m.id} m={m} byId={byId} />)}
-          </div>
-        )}
-      </Card>
+      {/* 경기 기록 */}
+      <div className="space-y-2">
+        <span className="flex items-center gap-1.5 text-sm font-black text-foreground">🏸 경기 기록</span>
+        <Card className="border border-border/40 bg-card/50 p-4 backdrop-blur shadow-lg">
+          {dayMatches.length === 0 ? (
+            <p className="py-10 text-center text-xs text-muted-foreground">이 날에 기록된 경기가 없습니다.</p>
+          ) : (
+            <div className="grid grid-cols-1 gap-1.5 lg:grid-cols-2">
+              {dayMatches.map((m) => <MatchRow key={m.id} m={m} byId={byId} />)}
+            </div>
+          )}
+        </Card>
+      </div>
     </div>
   );
 }
@@ -217,7 +233,7 @@ function MatchRow({ m, byId }: { m: Match; byId: Map<string, Student> }) {
 
   return (
     <div className="flex items-center gap-2 rounded-lg border border-border/30 bg-input/40 px-2.5 py-2">
-      <span className="hidden w-[48px] shrink-0 text-[10px] text-muted-foreground sm:block">{time}</span>
+      <span className="w-[38px] shrink-0 text-[9px] leading-tight text-muted-foreground sm:w-[46px] sm:text-[10px]">{time}</span>
       <div className="flex min-w-0 flex-1 items-center justify-center gap-2 text-xs">
         <span className={cn("min-w-0 flex-1 truncate text-right font-bold", aWon ? "text-neon-blue" : "text-foreground")} title={teamA}>{teamA}</span>
         <span className="shrink-0 select-none rounded bg-muted/60 px-2 py-0.5 font-mono text-[13px] font-bold">

@@ -25,20 +25,31 @@ const TIER_LABEL: Record<TierName, string> = {
 // 시스템을 처음 켤 때 기본으로 감점 적용되는 티어
 const DEFAULT_ON_TIERS: TierName[] = ["Gold", "Platinum", "Diamond"];
 
+// 휴면 감점 프리셋 — '강도(k=결석 1회에 몇 승 손실)'만 정의하고,
+// 실제 감점 RP는 현재 리그의 승리RP·밴드폭에서 자동 계산된다(기준점 프리셋 자동 적응).
+type DecayPreset = { key: string; emoji: string; label: string; days: number; k: number; desc: string; tiers: TierName[] };
+const DECAY_PRESETS: DecayPreset[] = [
+  { key: "lenient",  emoji: "🌿", label: "느슨",          days: 14, k: 1.5, desc: "결석 1회 ≈ 1.5승. 친목·취미 모임에 알맞아요.", tiers: ["Gold", "Platinum", "Diamond"] },
+  { key: "standard", emoji: "⚖️", label: "표준 출석",     days: 10, k: 2.5, desc: "결석 1회 ≈ 2.5승. 실버부터 은근한 출석 압박.", tiers: ["Silver", "Gold", "Platinum", "Diamond"] },
+  { key: "strict",   emoji: "🔥", label: "엄격 · 주1회",  days: 7,  k: 3.5, desc: "결석 1회 ≈ 3.5승. 일주일에 한 번은 꼭 나오도록.", tiers: ["Silver", "Gold", "Platinum", "Diamond"] },
+];
+
 function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void }) {
   return (
     <button
       type="button"
       onClick={onChange}
+      role="switch"
+      aria-checked={checked}
       className={cn(
-        "relative h-6 w-11 shrink-0 rounded-full transition-colors",
-        checked ? "bg-amber-500" : "bg-muted-foreground/30"
+        "flex h-6 w-11 shrink-0 items-center rounded-full px-0.5 transition-colors",
+        checked ? "bg-amber-500" : "bg-muted"
       )}
     >
       <span
         className={cn(
-          "absolute top-0.5 size-5 rounded-full bg-white shadow transition-transform",
-          checked ? "translate-x-[22px]" : "translate-x-0.5"
+          "size-5 rounded-full bg-white shadow-sm transition-transform",
+          checked ? "translate-x-5" : "translate-x-0"
         )}
       />
     </button>
@@ -56,10 +67,39 @@ export function DecayManager() {
   const {
     decayEnabled, decayDays, decayTiers, decayAmount, decaySettings,
     saveDecaySettings, previewDormancyDecay, applyDormancyDecay, fetchDecayLog,
-    currentViewSeason,
+    currentViewSeason, tierThresholds, tierSettings, rpVariables,
   } = useLeagueStore();
 
   const readOnly = currentViewSeason !== "현재 시즌";
+
+  // ── 현재 리그 점수 기준: 티어별 승리 RP & 밴드폭 → 감점 자동 계산 재료 ──
+  const winRpOf = (t: TierName): number => {
+    switch (t) {
+      case "Bronze": return tierSettings?.Bronze?.winDelta ?? 24;
+      case "Silver": return tierSettings?.Silver?.winDelta ?? 20;
+      case "Gold": return tierSettings?.Gold?.winDelta ?? 16;
+      case "Platinum": return tierSettings?.Platinum?.winDelta ?? 13;
+      case "Diamond": return rpVariables?.winDelta ?? 11;
+    }
+  };
+  const bandOf = (t: TierName): number => {
+    const th = tierThresholds;
+    if (!th) return Infinity;
+    switch (t) {
+      case "Bronze": return th.Silver - th.Bronze;
+      case "Silver": return th.Gold - th.Silver;
+      case "Gold": return th.Platinum - th.Gold;
+      case "Platinum": return th.Diamond - th.Platinum;
+      case "Diamond": return Infinity; // 상한 개방
+    }
+  };
+  // 결석 1회 = k승 손실 → 감점 RP (밴드폭 35% 상한으로 한 번에 강등 방지)
+  const computeRp = (t: TierName, k: number): number => {
+    let rp = Math.round(k * winRpOf(t));
+    const band = bandOf(t);
+    if (isFinite(band)) rp = Math.min(rp, Math.floor(band * 0.35));
+    return Math.max(1, rp);
+  };
 
   // ── 설정 로컬 상태 (store에서 초기화 + 동기화) ──
   const [enabled, setEnabled] = useState(decayEnabled);
@@ -72,6 +112,8 @@ export function DecayManager() {
     Platinum: String(decaySettings?.platinum?.decayRp ?? decayAmount),
     Diamond: String(decaySettings?.diamond?.decayRp ?? decayAmount),
   }));
+  // 강도: 결석 1회 = 약 k승 손실 (직접 조절 가능)
+  const [wins, setWins] = useState("3");
 
   useEffect(() => { setEnabled(decayEnabled); }, [decayEnabled]);
   useEffect(() => { setDays(String(decayDays)); }, [decayDays]);
@@ -97,8 +139,44 @@ export function DecayManager() {
     });
   };
 
+  // 켜진 티어들의 감점 RP를 현재 강도(k)로 다시 채움
+  const fillFromK = (k: number, tierList: TierName[]) => {
+    setTierRp((prev) => {
+      const next = { ...prev };
+      tierList.forEach((t) => { next[t] = String(computeRp(t, k)); });
+      return next;
+    });
+  };
+
   const toggleTier = (t: TierName) =>
-    setTiers((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
+    setTiers((prev) => {
+      const on = prev.includes(t);
+      if (!on) { const k = Number(wins); if (k > 0) setTierRp((r) => ({ ...r, [t]: String(computeRp(t, k)) })); }
+      return on ? prev.filter((x) => x !== t) : [...prev, t];
+    });
+
+  // 강도(k) 변경 → 켜진 티어 감점 자동 재계산
+  const changeWins = (v: string) => {
+    setWins(v);
+    const k = Number(v);
+    if (k > 0) fillFromK(k, tiers);
+  };
+
+  // 프리셋 적용 — 강도(k)만 정하고 감점 RP는 현재 리그 기준 자동 계산. 저장은 사용자가 확인 후.
+  const applyPreset = (p: DecayPreset) => {
+    if (readOnly) return;
+    setEnabled(true);
+    setDays(String(p.days));
+    setTiers([...p.tiers]);
+    setWins(String(p.k));
+    fillFromK(p.k, p.tiers);
+    toast.info(`'${p.label}' 프리셋을 불러왔어요. (결석 1회 ≈ ${p.k}승) 확인 후 저장하세요.`);
+  };
+  // 현재 폼이 어떤 프리셋과 일치하는지 (강도·기간·티어 일치)
+  const sameTiers = (a: TierName[], b: TierName[]) => a.length === b.length && a.every((t) => b.includes(t));
+  const activePreset = DECAY_PRESETS.find(
+    (p) => enabled && Number(days) === p.days && Number(wins) === p.k && sameTiers(tiers, p.tiers)
+  )?.key;
 
   const handleSave = async () => {
     const d = parseInt(days, 10);
@@ -208,24 +286,77 @@ export function DecayManager() {
           <Toggle checked={enabled} onChange={toggleSystem} />
         </div>
 
+        {/* 프리셋 빠른 설정 */}
+        <div className="mt-4 space-y-2 border-t border-border/20 pt-4">
+          <span className="block text-[11px] font-bold text-muted-foreground">⚡ 프리셋 — 강도만 고르면 <b className="text-amber-500">현재 리그 점수 기준</b>으로 감점이 자동 계산돼요 (저장 전까지 미적용)</span>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {DECAY_PRESETS.map((p) => (
+              <button
+                key={p.key}
+                type="button"
+                onClick={() => applyPreset(p)}
+                disabled={readOnly}
+                className={cn(
+                  "rounded-xl border px-3 py-2.5 text-left transition-all active:scale-[0.99] disabled:opacity-50",
+                  activePreset === p.key
+                    ? "border-amber-500/60 bg-amber-500/15"
+                    : "border-border/40 bg-card/40 hover:border-amber-500/40"
+                )}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-1.5 text-xs font-black text-foreground">
+                    <span className="text-base">{p.emoji}</span>{p.label}
+                  </span>
+                  <span className="shrink-0 text-[10px] font-bold text-amber-500">{p.days}일</span>
+                </div>
+                <p className="mt-1 text-[10px] leading-snug text-muted-foreground">{p.desc}</p>
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {TIER_ORDER.filter((t) => p.tiers.includes(t)).map((t) => (
+                    <span key={t} className="rounded bg-muted/50 px-1.5 py-0.5 text-[9px] font-bold text-muted-foreground">
+                      {TIER_LABEL[t]} −{computeRp(t, p.k)}
+                    </span>
+                  ))}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
         {enabled && (
           <div className="mt-4 space-y-4 border-t border-border/20 pt-4">
-            <div className="space-y-1">
-              <label className="text-[11px] font-bold text-muted-foreground">기준 미활동 일수 (모든 티어 공통)</label>
-              <div className="relative max-w-[180px]">
-                <Input
-                  type="number" min={1} value={days}
-                  onChange={(e) => setDays(e.target.value)}
-                  disabled={readOnly}
-                  className="h-9 border-border/30 bg-input pr-12 font-sans text-xs focus:border-amber-500"
-                />
-                <span className="absolute right-2 top-2 text-[10px] font-bold text-muted-foreground">일 이상</span>
+            <div className="flex flex-wrap gap-4">
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-muted-foreground">기준 미활동 일수</label>
+                <div className="relative max-w-[150px]">
+                  <Input
+                    type="number" min={1} value={days}
+                    onChange={(e) => setDays(e.target.value)}
+                    disabled={readOnly}
+                    className="h-9 border-border/30 bg-input pr-12 font-sans text-xs focus:border-amber-500"
+                  />
+                  <span className="absolute right-2 top-2 text-[10px] font-bold text-muted-foreground">일 이상</span>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-muted-foreground">강도 — 결석 1회 ≈ 몇 승 손실</label>
+                <div className="relative max-w-[150px]">
+                  <Input
+                    type="number" min={0.5} step={0.5} value={wins}
+                    onChange={(e) => changeWins(e.target.value)}
+                    disabled={readOnly}
+                    className="h-9 border-border/30 bg-input pr-12 font-sans text-xs focus:border-amber-500"
+                  />
+                  <span className="absolute right-2 top-2 text-[10px] font-bold text-amber-500">승</span>
+                </div>
               </div>
             </div>
+            <p className="rounded-lg border border-border/20 bg-muted/20 px-2.5 py-1.5 text-[10px] leading-snug text-muted-foreground">
+              💡 아래 티어별 감점은 <b>강도 × 그 티어의 승리 RP</b>로 자동 계산됩니다(밴드폭 초과 방지 상한 적용). 기준점 프리셋이 촘촘하든 넓든 “결석 1회 = {wins || 0}승”이 유지돼요. 필요하면 개별 값을 직접 고쳐도 됩니다.
+            </p>
 
             <div className="space-y-2">
               <label className="block text-[11px] font-bold text-muted-foreground">
-                티어별 1회 차감 RP <span className="font-medium text-muted-foreground/70">(티어를 켜고 값을 따로 지정)</span>
+                티어별 1회 차감 RP <span className="font-medium text-muted-foreground/70">(자동 계산 · 직접 수정 가능)</span>
               </label>
               <div className="space-y-1.5">
                 {TIER_ORDER.map((t) => {

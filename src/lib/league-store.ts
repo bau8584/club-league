@@ -15,14 +15,12 @@ import {
   apiInsertMatch,
   apiDeleteMatch,
   apiDeleteStudentMatches,
-  apiDeleteClassMatches,
   apiInsertMatchesBulk,
   apiUpdateMatchWinnerLoser,
   apiFetchStudents,
   apiFetchStudentsPublic,
   apiUpdateStudentRp,
   apiResetStudentRp,
-  apiResetAllClassStudentsRp,
   apiUpdateStudentFields,
   apiInsertStudent,
   apiSoftDeleteStudent,
@@ -702,6 +700,92 @@ function useLeagueStoreInternal() {
     return match;
   }, [students, matches, rpVariables, tierThresholds, currentClassId]);
 
+  // ── RP 복원: 경기 기록을 rp=1000부터 시간순 재생해 최종 상태를 다시 계산 ──
+  const replayStudents = useCallback((): Student[] => {
+    // 모든 현재 선수를 초기 상태(1000 RP·0승 0패·이력 없음)로 리셋
+    let cur: Student[] = students.map((s) => ({
+      ...s, rp: 1000, wins: 0, losses: 0, recent: [], currentStreak: 0,
+      lastWinDate: undefined, lastMatchDate: undefined, totalMatches: 0,
+    }));
+    const idset = new Set(cur.map((s) => s.id));
+    const ordered = [...matches].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const past: Match[] = [];
+    for (const m of ordered) {
+      const refs = [m.playerAId, m.playerBId, m.playerA2Id, m.playerB2Id].filter(Boolean) as string[];
+      // 참조 선수가 하나라도 없으면(삭제 등) 안전하게 건너뜀
+      if (refs.some((id) => !idset.has(id))) { past.push(m); continue; }
+      const ymd = (m.date || "").split("T")[0] || new Date(m.date).toISOString().split("T")[0];
+      const { nextStudents } = calculateMatchResult({
+        students: cur,
+        matches: past,
+        playerAId: m.playerAId,
+        playerBId: m.playerBId,
+        playerA2Id: m.playerA2Id,
+        playerB2Id: m.playerB2Id,
+        scoreA: m.scoreA,
+        scoreB: m.scoreB,
+        matchType: m.matchType ?? (m.playerA2Id ? "double" : "single"),
+        tierThresholds,
+        tiers,
+        rpVariables,
+        dynamicBonuses,
+        dynamicPenalties,
+        todayYmd: ymd,
+        matchId: m.id,
+        matchDate: m.date,
+      });
+      cur = nextStudents;
+      past.push(m);
+    }
+    return cur;
+  }, [students, matches, tierThresholds, tiers, rpVariables, dynamicBonuses, dynamicPenalties]);
+
+  // 복원 미리보기 — 저장 없이 현재 RP vs 재계산 RP 비교
+  const recomputeRpPreview = useCallback(() => {
+    const replayed = replayStudents();
+    return students.map((s) => {
+      const r = replayed.find((x) => x.id === s.id);
+      return {
+        id: s.id,
+        name: s.displayName || s.name || s.nickname || "이름없음",
+        before: s.rp,
+        after: r ? r.rp : s.rp,
+      };
+    }).sort((a, b) => b.after - a.after);
+  }, [students, replayStudents]);
+
+  // 복원 실행 — 재계산된 RP를 DB에 저장 (방장·공동방장)
+  const applyRecomputedRp = useCallback(async (): Promise<number> => {
+    if (currentViewSeasonRef.current !== "현재 시즌") {
+      toast.error("과거 시즌은 복원할 수 없습니다 (읽기 전용).");
+      return 0;
+    }
+    if (!isClassOwner) {
+      toast.error("권한이 없습니다. 방장·공동방장만 복원할 수 있습니다.");
+      return 0;
+    }
+    if (!currentClassId) return 0;
+    if (matches.length === 0) { toast.info("재생할 경기 기록이 없습니다."); return 0; }
+    const replayed = replayStudents();
+    const changed = replayed.filter((r) => {
+      const s = students.find((x) => x.id === r.id);
+      return s && s.rp !== r.rp;
+    });
+    try {
+      setIsSyncing(true);
+      for (const r of changed) await apiUpdateStudentRp(r.id, r.rp);
+      toast.success(`RP 복원 완료: ${changed.length}명 재계산되었습니다.`, { duration: 5000 });
+      await loadClassDataRef.current?.(currentClassId, true);
+      return changed.length;
+    } catch (e: any) {
+      console.error("Failed to recompute RP:", e);
+      toast.error("복원 실패: " + (e?.message ?? "알 수 없는 오류"));
+      return 0;
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [replayStudents, students, matches, isClassOwner, currentClassId]);
+
   // 경기 삭제(롤백) 및 동기화
   const deleteMatch = useCallback(async (matchId: string) => {
     if (currentViewSeasonRef.current !== "현재 시즌") {
@@ -915,58 +999,7 @@ function useLeagueStoreInternal() {
     }
   }, [students, matches, currentClassId, isClassOwner]);
 
-  // 시즌 전체 초기화 및 동기화
-  const resetAllData = useCallback(async () => {
-    if (currentViewSeasonRef.current !== "현재 시즌") {
-      toast.error("과거 시즌 기록은 수정할 수 없습니다 (읽기 전용).");
-      return;
-    }
-    if (!isClassOwner) {
-      toast.error("권한이 없습니다. 클래스 개설자만 이 작업을 수행할 수 있습니다.");
-      return;
-    }
-    if (isSyncingRef.current) {
-      toast.warning("데이터가 동기화 중입니다. 잠시 후 다시 시도해 주세요.");
-      return;
-    }
-    isSyncingRef.current = true;
-    setIsSyncing(true);
-
-    const nextMatches: Match[] = [];
-    const nextStudents = students.map((s) => ({
-      ...s,
-      rp: 1000,
-      wins: 0,
-      losses: 0,
-      recent: [],
-    }));
-
-    const previousStudents = [...students];
-    const previousMatches = [...matches];
-    setMatches(nextMatches);
-    setStudents(nextStudents);
-
-    if (currentClassId) {
-      try {
-        // Delete all matches of this class
-        await apiDeleteClassMatches(currentClassId);
-        // Reset all students' RP to 1000
-        await apiResetAllClassStudentsRp(currentClassId);
-        toast.success("전체 데이터가 초기화되었습니다!");
-      } catch (err: any) {
-        console.error("Failed to reset all data in Supabase:", err.message);
-        toast.error("전체 초기화에 실패했습니다: " + err.message);
-        setMatches(previousMatches);
-        setStudents(previousStudents);
-      } finally {
-        isSyncingRef.current = false;
-        setIsSyncing(false);
-      }
-    } else {
-      isSyncingRef.current = false;
-      setIsSyncing(false);
-    }
-  }, [students, matches, currentClassId, isClassOwner]);
+  // (전체 데이터 초기화 기능은 제거됨 — 전원 리셋은 '새 시즌 시작'이 안전하게 대체.)
 
   // 관리자 관리자 수동 RP 수정 및 동기화
   const updateStudentRP = useCallback(async (studentId: string, nextRp: number) => {
@@ -2851,7 +2884,7 @@ function useLeagueStoreInternal() {
       return { success: false, message: "Read-only mode" };
     }
     if (!isClassOwner) {
-      toast.error("권한이 없습니다. 클래스 개설자만 이 작업을 수행할 수 있습니다.");
+      toast.error("권한이 없습니다. 방장·공동방장만 새 시즌을 시작할 수 있습니다.");
       return { success: false, message: "No permission" };
     }
     if (isSyncingRef.current) {
@@ -3067,8 +3100,9 @@ function useLeagueStoreInternal() {
     recordMatch,
     upsertStudents,
     deleteMatch,
-    resetStudent, 
-    resetAllData, 
+    recomputeRpPreview,
+    applyRecomputedRp,
+    resetStudent,
     updateStudentRP,
     isSyncing,
     isClassOwner,

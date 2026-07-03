@@ -134,24 +134,12 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
   const rowOf = (s: Student): RowDraft => draft[s.id] ?? { name: s.name || "", nickname: s.nickname || "", group: s.group || "", gender: s.gender, rp: s.rp, birthYearInput: yy2(s.birthYear) };
   const isDirty = (s: Student) => {
     const r = draft[s.id];
-    return !!r && (r.name !== (s.name || "") || r.nickname !== (s.nickname || "") || r.group !== (s.group || "") || r.gender !== s.gender || r.rp !== s.rp || normalizeBirthYear(r.birthYearInput) !== (s.birthYear ?? null));
+    return !!r && (r.name !== (s.name || "") || r.nickname !== (s.nickname || "") || r.group !== (s.group || "") || r.gender !== s.gender || normalizeBirthYear(r.birthYearInput) !== (s.birthYear ?? null));
   };
   const dirtyRows = rows.filter(isDirty);
 
   const setField = (s: Student, patch: Partial<RowDraft>) =>
     setDraft((prev) => ({ ...prev, [s.id]: { ...(prev[s.id] ?? rowOf(s)), ...patch } }));
-
-  const adjustSelectedRp = (fn: (rp: number) => number) =>
-    setDraft((prev) => {
-      const next = { ...prev };
-      for (const id of selected) {
-        const s = studentsById.get(id);
-        if (!s) continue;
-        const base = next[id] ?? { name: s.name || "", nickname: s.nickname || "", group: s.group || "", gender: s.gender, rp: s.rp };
-        next[id] = { ...base, rp: Math.max(0, Math.round(fn(base.rp))) };
-      }
-      return next;
-    });
 
   const toggleSelect = (id: string) => setSelected((prev) => {
     const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n;
@@ -167,7 +155,6 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
       if (r.nickname !== (s.nickname || "")) u.nickname = r.nickname || null;
       if (r.group !== (s.group || "")) u.group = r.group || null;
       if (r.gender !== s.gender) u.gender = r.gender;
-      if (r.rp !== s.rp) u.rp = r.rp;
       const by = normalizeBirthYear(r.birthYearInput);
       if (by !== (s.birthYear ?? null)) u.birthYear = by;
       return u;
@@ -225,7 +212,7 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
           <h3 className="font-black text-lg">회원 관리</h3>
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
-          닉네임·레벨·성별·나이·RP를 바로 수정하고, 회원을 선택해 RP 일괄 조정·삭제를 할 수 있어요. 명단을 한 번에 붙여넣어 등록할 수도 있습니다.
+          닉네임·레벨·성별·나이를 바로 수정하고, 회원을 선택해 삭제할 수 있어요. 명단을 한 번에 붙여넣어 등록할 수도 있습니다. <span className="text-muted-foreground/70">(RP는 경기 기록으로만 바뀌며 직접 수정하지 않습니다.)</span>
         </p>
       </div>
 
@@ -353,19 +340,6 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/40 bg-muted/15 px-3 py-2.5">
           <span className="text-xs font-bold text-muted-foreground">선택 {selected.size}명</span>
           <div className="h-4 w-px bg-border/40" />
-          <span className="text-[11px] font-bold text-muted-foreground">RP</span>
-          {[-50, -10, +10, +50].map((d) => (
-            <button key={d} disabled={selected.size === 0} onClick={() => adjustSelectedRp((rp) => rp + d)}
-              className={cn("px-2 py-1 rounded-md text-[11px] font-mono font-bold border transition-all active:scale-95 disabled:opacity-40",
-                d > 0 ? "border-neon-green/40 text-neon-green hover:bg-neon-green/10" : "border-loss/40 text-loss hover:bg-loss/10")}>
-              {d > 0 ? `+${d}` : d}
-            </button>
-          ))}
-          <button disabled={selected.size === 0} onClick={() => adjustSelectedRp(() => 1000)}
-            className="px-2 py-1 rounded-md text-[11px] font-bold border border-border/60 text-muted-foreground hover:text-foreground transition-all active:scale-95 disabled:opacity-40">
-            1000으로
-          </button>
-          <div className="h-4 w-px bg-border/40" />
           <button disabled={selected.size === 0}
             onClick={() => setConfirm({ type: "delete", ids: [...selected], label: `${selected.size}명` })}
             className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold border border-destructive/40 text-destructive hover:bg-destructive/10 transition-all active:scale-95 disabled:opacity-40">
@@ -461,11 +435,7 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
                       </div>
                     </td>
                     <td className="px-2 py-1.5 text-center"><TierBadge rp={r.rp} thresholds={thresholds} /></td>
-                    <td className="px-2 py-1.5">
-                      <Input type="number" value={r.rp}
-                        onChange={(e) => setField(s, { rp: Math.max(0, parseInt(e.target.value, 10) || 0) })}
-                        className="h-8 w-20 mx-auto text-center font-mono font-bold bg-input border-border/30 text-neon-blue p-0" />
-                    </td>
+                    <td className="px-2 py-1.5 text-center font-mono font-bold text-neon-blue">{r.rp}</td>
                     <td className="px-2 py-1.5 text-center">
                       <button type="button" disabled={!dirty}
                         onClick={async () => {
@@ -474,7 +444,6 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
                             nickname: r.nickname || null,
                             group: r.group || null,
                             gender: r.gender,
-                            rp: r.rp,
                             birthYear: normalizeBirthYear(r.birthYearInput),
                           });
                           setDraft((prev) => { const n = { ...prev }; delete n[s.id]; return n; });

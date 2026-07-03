@@ -44,6 +44,7 @@ import { SeasonManagePanel } from "./admin/SeasonManagePanel";
 import { CurrentSeasonPanel } from "./admin/CurrentSeasonPanel";
 import { DecayManager } from "./admin/DecayManager";
 import { MatchScheduler } from "./admin/MatchScheduler";
+import { RpRecoveryPanel } from "./admin/RpRecoveryPanel";
 
 type Row = { grade: number; classNum: number; number: number; name: string; gender?: Gender };
 
@@ -100,7 +101,6 @@ export function AdminPanel({
   count,
   onDeleteMatch,
   onResetStudent,
-  onResetAll,
   onUpdateRP,
   thresholds,
   rpVariables,
@@ -122,7 +122,6 @@ export function AdminPanel({
   count: number;
   onDeleteMatch: (matchId: string) => void;
   onResetStudent: (studentId: string) => void;
-  onResetAll: () => void;
   onUpdateRP: (studentId: string, nextRp: number) => void;
   thresholds?: Record<TierName, number>;
   rpVariables?: { winDelta: number; loseDelta: number };
@@ -427,12 +426,15 @@ export function AdminPanel({
 
         {/* matchRecords Tab */}
         {activeTab === "matchRecords" && (
-          <AdminMatchRecords
-            students={students}
-            matches={matches}
-            onDeleteMatch={onDeleteMatch}
-            onUpdateMatchScore={onUpdateMatchScore}
-          />
+          <div className="flex flex-col gap-6">
+            {isOwner && <RpRecoveryPanel />}
+            <AdminMatchRecords
+              students={students}
+              matches={matches}
+              onDeleteMatch={onDeleteMatch}
+              onUpdateMatchScore={onUpdateMatchScore}
+            />
+          </div>
         )}
 
         {/* dataManage Tab */}

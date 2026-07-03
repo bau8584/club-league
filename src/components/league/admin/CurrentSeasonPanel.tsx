@@ -20,12 +20,13 @@ function recommendNext(current: string, past: string[]) {
 }
 
 export function CurrentSeasonPanel() {
-  const { currentSeason, seasonList, students, matches, renameSeason, changeSeason } = useLeagueStore();
+  const { currentSeason, seasonList, students, matches, renameSeason, changeSeason, title } = useLeagueStore();
 
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [newOpen, setNewOpen] = useState(false);
   const [newName, setNewName] = useState("");
+  const [confirmName, setConfirmName] = useState(""); // 리그명 입력 확인
   const [busy, setBusy] = useState(false);
 
   const period = useMemo(() => {
@@ -36,7 +37,7 @@ export function CurrentSeasonPanel() {
   }, [matches]);
 
   const openRename = () => { setRenameValue(currentSeason); setRenameOpen(true); };
-  const openNew = () => { setNewName(recommendNext(currentSeason, seasonList)); setNewOpen(true); };
+  const openNew = () => { setNewName(recommendNext(currentSeason, seasonList)); setConfirmName(""); setNewOpen(true); };
 
   return (
     <div className="space-y-5">
@@ -68,7 +69,7 @@ export function CurrentSeasonPanel() {
               <RotateCcw className="size-4 text-amber-500" /> 새 시즌 시작
             </h4>
             <p className="mt-1 text-xs text-muted-foreground">
-              현재 시즌 순위를 보관한 뒤, 선수을 1000 RP·0승 0패로 초기화합니다. (명단·별명은 유지)
+              현재 시즌 순위를 보관한 뒤, 선수를 1000 RP·0승 0패로 초기화합니다. (명단·별명은 유지)
             </p>
           </div>
           <Button onClick={openNew}
@@ -123,10 +124,17 @@ export function CurrentSeasonPanel() {
             <Input value={newName} onChange={(e) => setNewName(e.target.value)} disabled={busy}
               className="h-11 bg-input border-border/65 font-bold" placeholder="예: 시즌2 또는 2026 2학기" />
           </div>
+          <div className="mt-3 space-y-1.5">
+            <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
+              확인 — 리그 이름 <b className="text-amber-600">“{title}”</b> 을(를) 그대로 입력
+            </label>
+            <Input value={confirmName} onChange={(e) => setConfirmName(e.target.value)} disabled={busy}
+              className="h-11 bg-input border-border/65 font-bold" placeholder={title || "리그 이름"} />
+          </div>
           <AlertDialogFooter className="mt-6 gap-2">
             <AlertDialogCancel disabled={busy} className="font-bold border-border/80 rounded-xl h-11 px-5">취소</AlertDialogCancel>
             <AlertDialogAction
-              disabled={busy || !newName.trim() || newName.trim() === currentSeason}
+              disabled={busy || !newName.trim() || newName.trim() === currentSeason || confirmName.trim() !== (title || "").trim()}
               onClick={async (e) => {
                 e.preventDefault();
                 setBusy(true);
