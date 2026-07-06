@@ -162,9 +162,25 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
-      // 웹 푸시 발송 엔드포인트 (TanStack 라우팅 이전에 가로챔)
-      if (request.method === "POST" && new URL(request.url).pathname === "/api/push") {
-        return await handlePushSend(request, env as PushEnv);
+      // 웹 푸시 엔드포인트 (TanStack 라우팅 이전에 가로챔)
+      if (new URL(request.url).pathname === "/api/push") {
+        const e = env as PushEnv;
+        // GET: 설정 진단(값 없이 존재 여부만) — 브라우저에서 바로 확인 가능
+        if (request.method === "GET") {
+          return jsonResponse({
+            configured: !!(e.SUPABASE_URL && e.SUPABASE_SERVICE_ROLE_KEY && e.VAPID_PUBLIC_KEY && e.VAPID_PRIVATE_KEY),
+            have: {
+              SUPABASE_URL: !!e.SUPABASE_URL,
+              SUPABASE_SERVICE_ROLE_KEY: !!e.SUPABASE_SERVICE_ROLE_KEY,
+              VAPID_PUBLIC_KEY: !!e.VAPID_PUBLIC_KEY,
+              VAPID_PRIVATE_KEY: !!e.VAPID_PRIVATE_KEY,
+              VAPID_SUBJECT: !!e.VAPID_SUBJECT,
+            },
+          });
+        }
+        if (request.method === "POST") {
+          return await handlePushSend(request, e);
+        }
       }
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
