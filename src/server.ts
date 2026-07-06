@@ -4,6 +4,7 @@ import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
 import { createClient } from "@supabase/supabase-js";
 import { buildPushPayload } from "@block65/webcrypto-web-push";
+// (재배포 트리거: 대시보드 비밀을 런타임에 반영하기 위한 빌드)
 
 type PushEnv = {
   SUPABASE_URL?: string;
