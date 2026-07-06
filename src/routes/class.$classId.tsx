@@ -301,6 +301,11 @@ function Index() {
                 </button>
               </div>
 
+              {/* 모바일: 경기 알림 버튼 (케밥 옆에 직접 노출) */}
+              <div className="lg:hidden">
+                <PushToggle leagueId={classId} />
+              </div>
+
               {/* 모바일: 케밥 메뉴 */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -343,11 +348,6 @@ function Index() {
                         {season}
                       </DropdownMenuItem>
                     ))}
-                  </div>
-
-                  {/* 경기 알림 (메뉴 유지) */}
-                  <div className="border-b border-border/40 px-3 py-2" onClick={(e) => e.preventDefault()}>
-                    <PushToggle leagueId={classId} variant="row" />
                   </div>
 
                   {/* 테마 (메뉴 유지 — 클릭해도 안 닫힘) */}
