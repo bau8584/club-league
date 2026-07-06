@@ -628,6 +628,27 @@ do $$ begin
 exception when duplicate_object then null; when undefined_object then null; end $$;
 
 -- ============================================================
+-- 웹 푸시 구독
+-- ============================================================
+create table if not exists public.push_subscriptions (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references auth.users(id) on delete cascade,
+  league_id   uuid references public.leagues(id) on delete cascade,
+  player_id   uuid references public.players(id) on delete set null,
+  endpoint    text not null,
+  p256dh      text not null,
+  auth        text not null,
+  created_at  timestamptz not null default now(),
+  unique (user_id, endpoint)
+);
+create index if not exists idx_push_sub_player on public.push_subscriptions (player_id);
+create index if not exists idx_push_sub_league on public.push_subscriptions (league_id);
+alter table public.push_subscriptions enable row level security;
+drop policy if exists "self manage push sub" on public.push_subscriptions;
+create policy "self manage push sub" on public.push_subscriptions for all to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+-- ============================================================
 -- 실행 권한 + Data API 권한
 -- ============================================================
 grant execute on function public.current_season_of(uuid)            to authenticated, anon;
@@ -655,6 +676,7 @@ grant select, insert, update, delete on public.league_secrets to authenticated;
 grant select                          on public.season_standings to authenticated;
 grant select                          on public.decay_log         to authenticated;
 grant select, insert, update, delete  on public.scheduled_matches to authenticated;
+grant select, insert, update, delete  on public.push_subscriptions to authenticated;
 grant select on public.players_public to anon, authenticated;
 
 commit;

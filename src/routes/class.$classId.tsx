@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Leaderboard } from "@/features/leaderboard/Leaderboard";
 import { DailyResults } from "@/components/league/DailyResults";
 import { ScheduledMatchBanner } from "@/components/league/ScheduledMatchBanner";
+import { PushToggle } from "@/components/PushToggle";
 import { RecordMatch } from "@/components/league/RecordMatch";
 import { AdminPanel } from "@/components/league/AdminPanel";
 import { MatchRecommend } from "@/components/league/MatchRecommend";
@@ -284,6 +285,9 @@ function Index() {
                   <DropdownMenuContent align="end" className="w-60 p-3"><ThemePicker /></DropdownMenuContent>
                 </DropdownMenu>
 
+                {/* 경기 알림(웹 푸시) */}
+                <PushToggle leagueId={classId} />
+
                 {/* 리그 로비 */}
                 <button onClick={() => { window.location.href = "/"; }} title="리그 로비로"
                   className="flex size-9 items-center justify-center rounded-lg border border-border/60 bg-card/60 text-muted-foreground hover:text-neon-blue hover:border-neon-blue/40 active:scale-95 transition-all">
@@ -339,6 +343,11 @@ function Index() {
                         {season}
                       </DropdownMenuItem>
                     ))}
+                  </div>
+
+                  {/* 경기 알림 (메뉴 유지) */}
+                  <div className="border-b border-border/40 px-3 py-2" onClick={(e) => e.preventDefault()}>
+                    <PushToggle leagueId={classId} variant="row" />
                   </div>
 
                   {/* 테마 (메뉴 유지 — 클릭해도 안 닫힘) */}

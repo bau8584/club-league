@@ -52,6 +52,7 @@ import {
   apiCreateChallenge,
   apiRespondChallenge
 } from "@/services/league-api";
+import { notifyPlayers } from "@/services/push-send";
 import {
   DEFAULT_TIERS,
   DEFAULT_DECAY_SETTINGS,
@@ -2798,12 +2799,17 @@ function useLeagueStoreInternal() {
   const callScheduledMatch = useCallback(async (id: string): Promise<boolean> => {
     if (!isClassManagerRef.current) { toast.error("권한이 없습니다."); return false; }
     const cid = currentClassIdRef.current;
+    const m = scheduledMatches.find((x) => x.id === id);
     const { error } = await apiUpdateScheduledStatus(id, "called");
     if (error) { toast.error("호출 실패: " + error.message); return false; }
     if (cid) await loadScheduled(cid);
+    if (m) notifyPlayers([m.player_a_id, m.player_b_id, m.player_a2_id, m.player_b2_id], {
+      title: "🏸 경기 입장!", body: "운영진이 대진을 배정했어요. 코트로 입장하세요.",
+      url: cid ? `/class/${cid}` : "/", tag: `sched-${id}`,
+    });
     toast.success("입장 호출을 보냈습니다.");
     return true;
-  }, [loadScheduled]);
+  }, [loadScheduled, scheduledMatches]);
 
   // 대진 제거 (완료/취소) — 행 삭제
   const removeScheduledMatch = useCallback(async (id: string): Promise<boolean> => {
@@ -2824,6 +2830,10 @@ function useLeagueStoreInternal() {
     const { error } = await apiCreateChallenge({ classId: cid, challengerId: myPlayerId, targetId: targetPlayerId });
     if (error) { toast.error("도전장 전송 실패: " + error.message); return false; }
     await loadScheduled(cid);
+    notifyPlayers([targetPlayerId], {
+      title: "⚔️ 도전장 도착!", body: "당신에게 도전장이 왔습니다. 받아들이시겠어요?",
+      url: `/class/${cid}`, tag: `chal-${targetPlayerId}`,
+    });
     toast.success("도전장을 보냈습니다! ⚔️");
     return true;
   }, [myPlayerId, loadScheduled]);
@@ -2831,12 +2841,17 @@ function useLeagueStoreInternal() {
   // 도전장 응답 (지목당한 회원) — 수락(입장)/거절
   const respondChallenge = useCallback(async (id: string, accept: boolean): Promise<boolean> => {
     const cid = currentClassIdRef.current;
+    const m = scheduledMatches.find((x) => x.id === id);
     const { error } = await apiRespondChallenge(id, accept);
     if (error) { toast.error("응답 실패: " + error.message); return false; }
     if (cid) await loadScheduled(cid);
+    if (accept && m) notifyPlayers([m.player_a_id, m.player_a2_id], {
+      title: "⚔️ 도전 수락!", body: "상대가 도전을 수락했어요. 코트로 입장하세요.",
+      url: cid ? `/class/${cid}` : "/", tag: `chal-accept-${id}`,
+    });
     toast.success(accept ? "도전을 수락했습니다. 입장하세요!" : "도전을 거절했습니다.");
     return true;
-  }, [loadScheduled]);
+  }, [loadScheduled, scheduledMatches]);
 
   // 선수용 '나의 업적' 자동 연산 함수 (Derived State)
   const calculateAchievements = useCallback((studentId: string): Achievement[] => {
