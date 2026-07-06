@@ -25,7 +25,19 @@ async function handlePushSend(request: Request, env: PushEnv): Promise<Response>
   const url = env.SUPABASE_URL;
   const service = env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !service || !env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY) {
-    return jsonResponse({ error: "push-not-configured" }, 503);
+    // 어떤 값이 빠졌는지 진단(값은 노출하지 않고 존재 여부만)
+    return jsonResponse(
+      {
+        error: "push-not-configured",
+        have: {
+          SUPABASE_URL: !!url,
+          SUPABASE_SERVICE_ROLE_KEY: !!service,
+          VAPID_PUBLIC_KEY: !!env.VAPID_PUBLIC_KEY,
+          VAPID_PRIVATE_KEY: !!env.VAPID_PRIVATE_KEY,
+        },
+      },
+      503,
+    );
   }
   const token = (request.headers.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
   if (!token) return jsonResponse({ error: "unauthorized" }, 401);

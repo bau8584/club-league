@@ -19,6 +19,27 @@ export function isPushConfigured(): boolean {
   return !!VAPID_PUBLIC;
 }
 
+// iOS(아이폰/아이패드) 여부 — iPadOS는 Mac으로 위장하므로 터치포인트로 보정
+export function isIOS(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  return /iphone|ipad|ipod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
+// 홈 화면에 추가된 PWA(standalone)로 실행 중인지
+export function isStandalone(): boolean {
+  if (typeof window === "undefined") return false;
+  return (
+    window.matchMedia?.("(display-mode: standalone)").matches === true ||
+    (navigator as unknown as { standalone?: boolean }).standalone === true
+  );
+}
+
+// 아이폰인데 아직 홈 화면 추가를 안 해서 푸시를 못 켜는 상태
+export function iosNeedsInstall(): boolean {
+  return isIOS() && !isStandalone();
+}
+
 function urlBase64ToUint8Array(base64: string): Uint8Array {
   const padding = "=".repeat((4 - (base64.length % 4)) % 4);
   const b64 = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");

@@ -2,13 +2,15 @@ import { useEffect, useState } from "react";
 import { Bell, BellRing } from "lucide-react";
 import { toast } from "sonner";
 import { useLeagueStore } from "@/lib/league-store";
-import { isPushSupported, isPushConfigured, getPushEnabled, enablePush, disablePush } from "@/lib/push";
+import { isPushSupported, isPushConfigured, getPushEnabled, enablePush, disablePush, iosNeedsInstall } from "@/lib/push";
 import { cn } from "@/lib/utils";
 
 // 경기 알림(웹 푸시) 옵트인 토글. VAPID 미설정이면 아예 렌더 안 함.
 export function PushToggle({ leagueId, variant = "icon" }: { leagueId?: string | null; variant?: "icon" | "row" }) {
   const { myPlayerId } = useLeagueStore();
+  const [configured] = useState(() => isPushConfigured());
   const [supported] = useState(() => isPushSupported() && isPushConfigured());
+  const [needsInstall] = useState(() => isPushConfigured() && iosNeedsInstall());
   const [enabled, setEnabled] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -17,7 +19,35 @@ export function PushToggle({ leagueId, variant = "icon" }: { leagueId?: string |
     getPushEnabled().then(setEnabled);
   }, [supported]);
 
-  if (!supported) return null;
+  // VAPID 미설정이면 숨김. 아이폰 사파리(홈 화면 미추가)면 안내 버튼 노출.
+  if (!configured) return null;
+  if (!supported && !needsInstall) return null;
+
+  // 아이폰: 홈 화면에 추가해야 알림 가능 → 안내
+  if (needsInstall) {
+    const guide = () =>
+      toast("아이폰은 홈 화면에 추가한 뒤 알림을 켤 수 있어요.", {
+        description: "사파리 하단 공유 버튼 → '홈 화면에 추가' → 추가된 아이콘으로 열기 → 🔔 알림 켜기",
+        duration: 8000,
+      });
+    if (variant === "row") {
+      return (
+        <button type="button" onClick={guide} className="flex w-full items-center gap-2 px-1 py-1 text-xs font-bold text-muted-foreground">
+          <Bell className="size-4" /> 경기 알림 <span className="ml-auto text-[10px]">홈 화면 추가 필요</span>
+        </button>
+      );
+    }
+    return (
+      <button
+        type="button"
+        onClick={guide}
+        title="아이폰은 홈 화면에 추가 후 알림 가능"
+        className="flex size-9 items-center justify-center rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-500 transition-all active:scale-95"
+      >
+        <Bell className="size-5" />
+      </button>
+    );
+  }
 
   const toggle = async () => {
     if (busy) return;
