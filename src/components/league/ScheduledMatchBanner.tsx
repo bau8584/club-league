@@ -6,10 +6,22 @@ import type { Student } from "@/lib/league-types";
 const dn = (p: { name: string; nickname?: string | null }) => p.nickname || p.name;
 
 // 내가 배정된 '호출된' 대진(입장) 또는 나에게 온 '도전장'을 화면 중앙에 크게 띄운다.
+const DISMISS_KEY = "dismissed-sched";
+const RECENT_MS = 3 * 60 * 60 * 1000; // 최근 3시간 내 호출/도전만 배너로 표시
+
 export function ScheduledMatchBanner() {
   const { scheduledMatches, myPlayerId, students, respondChallenge } = useLeagueStore();
-  const [dismissed, setDismissed] = useState<string[]>([]);
+  // '확인'한 배너는 새로고침해도 다시 안 뜨도록 localStorage에 보관
+  const [dismissed, setDismissed] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem(DISMISS_KEY) || "[]"); } catch { return []; }
+  });
   const [busy, setBusy] = useState(false);
+
+  const dismissId = (id: string) => setDismissed((p) => {
+    const next = [...new Set([...p, id])];
+    try { localStorage.setItem(DISMISS_KEY, JSON.stringify(next.slice(-100))); } catch { /* ignore */ }
+    return next;
+  });
 
   const byId = useMemo(() => {
     const m = new Map<string, Student>();
@@ -19,8 +31,12 @@ export function ScheduledMatchBanner() {
 
   const mine = useMemo(() => {
     if (!myPlayerId) return [];
+    const now = Date.now();
     return scheduledMatches.filter((m) => {
       if (dismissed.includes(m.id)) return false;
+      // 오래된(3시간 초과) 호출/도전은 자동 무시 — 남은 행이 매번 다시 뜨는 것 방지
+      const created = m.created_at ? new Date(m.created_at).getTime() : now;
+      if (now - created > RECENT_MS) return false;
       if (m.status === "called") {
         return [m.player_a_id, m.player_b_id, m.player_a2_id, m.player_b2_id].includes(myPlayerId);
       }
@@ -50,7 +66,7 @@ export function ScheduledMatchBanner() {
   const partner = teamLabel(myTeam.filter((id) => id && id !== myPlayerId));
   const opponent = teamLabel(otherTeam);
 
-  const dismiss = () => setDismissed((p) => [...p, current.id]);
+  const dismiss = () => dismissId(current.id);
   const respond = async (accept: boolean) => {
     setBusy(true);
     try { await respondChallenge(current.id, accept); }
