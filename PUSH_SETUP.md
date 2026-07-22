@@ -1,67 +1,61 @@
-# 웹 푸시 알림 설정 (경기 입장·도전장)
+# 웹 푸시 알림 설정 (Supabase Edge Function 방식)
 
-앱 코드는 모두 준비됐고, **아래 4가지만 설정**하면 웹 푸시가 동작합니다.
-(설정 전에는 알림 토글이 아예 표시되지 않으니 안전합니다.)
+> Cloudflare 배포 파이프라인이 대시보드 비밀을 유지하지 못해, **발송을 Supabase Edge Function으로 이전**했습니다.
+> Cloudflare에는 더 이상 아무 비밀도 설정할 필요가 없습니다. (기존에 넣은 CF 비밀은 지워도 됩니다.)
+
+준비: 공개키는 이미 [src/lib/push-public-key.ts](src/lib/push-public-key.ts)에 넣어 두셨습니다(회원 구독용).
 
 ---
 
-## 1. VAPID 키 1쌍 생성
-터미널에서:
+## 1. Edge Function 배포 — `send-push`
+코드: [supabase/functions/send-push/index.ts](supabase/functions/send-push/index.ts)
+
+**방법 A — Supabase 대시보드(CLI 불필요, 추천)**
+1. Supabase 대시보드 → 좌측 **Edge Functions** → **Deploy a new function**(또는 Create function)
+2. 이름: `send-push`
+3. 에디터에 위 파일 내용을 **그대로 붙여넣기** → **Deploy**
+
+**방법 B — CLI**
 ```bash
-npx web-push generate-vapid-keys
+supabase functions deploy send-push
 ```
-출력의 **Public Key / Private Key** 를 복사해 둡니다. (둘 다 URL-safe base64)
 
 ---
 
-## 2. 공개키(Public Key) 붙여넣기 — 파일 한 줄만 수정
-공개키는 비밀이 아니라 **파일에 넣고 커밋**하면 됩니다. (환경변수 설정 불필요)
-[src/lib/push-public-key.ts](src/lib/push-public-key.ts) 를 열어 따옴표 안에 Public Key를 붙여넣고 저장:
-```ts
-export const VAPID_PUBLIC_KEY = "여기에_Public_Key_붙여넣기";
-```
-> 이 값이 있어야 회원 화면에 "🔔 경기 알림" 토글이 나타납니다. (비우면 토글 숨김)
+## 2. 함수 시크릿 3개 설정
+Supabase 대시보드 → **Edge Functions → Secrets**(또는 Project Settings → Edge Functions → Secrets)에서 추가:
+
+| 이름 | 값 |
+|---|---|
+| `VAPID_PUBLIC_KEY` | `npx web-push generate-vapid-keys`의 Public Key |
+| `VAPID_PRIVATE_KEY` | 같은 명령의 **Private Key** |
+| `VAPID_SUBJECT` | `mailto:내이메일@example.com` |
+
+> `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`는 **Supabase가 자동 주입**하므로 넣지 않아도 됩니다.
+> `VAPID_PUBLIC_KEY`는 [push-public-key.ts](src/lib/push-public-key.ts)에 넣은 값과 **같은 값**이어야 합니다.
 
 ---
 
-## 3. Cloudflare Worker 시크릿 (발송 서버용)
-`wrangler`로 설정(또는 Cloudflare 대시보드 → Worker → Settings → Variables → Secrets):
-```bash
-npx wrangler secret put SUPABASE_URL                 # 예: https://xxxx.supabase.co
-npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY    # Supabase → Project Settings → API → service_role 키
-npx wrangler secret put VAPID_PUBLIC_KEY             # 1번 Public Key (2번과 동일 값)
-npx wrangler secret put VAPID_PRIVATE_KEY            # 1번 Private Key
-npx wrangler secret put VAPID_SUBJECT                # 예: mailto:you@example.com
-```
-> `SUPABASE_SERVICE_ROLE_KEY`는 **절대 클라이언트/깃에 넣지 마세요.** Worker 시크릿에만.
-
----
-
-## 4. DB 마이그레이션 적용
-Supabase SQL 편집기에서 실행:
+## 3. DB 마이그레이션 적용
+Supabase SQL 편집기에서:
 - [db/migrations/2026-07-04_push_subscriptions.sql](db/migrations/2026-07-04_push_subscriptions.sql)
 
 ---
 
-## 배포
-```bash
-npm run build
-npx wrangler deploy      # (또는 기존 배포 파이프라인)
-```
-
----
-
 ## 동작 방식
-- 회원이 헤더의 **🔔 토글**을 켜면 브라우저 구독이 `push_subscriptions`에 저장됩니다.
-- 운영진이 **"입장 호출"** 하거나 회원이 **도전장**을 보내면, 앱이 `/api/push`(Worker)에 요청 → 대상 회원의 구독으로 실제 푸시 발송.
-- 앱을 꺼도 폰/PC에 알림이 뜹니다(단, 아래 iOS 제약).
+- 회원이 헤더의 **🔔 토글**을 켜면 구독이 `push_subscriptions`에 저장.
+- 운영진 **입장 호출** / 회원 **도전장** 시 앱이 `supabase.functions.invoke("send-push")` 호출 → Edge Function이 대상 회원 구독으로 실제 푸시 발송.
 
-## ⚠️ 아이폰(Safari) 제약
-iOS는 **홈 화면에 앱을 추가(공유 → 홈 화면에 추가)한 경우에만** 웹 푸시가 옵니다(iOS 16.4+).
-그냥 사파리 탭으로 열어둔 회원에게는 **푸시가 오지 않습니다.** (안드로이드·데스크톱 크롬/엣지는 정상)
-→ 아이폰 회원에게는 "홈 화면에 추가 후 알림 켜기"를 안내하세요.
+## 확인 / 문제 해결
+- 함수가 배포됐는지: 대시보드 Edge Functions 목록에 `send-push`가 있는지.
+- 설정 누락 진단: 함수가 503을 주면 응답 본문의 `have`에 어떤 시크릿이 빠졌는지 표시됩니다.
+- 토글이 안 보임 → 공개키(push-public-key.ts) 배포 반영 여부, 아이폰은 **홈 화면에 추가** 여부.
+- 알림이 안 옴 → 함수 배포 + 시크릿 3개 + 마이그레이션 + 브라우저 알림 권한 확인.
 
-## 문제 해결
-- 토글이 안 보임 → `VITE_VAPID_PUBLIC_KEY` 빌드 반영 여부 확인.
-- 알림 안 옴 → Worker 시크릿(5개) 설정, 마이그레이션 적용, 브라우저 알림 권한 허용 확인.
-- `/api/push`가 503 → Worker 시크릿 누락. 401 → 로그인 필요.
+## ⚠️ 아이폰(Safari)
+홈 화면에 **추가한 경우에만**(iOS 16.4+) 푸시가 옵니다. 사파리 탭만 열어둔 경우는 안 옵니다.
+→ 아이폰 회원: 공유 → '홈 화면에 추가' → 그 아이콘으로 열기 → 🔔 켜기.
+
+## (선택) 기존 Cloudflare 비밀 정리
+이제 Cloudflare Worker에는 푸시 관련 비밀이 필요 없습니다. 대시보드 Variables and Secrets의
+`SUPABASE_SERVICE_ROLE_KEY`, `VAPID_PRIVATE_KEY` 등은 지워도 됩니다(보안상 지우는 게 좋음).

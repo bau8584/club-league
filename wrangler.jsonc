@@ -4,12 +4,4 @@
   "compatibility_date": "2025-09-24",
   "compatibility_flags": ["nodejs_compat"],
   "main": "src/server.ts",
-  // 배포 시 대시보드에 등록한 비밀(SUPABASE_SERVICE_ROLE_KEY, VAPID_PRIVATE_KEY)을 지우지 않음
-  "keep_vars": true,
-  // 비밀이 아닌 값은 코드에 고정(공개해도 안전) — 배포 때마다 사라지던 문제 방지
-  "vars": {
-    "SUPABASE_URL": "https://fkvaigmzscsxpfqcvoky.supabase.co",
-    "VAPID_PUBLIC_KEY": "BDMXVvdoAHE8V1Q6_QgzTYWY_WAnoQVoLL31nfWJYpw70edk3BI5xj9UJT1os_iYKUYmBe6bPJ2r05a1nfJ1qHM",
-    "VAPID_SUBJECT": "mailto:bau8584@gmail.com"
-  }
 }
