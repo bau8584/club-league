@@ -1606,7 +1606,7 @@ export function RecordMatch({
                       : "bg-gradient-to-r from-neon-blue via-neon-blue to-neon-blue hover:from-neon-blue hover:to-neon-blue border-neon-blue/40 glow-primary"
                   )}
                 >
-                  {presetResult ? "닫기" : "확인 (다음 경기)"}
+                  {presetResult ? "닫기" : onCloseResult ? "확인" : "확인 (다음 경기)"}
                 </Button>
               </div>
 

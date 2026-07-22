@@ -66,15 +66,29 @@ export function Leaderboard({
   }, [students]);
 
   // 순위는 레벨/티어/성별 필터 집합 기준으로 매김(이름 검색과 무관).
-  // 배치고사 미완료(언랭크) 회원은 티어·RP 비공개이므로 순위표에서 제외.
+  // 배치고사 미완료(언랭크) 회원은 순위 없이(??) 맨 아래에 이름 오름차순으로 붙인다.
   const ranked = useMemo(() => {
-    return students
+    const passesFilters = (s: Student) =>
+      (group.length === 0 ? true : !!s.group && group.includes(s.group)) &&
+      (gender === "all" ? true : s.gender === gender);
+
+    const rankedPart: { student: Student; rank: number | null; unranked: boolean }[] = students
       .filter((s) => !isUnranked(s, placementEnabled, placementGames))
-      .filter((s) => (group.length === 0 ? true : !!s.group && group.includes(s.group)))
+      .filter(passesFilters)
       .filter((s) => (tier.length === 0 ? true : tier.includes(getTier(s.rp, thresholds))))
-      .filter((s) => (gender === "all" ? true : s.gender === gender))
       .sort((a, b) => b.rp - a.rp)
-      .map((s, i) => ({ student: s, rank: i + 1 }));
+      .map((s, i) => ({ student: s, rank: i + 1, unranked: false }));
+
+    // 언랭크: 티어 필터가 걸려 있으면(특정 티어만 보기) 제외, 아니면 이름순으로 맨 아래에.
+    const unrankedPart: { student: Student; rank: number | null; unranked: boolean }[] = tier.length > 0
+      ? []
+      : students
+        .filter((s) => isUnranked(s, placementEnabled, placementGames))
+        .filter(passesFilters)
+        .sort((a, b) => (a.nickname || a.name).localeCompare(b.nickname || b.name, "ko"))
+        .map((s) => ({ student: s, rank: null, unranked: true }));
+
+    return [...rankedPart, ...unrankedPart];
   }, [students, group, tier, gender, thresholds, placementEnabled, placementGames]);
 
   // 이름 검색은 표시만 거른다(각자의 순위는 그대로 유지).
@@ -194,13 +208,13 @@ export function Leaderboard({
               </tr>
             </thead>
             <tbody>
-              {visible.map(({ student: s, rank }) => {
+              {visible.map(({ student: s, rank, unranked }) => {
                 const total = s.wins + s.losses;
                 const winRate = total === 0 ? 0 : Math.round((s.wins / total) * 100);
                 return (
                   <tr key={s.id} className="border-b border-border/30 transition-colors hover:bg-accent/40">
                     <td className="px-2 py-3 font-bold tabular-nums w-10 sm:w-14">
-                      <RankBadge rank={rank} />
+                      {unranked ? <span className="text-muted-foreground/60">??</span> : <RankBadge rank={rank!} />}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2 font-semibold">
@@ -224,7 +238,7 @@ export function Leaderboard({
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <TierBadge rp={s.rp} thresholds={thresholds} />
+                      <TierBadge rp={s.rp} thresholds={thresholds} unranked={unranked} />
                     </td>
                     <td className="px-4 py-3 hidden md:table-cell">
                       <div className="flex items-center justify-center gap-1">

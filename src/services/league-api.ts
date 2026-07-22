@@ -136,10 +136,11 @@ export async function apiCreateReservation(payload: {
   });
 }
 
-// 예약을 실제 경기 결과(matches 행)에 연결하고 완료 처리
-export async function apiLinkScheduledResult(id: string, matchId: string) {
+// 예약을 완료 처리한다. result_match_id(경기 링크)는 그 경기가 비동기 RPC로 아직
+// DB에 커밋되기 전이라 외래키 위반이 나므로 여기서는 설정하지 않는다(status 만 done).
+export async function apiLinkScheduledResult(id: string, _matchId: string) {
   return supabase.from("scheduled_matches")
-    .update({ status: "done", result_match_id: matchId })
+    .update({ status: "done" })
     .eq("id", id);
 }
 

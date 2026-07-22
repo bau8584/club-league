@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Calendar, Trophy, Swords, Users, ChevronLeft, ChevronRight } from "lucide-react";
@@ -12,12 +12,38 @@ import type { Match, Student } from "@/lib/league-types";
 const displayName = (p: { name: string; nickname?: string | null }) => p.nickname || p.name;
 const sameDay = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-const addDays = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
 
 export function DailyResults() {
   const { matches, students, tierThresholds } = useLeagueStore();
   const [date, setDate] = useState<Date>(() => new Date());
   const [pickerOpen, setPickerOpen] = useState(false);
+
+  // 기록이 있는 날짜(로컬 자정 기준) 목록 — 오름차순
+  const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const recordDays = useMemo(() => {
+    const map = new Map<number, Date>();
+    for (const m of matches ?? []) {
+      const d = new Date(m.date);
+      const k = dayStart(d);
+      if (!map.has(k)) map.set(k, new Date(d.getFullYear(), d.getMonth(), d.getDate()));
+    }
+    return Array.from(map.values()).sort((a, b) => a.getTime() - b.getTime());
+  }, [matches]);
+
+  // 최초 진입 시 '가장 최근 기록 날짜'를 자동으로 연다(한 번만).
+  const initRef = useRef(false);
+  useEffect(() => {
+    if (!initRef.current && recordDays.length > 0) {
+      initRef.current = true;
+      setDate(recordDays[recordDays.length - 1]);
+    }
+  }, [recordDays]);
+
+  // 화살표: 기록이 있는 이전/다음 날짜로 점프(빈 날짜는 건너뜀)
+  const hasPrev = recordDays.some((d) => dayStart(d) < dayStart(date));
+  const hasNext = recordDays.some((d) => dayStart(d) > dayStart(date));
+  const goPrev = () => { const older = recordDays.filter((d) => dayStart(d) < dayStart(date)); if (older.length) setDate(older[older.length - 1]); };
+  const goNext = () => { const newer = recordDays.filter((d) => dayStart(d) > dayStart(date)); if (newer.length) setDate(newer[0]); };
 
   const byId = useMemo(() => {
     const m = new Map<string, Student>();
@@ -115,6 +141,7 @@ export function DailyResults() {
 
   const isToday = sameDay(date, new Date());
   const dateLabel = date.toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "short" });
+  const shortDateLabel = `${date.getMonth() + 1}월 ${date.getDate()}일 (${date.toLocaleDateString("ko-KR", { weekday: "short" })})`;
 
   return (
     <div className="space-y-5 animate-in fade-in duration-200 max-w-3xl">
@@ -130,20 +157,20 @@ export function DailyResults() {
           </div>
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="outline" size="icon" className="size-9 border-border/50" onClick={() => setDate((d) => addDays(d, -1))} title="이전 날">
+          <Button variant="outline" size="icon" className="size-9 border-border/50" onClick={goPrev} disabled={!hasPrev} title="이전 기록 날짜">
             <ChevronLeft className="size-4" />
           </Button>
           <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
             <PopoverTrigger asChild>
-              <Button variant="outline" className="h-9 gap-2 border-border/50 font-sans text-xs">
-                <Calendar className="size-4 text-muted-foreground" /> 날짜 선택
+              <Button variant="outline" className="h-9 gap-2 border-border/50 font-sans text-xs font-bold">
+                <Calendar className="size-4 text-muted-foreground" /> {shortDateLabel}
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="end">
               <DayCalendar mode="single" selected={date} onSelect={(d) => { if (d) setDate(d); setPickerOpen(false); }} autoFocus />
             </PopoverContent>
           </Popover>
-          <Button variant="outline" size="icon" className="size-9 border-border/50" onClick={() => setDate((d) => addDays(d, 1))} disabled={isToday} title="다음 날">
+          <Button variant="outline" size="icon" className="size-9 border-border/50" onClick={goNext} disabled={!hasNext} title="다음 기록 날짜">
             <ChevronRight className="size-4" />
           </Button>
         </div>

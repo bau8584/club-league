@@ -4,7 +4,7 @@ import { useLeagueStore } from "@/lib/league-store";
 import { TierBadge } from "@/components/league/TierBadge";
 import { GenderMark } from "@/components/league/GenderMark";
 import { TitleBadge } from "@/components/league/TitleBadge";
-import { getFullTierLabel, type Student, type TierName } from "@/lib/league-types";
+import { getFullTierLabel, isUnranked, type Student, type TierName } from "@/lib/league-types";
 import { cn } from "@/lib/utils";
 import { Swords, ChevronDown } from "lucide-react";
 
@@ -37,7 +37,7 @@ export function PlayerDetailSheet({
   students: Student[];
   thresholds?: Record<TierName, number>;
 }) {
-  const { matches, myPlayerId, createChallenge, getEquippedTitle } = useLeagueStore();
+  const { matches, myPlayerId, createChallenge, getEquippedTitle, placementEnabled, placementGames } = useLeagueStore();
   const [showLog, setShowLog] = useState(false);
 
   // 시트를 다시 열 때마다 전적 펼침 상태 초기화
@@ -104,6 +104,8 @@ export function PlayerDetailSheet({
 
   const total = student.wins + student.losses;
   const winRate = total === 0 ? 0 : Math.round((student.wins / total) * 100);
+  // 배치고사 미완료(언랭크)는 벗어나기 전까지 티어·RP를 ??로 가린다.
+  const unranked = isUnranked(student, placementEnabled, placementGames);
   const streak = getWinStreak(student.recent);
   const title = getEquippedTitle(student);
   const canChallenge = !!myPlayerId && student.id !== myPlayerId;
@@ -119,14 +121,14 @@ export function PlayerDetailSheet({
               {title && <TitleBadge title={title} />}
               <span className="truncate text-lg font-bold">{student.nickname || student.name}</span>
             </div>
-            <TierBadge rp={student.rp} thresholds={thresholds} />
+            <TierBadge rp={student.rp} thresholds={thresholds} unranked={unranked} />
           </div>
 
           {/* RP / 오늘의 승률 */}
           <div className="grid grid-cols-2 gap-2.5 pb-3">
             <div className="rounded-xl bg-muted/40 px-3.5 py-2.5">
               <p className="text-[11px] font-bold text-muted-foreground">RP</p>
-              <p className="font-mono text-xl font-black text-neon-blue">{student.rp}</p>
+              <p className="font-mono text-xl font-black text-neon-blue">{unranked ? "??" : student.rp}</p>
             </div>
             <div className="rounded-xl bg-muted/40 px-3.5 py-2.5">
               <p className="text-[11px] font-bold text-muted-foreground">오늘의 승률</p>
