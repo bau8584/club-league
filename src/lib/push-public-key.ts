@@ -8,4 +8,4 @@
 // (비밀 키 Private Key 는 여기 넣지 말고, Cloudflare Worker 시크릿에만 넣으세요.)
 // 비워 두면 알림 토글이 표시되지 않습니다(안전).
 // ─────────────────────────────────────────────────────────────
-export const VAPID_PUBLIC_KEY: string = "BDMXVvdoAHE8V1Q6_QgzTYWY_WAnoQVoLL31nfWJYpw70edk3BI5xj9UJT1os_iYKUYmBe6bPJ2r05a1nfJ1qHM";
+export const VAPID_PUBLIC_KEY: string = "BAJq_MU3UnXaYfrN8jetM20OaH0uObQtulfsc5pDZmZS5zGq0HI_6Uqb1d5cM5ISTgqQjE0KD163dTHz45xkD1g";
