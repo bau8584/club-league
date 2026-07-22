@@ -6,7 +6,7 @@ import { GenderMark } from "./GenderMark";
 import { cn } from "@/lib/utils";
 import { Trophy, X, Sparkles, User, Users, Crown, Award, Zap, RotateCcw } from "lucide-react";
 import type { Student, Match, TierName } from "@/lib/league-types";
-import { getTier, getTierSubdivision, TIER_ORDER, getFullTierLabel } from "@/lib/league-types";
+import { getTier, getTierSubdivision, TIER_ORDER, getFullTierLabel, isUnranked } from "@/lib/league-types";
 import { toast } from "sonner";
 import { useLeagueStore } from "@/lib/league-store";
 
@@ -52,6 +52,10 @@ type PlayerResult = {
   baseWin: number;
   baseLoss: number;
   currentStreak?: number;
+  // 배치고사(언랭크): 이 경기까지 포함해도 배치가 끝나지 않았으면 티어·RP 비공개
+  unranked: boolean;
+  placementDone: number;
+  placementNeed: number;
 };
 
 type MatchResultData = {
@@ -96,7 +100,7 @@ export function RecordMatch({
   rpVariables?: { winDelta: number; loseDelta: number };
   onUpdateGender?: (studentId: string, gender: "M" | "F" | "U") => void;
 }) {
-  const { isSyncing } = useLeagueStore();
+  const { isSyncing, placementEnabled, placementGames } = useLeagueStore();
   const [matchType, setMatchType] = useState<"single" | "double">("double");
   const [a, setA] = useState<Selection>(empty);
   const [a2, setA2] = useState<Selection>(empty);
@@ -190,7 +194,7 @@ export function RecordMatch({
         icon: "⚔️",
         label: "기본 승리",
         value: p.baseWin,
-        desc: `${getTierLabelInKorean(p.finalTier)} 티어 매치 승리`
+        desc: p.unranked ? "매치 승리" : `${getTierLabelInKorean(p.finalTier)} 티어 매치 승리`
       });
     }
 
@@ -201,7 +205,7 @@ export function RecordMatch({
         icon: "⚔️",
         label: "기본 차감",
         value: -p.baseLoss,
-        desc: `${getTierLabelInKorean(p.finalTier)} 티어 매치 패배`
+        desc: p.unranked ? "매치 패배" : `${getTierLabelInKorean(p.finalTier)} 티어 매치 패배`
       });
     }
     
@@ -705,9 +709,14 @@ export function RecordMatch({
 
       const prevSub = getTierSubdivision(prevRp, thresholds);
       const finalSub = getTierSubdivision(finalRp, thresholds);
+      // 배치고사: 이 경기를 포함한 누적 경기 수가 배치 기준 미만이면 언랭크(티어·RP 비공개)
+      const gamesAfter = student.wins + student.losses + 1;
+      const unranked = placementEnabled && gamesAfter < placementGames;
+
       const basePromoted = TIER_ORDER.indexOf(finalTier) < TIER_ORDER.indexOf(prevTier);
       const subPromoted = finalTier === prevTier && finalSub < prevSub;
-      const promoted = won && (basePromoted || subPromoted);
+      // 언랭크 동안에는 승급 연출도 티어를 노출하므로 표시하지 않음
+      const promoted = won && (basePromoted || subPromoted) && !unranked;
 
       const preStreak = student.currentStreak ?? 0;
       const currentStreak = won 
@@ -748,7 +757,10 @@ export function RecordMatch({
         swampPenalty,
         baseWin,
         baseLoss,
-        currentStreak
+        currentStreak,
+        unranked,
+        placementDone: gamesAfter,
+        placementNeed: placementGames
       };
     };
 
@@ -1070,6 +1082,8 @@ export function RecordMatch({
               onOpen={() => { if (!locked) setActiveSlot(activeSlot === key ? null : key); }}
               onClear={() => { if (locked) return; sl.set(empty); if (activeSlot === key) setActiveSlot(null); }}
               thresholds={thresholds}
+              placementEnabled={placementEnabled}
+              placementGames={placementGames}
             />
           );
         };
@@ -1091,6 +1105,8 @@ export function RecordMatch({
                 group={act.value.group}
                 onPick={(group, studentId) => { act.set({ group, studentId }); setActiveSlot(null); }}
                 thresholds={thresholds}
+                placementEnabled={placementEnabled}
+                placementGames={placementGames}
               />
             )}
           </div>
@@ -1172,9 +1188,13 @@ export function RecordMatch({
             >
               <div className="flex items-center justify-between gap-2 relative z-10">
                 <div className="flex items-center gap-2.5 min-w-0">
-                  {/* 1. 기하학적 SVG 뱃지 (크기 축소: size={56}) */}
+                  {/* 1. 기하학적 SVG 뱃지 (크기 축소: size={56}) — 언랭크는 티어 노출 방지 */}
                   <div className="animate-scale-up-bounce shrink-0">
-                    <GeometricRankCrest tier={p.finalTier} rp={p.finalRp} thresholds={thresholds} isLosing={isLosing} size={56} />
+                    {p.unranked ? (
+                      <div className="flex size-14 items-center justify-center rounded-full border border-border/50 bg-surface-deep text-xl font-black text-muted-foreground">?</div>
+                    ) : (
+                      <GeometricRankCrest tier={p.finalTier} rp={p.finalRp} thresholds={thresholds} isLosing={isLosing} size={56} />
+                    )}
                   </div>
                   
                   <div className="min-w-0">
@@ -1189,9 +1209,11 @@ export function RecordMatch({
                       {p.group ? p.group : "선수"}
                     </div>
 
-                    {/* Rank Info — 변동이 있을 때만 화살표로 표시, 없으면 현재 티어만 */}
+                    {/* Rank Info — 언랭크는 티어 대신 배치 진행도만, 그 외엔 티어 변동 표시 */}
                     <div className="text-[10px] text-soft font-mono mt-0.5 flex items-center gap-1">
-                      {(p.prevTier !== p.finalTier || prevSub !== finalSub) ? (
+                      {p.unranked ? (
+                        <span className="text-muted-foreground">배치 {p.placementDone}/{p.placementNeed}경기</span>
+                      ) : (p.prevTier !== p.finalTier || prevSub !== finalSub) ? (
                         <>
                           <span>{getTierLabelInKorean(p.prevTier)} {prevSub}</span>
                           <span>➔</span>
@@ -1207,20 +1229,30 @@ export function RecordMatch({
                 </div>
 
                 <div className="flex flex-col items-end shrink-0">
-                  {/* RP Delta display */}
-                  <span className={cn(
-                    "text-base font-black font-mono tracking-tight",
-                    isLosing 
-                      ? "text-loss" 
-                      : "text-win text-glow-emerald"
-                  )}>
-                    {p.rpDelta >= 0 ? `+${p.rpDelta}` : p.rpDelta} RP
-                  </span>
-                  
-                  {/* Subtext RP */}
-                  <span className="text-[9px] text-muted-foreground font-mono mt-0.5">
-                    최종 {p.finalRp} RP
-                  </span>
+                  {p.unranked ? (
+                    // 언랭크: 획득 RP·최종 RP 비공개
+                    <>
+                      <span className="text-base font-black font-mono tracking-tight text-muted-foreground/70">? RP</span>
+                      <span className="text-[9px] text-muted-foreground font-mono mt-0.5">배치 완료 후 공개</span>
+                    </>
+                  ) : (
+                    <>
+                      {/* RP Delta display */}
+                      <span className={cn(
+                        "text-base font-black font-mono tracking-tight",
+                        isLosing
+                          ? "text-loss"
+                          : "text-win text-glow-emerald"
+                      )}>
+                        {p.rpDelta >= 0 ? `+${p.rpDelta}` : p.rpDelta} RP
+                      </span>
+
+                      {/* Subtext RP */}
+                      <span className="text-[9px] text-muted-foreground font-mono mt-0.5">
+                        최종 {p.finalRp} RP
+                      </span>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -1242,15 +1274,21 @@ export function RecordMatch({
                 </div>
               )}
 
-              {hasRankDown && (
+              {!p.unranked && hasRankDown && (
                 <div className="relative z-10 text-[9px] font-black uppercase px-2 py-0.5 rounded bg-loss/10 border border-loss/20 text-loss flex items-center gap-1 w-fit">
                   <span className="size-1 rounded-full bg-loss animate-ping" />
                   <span>티어/단계 하락</span>
                 </div>
               )}
 
-              {/* Rewards list — 항목 클릭 시 설명 토글 */}
-              <RewardList rewards={rewards} isLosing={isLosing} />
+              {/* Rewards list — 항목 클릭 시 설명 토글. 언랭크는 RP 합산 노출을 막기 위해 안내로 대체 */}
+              {p.unranked ? (
+                <div className="relative z-10 rounded-lg border border-dashed border-border/40 bg-surface-deep px-2.5 py-2 text-[10px] leading-relaxed text-muted-foreground">
+                  🎯 배치고사 진행 중 · 배치 {p.placementDone}/{p.placementNeed}경기 완료 시 티어·RP가 공개됩니다.
+                </div>
+              ) : (
+                <RewardList rewards={rewards} isLosing={isLosing} />
+              )}
             </div>
           );
         };
@@ -1703,9 +1741,10 @@ function RewardList({ rewards, isLosing }: {
   );
 }
 
-function Slot({ accent, label, player, active, locked, onOpen, onClear, thresholds }: {
+function Slot({ accent, label, player, active, locked, onOpen, onClear, thresholds, placementEnabled, placementGames }: {
   accent: Accent; label: string; player: Student | null; active: boolean; locked?: boolean;
   onOpen: () => void; onClear: () => void; thresholds?: Record<string, number>;
+  placementEnabled: boolean; placementGames: number;
 }) {
   const a = ACCENT[accent];
   if (player) {
@@ -1721,7 +1760,7 @@ function Slot({ accent, label, player, active, locked, onOpen, onClear, threshol
           <GenderMark gender={player.gender} className="size-4 text-[10px] shrink-0" />
           <span className={cn("team-name truncate text-lg sm:text-xl font-black leading-tight", a.text)}>{playerLabel(player)}</span>
         </div>
-        <div className="mt-2 flex justify-center"><TierBadge rp={player.rp} thresholds={thresholds} /></div>
+        <div className="mt-2 flex justify-center"><TierBadge rp={player.rp} thresholds={thresholds} unranked={isUnranked(player, placementEnabled, placementGames)} /></div>
       </div>
     );
   }
@@ -1738,9 +1777,10 @@ function Slot({ accent, label, player, active, locked, onOpen, onClear, threshol
 }
 
 // 선수 선택 picker: 검색 → 레벨 칩 → 선수 목록 (한 번에 1개만 펼쳐짐)
-function PlayerPicker({ students, accent, group, onPick, thresholds }: {
+function PlayerPicker({ students, accent, group, onPick, thresholds, placementEnabled, placementGames }: {
   students: Student[]; accent: Accent; group: string | null;
   onPick: (group: string, studentId: string) => void; thresholds?: Record<string, number>;
+  placementEnabled: boolean; placementGames: number;
 }) {
   const a = ACCENT[accent];
   const [search, setSearch] = useState("");
@@ -1796,7 +1836,7 @@ function PlayerPicker({ students, accent, group, onPick, thresholds }: {
             <div className="flex w-full min-w-0 flex-grow items-center justify-center">
               <span className="w-full break-keep text-center text-sm font-bold text-strong">{playerLabel(s)}</span>
             </div>
-            <div className="mt-1.5 flex w-full shrink-0 justify-center"><TierBadge rp={s.rp} thresholds={thresholds} /></div>
+            <div className="mt-1.5 flex w-full shrink-0 justify-center"><TierBadge rp={s.rp} thresholds={thresholds} unranked={isUnranked(s, placementEnabled, placementGames)} /></div>
           </button>
         ))}
         {roster.length === 0 && (

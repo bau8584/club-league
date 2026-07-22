@@ -26,6 +26,7 @@ export type Student = {
   group?: string | null; // 레벨 -> DB: group_label
   birthYear?: number | null; // 연생 -> DB: birth_year
   displayName?: string | null; // 표시 이름 -> DB: display_name
+  equippedTitle?: string | null; // 장착한 대표 호칭 id -> DB: equipped_title
 
   // 경기 전적(matches) 데이터를 기반으로 실시간 계산되는 속성들
   recent: ("W" | "L")[]; // 최근 5경기 결과 (가장 최근이 첫 요소)
@@ -252,6 +253,15 @@ export function getFullTierLabel(rp: number, thresholds?: Record<TierName, numbe
   const sub = getTierSubdivision(rp, thresholds);
   const style = TIER_STYLES[tier];
   return `${style.label} ${sub}`;
+}
+
+// 배치고사(언랭크): 배치 경기 수를 채우기 전이면 티어·RP를 비공개로 취급.
+export function isUnranked(
+  s: { wins: number; losses: number },
+  placementEnabled: boolean,
+  placementGames: number,
+): boolean {
+  return placementEnabled && s.wins + s.losses < placementGames;
 }
 
 export const TIER_ORDER: TierName[] = ["Diamond", "Platinum", "Gold", "Silver", "Bronze"];

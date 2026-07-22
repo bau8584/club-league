@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef, createContext, useContext } from "react";
+import React, { useEffect, useState, useCallback, useRef, useMemo, createContext, useContext } from "react";
 import type { Student, Match, ScheduledMatch, Gender, TierName, TierSettings, DynamicBonuses, DynamicPenalties, TiersRecord, DecaySettingsRecord, Achievement, MatchInputMode } from "./league-types";
 import { studentKey, getTier, getTierSubdivision, getFullTierLabel, TIER_ORDER } from "./league-types";
 import { toast } from "sonner";
@@ -61,6 +61,7 @@ import {
   migrateSettings
 } from "./settings-migration";
 import { calculateAchievements as calculateAchievementsPure } from "./achievement-calculator";
+import { buildTitleIndex, TITLE_BY_ID } from "./title-calculator";
 
 export type ActiveBonuses = {
   firstWin: boolean;
@@ -285,6 +286,12 @@ function useLeagueStoreInternal() {
         playerB2Id: m.loser2_id ?? undefined,
         scoreA: m.winner_score ?? 21,
         scoreB: m.loser_score ?? 19,
+        // playerA=winner_id 로 매핑되므로 승자 델타→A, 패자 델타→B 로 자동 정합.
+        // 과거(마이그레이션 이전) 경기는 NULL → undefined 로 두어 deleteMatch fallback 이 동작.
+        rpDeltaA: m.rp_delta_winner ?? undefined,
+        rpDeltaB: m.rp_delta_loser ?? undefined,
+        rpDeltaA2: m.rp_delta_winner2 ?? undefined,
+        rpDeltaB2: m.rp_delta_loser2 ?? undefined,
         date: m.created_at || new Date().toISOString(),
         matchType: m.winner2_id ? "double" : "single"
       }));
@@ -345,6 +352,7 @@ function useLeagueStoreInternal() {
           group,
           birthYear: s.birth_year ?? null,
           displayName: s.display_name ?? null,
+          equippedTitle: s.equipped_title ?? null,
           gender,
           rp: s.rp || 1000,
           wins,
@@ -670,6 +678,11 @@ function useLeagueStoreInternal() {
             .filter(s => s.id === playerAId || s.id === playerBId || s.id === playerA2Id || s.id === playerB2Id)
             .map(s => ({ id: s.id, rp: s.rp }));
 
+          // 이 경기로 각 선수에게 실제 적용된 RP 변동(델타)을 승자/패자 기준으로 저장.
+          // 롤백(deleteMatch)/편집이 이 값을 그대로 역산해 정확히 되돌린다.
+          const deltaOf = (id: string | null | undefined) =>
+            id ? (playerStats.find(p => p.id === id)?.delta ?? null) : null;
+
           await apiRecordMatchTransaction({
             classId: currentClassId,
             matchId,
@@ -679,7 +692,11 @@ function useLeagueStoreInternal() {
             winner2Id,
             loser2Id,
             winnerScore,
-            loserScore
+            loserScore,
+            rpDeltaWinner: deltaOf(winnerId),
+            rpDeltaLoser: deltaOf(loserId),
+            rpDeltaWinner2: deltaOf(winner2Id),
+            rpDeltaLoser2: deltaOf(loser2Id)
           });
           toast.success("경기가 등록되었습니다!");
         } catch (err: any) {
@@ -2295,8 +2312,16 @@ function useLeagueStoreInternal() {
         const winnerScore = nextAWon ? nextScoreA : nextScoreB;
         const loserScore = nextAWon ? nextScoreB : nextScoreA;
 
+        // 재계산된 델타를 승자/패자 기준으로 함께 저장(승/패가 뒤바뀐 경우도 정합).
+        const deltaOf = (id: string | null | undefined) =>
+          id ? (playerStats.find((p) => p.id === id)?.delta ?? null) : null;
+
         const { error: updateErr } = await apiUpdateMatchWinnerLoser(matchId, winnerId, loserId, {
-          winner2Id, loser2Id, winnerScore, loserScore
+          winner2Id, loser2Id, winnerScore, loserScore,
+          rpDeltaWinner: deltaOf(winnerId),
+          rpDeltaLoser: deltaOf(loserId),
+          rpDeltaWinner2: deltaOf(winner2Id),
+          rpDeltaLoser2: deltaOf(loser2Id)
         });
         if (updateErr) throw updateErr;
 
@@ -2858,6 +2883,45 @@ function useLeagueStoreInternal() {
     return calculateAchievementsPure(students, matches, tierThresholds, studentId);
   }, [students, matches, tierThresholds]);
 
+  // 호칭 인덱스: 이번 시즌 데이터로 리그 전체 호칭 보유 현황을 한 번에 계산
+  const titleIndex = useMemo(
+    () => buildTitleIndex(students, matches, tierThresholds),
+    [students, matches, tierThresholds]
+  );
+
+  // 특정 선수가 획득한 호칭 id 목록
+  const getEarnedTitles = useCallback(
+    (studentId: string): string[] => Array.from(titleIndex.earnedByStudent.get(studentId) ?? []),
+    [titleIndex]
+  );
+
+  // 선수의 '장착한 대표 호칭' — 단, 지금도 그 조건을 만족할 때만 유효(경쟁형은 주인이 바뀌므로)
+  const getEquippedTitle = useCallback((student: Student | null | undefined) => {
+    if (!student?.equippedTitle) return null;
+    const earned = titleIndex.earnedByStudent.get(student.id);
+    if (!earned || !earned.has(student.equippedTitle)) return null;
+    return TITLE_BY_ID[student.equippedTitle] ?? null;
+  }, [titleIndex]);
+
+  // 대표 호칭 장착/해제 (회원 본인) — null이면 미장착
+  const equipTitle = useCallback(async (titleId: string | null): Promise<boolean> => {
+    if (!myPlayerId) return false;
+    if (titleId && !(titleIndex.earnedByStudent.get(myPlayerId)?.has(titleId))) {
+      toast.error("아직 획득하지 않은 호칭입니다.");
+      return false;
+    }
+    const prev = students;
+    setStudents((list) => list.map((s) => s.id === myPlayerId ? { ...s, equippedTitle: titleId } : s));
+    const { error } = await apiUpdateStudentFields(myPlayerId, { equipped_title: titleId });
+    if (error) {
+      setStudents(prev);
+      toast.error("호칭 저장에 실패했어요.");
+      return false;
+    }
+    toast.success(titleId ? "대표 호칭을 장착했어요." : "호칭을 해제했어요.");
+    return true;
+  }, [myPlayerId, titleIndex, students]);
+
   // 선수용 티어 승격 실시간 감지 감시자
   useEffect(() => {
     if (hydrated && session && session.role === "STUDENT" && session.studentId) {
@@ -3144,6 +3208,10 @@ function useLeagueStoreInternal() {
     activeBonuses,
     saveLeagueSettings,
     calculateAchievements,
+    titleIndex,
+    getEarnedTitles,
+    getEquippedTitle,
+    equipTitle,
     promotionEvent,
     setPromotionEvent,
     seasonList,

@@ -5,9 +5,10 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { TierBadge } from "@/components/league/TierBadge";
 import { GenderMark } from "@/components/league/GenderMark";
+import { TitleBadge } from "@/components/league/TitleBadge";
 import { cn } from "@/lib/utils";
 import { Search, SlidersHorizontal, ChevronDown, X, Swords } from "lucide-react";
-import { getTier, TIER_ORDER, TIER_STYLES, type TierName, type Student } from "@/lib/league-types";
+import { getTier, isUnranked, TIER_ORDER, TIER_STYLES, type TierName, type Student } from "@/lib/league-types";
 
 type GenderFilter = "all" | "M" | "F";
 
@@ -41,7 +42,7 @@ export function Leaderboard({
 
   // 이중 보안 상태 및 자동 잠금 훅
   const [isUnlocked, setIsUnlocked] = useState(false);
-  const { session, placementEnabled, placementGames, myPlayerId, createChallenge } = useLeagueStore();
+  const { session, placementEnabled, placementGames, myPlayerId, createChallenge, getEquippedTitle } = useLeagueStore();
   const handleChallenge = (targetId: string, name: string) => {
     if (window.confirm(`${name} 님에게 도전장을 보낼까요? ⚔️\n상대가 수락하면 양쪽에 입장 알림이 뜹니다.`)) {
       createChallenge(targetId);
@@ -67,14 +68,16 @@ export function Leaderboard({
   }, [students]);
 
   // 순위는 레벨/티어/성별 필터 집합 기준으로 매김(이름 검색과 무관).
+  // 배치고사 미완료(언랭크) 회원은 티어·RP 비공개이므로 순위표에서 제외.
   const ranked = useMemo(() => {
     return students
+      .filter((s) => !isUnranked(s, placementEnabled, placementGames))
       .filter((s) => (group.length === 0 ? true : !!s.group && group.includes(s.group)))
       .filter((s) => (tier.length === 0 ? true : tier.includes(getTier(s.rp, thresholds))))
       .filter((s) => (gender === "all" ? true : s.gender === gender))
       .sort((a, b) => b.rp - a.rp)
       .map((s, i) => ({ student: s, rank: i + 1 }));
-  }, [students, group, tier, gender, thresholds]);
+  }, [students, group, tier, gender, thresholds, placementEnabled, placementGames]);
 
   // 이름 검색은 표시만 거른다(각자의 순위는 그대로 유지).
   const visible = useMemo(() => {
@@ -198,7 +201,6 @@ export function Leaderboard({
               {visible.map(({ student: s, rank }) => {
                 const total = s.wins + s.losses;
                 const winRate = total === 0 ? 0 : Math.round((s.wins / total) * 100);
-                const unranked = placementEnabled && total < placementGames;
                 return (
                   <tr key={s.id} className="border-b border-border/30 transition-colors hover:bg-accent/40">
                     <td className="px-4 py-3 font-bold tabular-nums w-12 sm:w-16">
@@ -209,7 +211,10 @@ export function Leaderboard({
                       <div className="flex items-center gap-2 font-semibold">
                         <GenderMark gender={s.gender} />
                         <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2">
-                          <span>{s.nickname || s.name}</span>
+                          <span className="flex items-center gap-1.5">
+                            {(() => { const t = getEquippedTitle(s); return t ? <TitleBadge title={t} /> : null; })()}
+                            {s.nickname || s.name}
+                          </span>
                           {s.group && (
                             <span className="text-[10px] text-muted-foreground sm:hidden">
                               ({s.group})
@@ -237,8 +242,7 @@ export function Leaderboard({
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <TierBadge rp={s.rp} thresholds={thresholds} unranked={unranked} />
-                      {unranked && <span className="ml-1 text-[9px] text-muted-foreground">배치 {total}/{placementGames}</span>}
+                      <TierBadge rp={s.rp} thresholds={thresholds} />
                     </td>
                     <td className="px-4 py-3 text-right font-mono font-bold text-neon-blue text-glow-blue">{s.rp}</td>
                     <td className="px-4 py-3 hidden md:table-cell">

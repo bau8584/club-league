@@ -30,6 +30,10 @@ export type MatchInsert = {
   loser2_id?: string | null;    // 복식 패배팀 파트너
   winner_score?: number | null;
   loser_score?: number | null;
+  rp_delta_winner?: number | null;   // 이 경기로 승자에게 적용된 RP 변동(보너스/패널티 포함)
+  rp_delta_loser?: number | null;    // 패자에게 적용된 RP 변동
+  rp_delta_winner2?: number | null;  // 복식 승리팀 파트너
+  rp_delta_loser2?: number | null;   // 복식 패배팀 파트너
   season?: string | null;
   status?: string;
 };

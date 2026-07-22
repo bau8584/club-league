@@ -165,7 +165,12 @@ export async function apiUpdateMatchWinnerLoser(
   matchId: string,
   winnerId: string,
   loserId: string,
-  extra?: { winner2Id?: string | null; loser2Id?: string | null; winnerScore?: number | null; loserScore?: number | null }
+  extra?: {
+    winner2Id?: string | null; loser2Id?: string | null;
+    winnerScore?: number | null; loserScore?: number | null;
+    rpDeltaWinner?: number | null; rpDeltaLoser?: number | null;
+    rpDeltaWinner2?: number | null; rpDeltaLoser2?: number | null;
+  }
 ) {
   const patch: MatchUpdate = { winner_id: winnerId, loser_id: loserId };
   if (extra) {
@@ -173,6 +178,10 @@ export async function apiUpdateMatchWinnerLoser(
     patch.loser2_id = extra.loser2Id ?? null;
     patch.winner_score = extra.winnerScore ?? null;
     patch.loser_score = extra.loserScore ?? null;
+    patch.rp_delta_winner = extra.rpDeltaWinner ?? null;
+    patch.rp_delta_loser = extra.rpDeltaLoser ?? null;
+    patch.rp_delta_winner2 = extra.rpDeltaWinner2 ?? null;
+    patch.rp_delta_loser2 = extra.rpDeltaLoser2 ?? null;
   }
   return supabase
     .from("matches")
@@ -185,7 +194,7 @@ export async function apiUpdateMatchWinnerLoser(
 export async function apiFetchStudents(classId: string) {
   return supabase
     .from("players")
-    .select("id, league_id, user_id, rp, tier, win_count, lose_count, nickname, name, group_label, birth_year, gender, is_deleted, recent_matches, display_name")
+    .select("id, league_id, user_id, rp, tier, win_count, lose_count, nickname, name, group_label, birth_year, gender, is_deleted, recent_matches, display_name, equipped_title")
     .eq("league_id", classId)
     .or("is_deleted.is.null,is_deleted.eq.false");
 }
@@ -194,7 +203,7 @@ export async function apiFetchStudents(classId: string) {
 export async function apiFetchStudentsPublic(classId: string) {
   return supabase
     .from("players_public")
-    .select("id, league_id, user_id, rp, tier, win_count, lose_count, nickname, group_label, gender, is_deleted, recent_matches, display_name")
+    .select("id, league_id, user_id, rp, tier, win_count, lose_count, nickname, group_label, gender, is_deleted, recent_matches, display_name, equipped_title")
     .eq("league_id", classId)
     .or("is_deleted.is.null,is_deleted.eq.false");
 }
@@ -249,6 +258,7 @@ export async function apiUpdateStudentFields(studentId: string, fields: {
   gender?: string;
   group_label?: string | null;
   birth_year?: number | null;
+  equipped_title?: string | null;
 }) {
   return supabase
     .from("players")
@@ -359,6 +369,10 @@ export async function apiRecordMatchTransaction(payload: {
   loser2Id?: string | null;
   winnerScore?: number | null;
   loserScore?: number | null;
+  rpDeltaWinner?: number | null;
+  rpDeltaLoser?: number | null;
+  rpDeltaWinner2?: number | null;
+  rpDeltaLoser2?: number | null;
 }) {
   const { error } = await supabase.rpc('record_match_transaction', {
     p_class_id: payload.classId,
@@ -369,7 +383,11 @@ export async function apiRecordMatchTransaction(payload: {
     p_winner2_id: payload.winner2Id ?? null,
     p_loser2_id: payload.loser2Id ?? null,
     p_winner_score: payload.winnerScore ?? null,
-    p_loser_score: payload.loserScore ?? null
+    p_loser_score: payload.loserScore ?? null,
+    p_rp_delta_winner: payload.rpDeltaWinner ?? null,
+    p_rp_delta_loser: payload.rpDeltaLoser ?? null,
+    p_rp_delta_winner2: payload.rpDeltaWinner2 ?? null,
+    p_rp_delta_loser2: payload.rpDeltaLoser2 ?? null
   });
   if (error) throw error;
 }

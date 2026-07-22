@@ -20,7 +20,7 @@ import {
   ChevronDown
 } from "lucide-react";
 import type { Student, Match } from "@/lib/league-types";
-import { getTier } from "@/lib/league-types";
+import { getTier, isUnranked } from "@/lib/league-types";
 import { useLeagueStore } from "@/lib/league-store";
 import { toast } from "sonner";
 
@@ -120,7 +120,8 @@ export function MatchRecommend({
   isStudentView?: boolean;
   isReadOnly?: boolean;
 }) {
-  const { dynamicBonuses, dynamicPenalties, tiers } = useLeagueStore();
+  const { dynamicBonuses, dynamicPenalties, tiers, placementEnabled, placementGames } = useLeagueStore();
+  const unranked = (s: Student) => isUnranked(s, placementEnabled, placementGames);
 
   // Local states for MatchRecommend 2.0
   const [gameType, setGameType] = useState<"single" | "double">("double");
@@ -832,7 +833,7 @@ export function MatchRecommend({
                   <div className="flex w-full min-w-0 flex-grow items-center justify-center">
                     <span className="w-full break-keep text-center text-sm font-bold text-strong">{displayNameOf(s)}</span>
                   </div>
-                  <div className="mt-1.5 flex w-full shrink-0 justify-center"><TierBadge rp={s.rp} thresholds={thresholds} /></div>
+                  <div className="mt-1.5 flex w-full shrink-0 justify-center"><TierBadge rp={s.rp} thresholds={thresholds} unranked={unranked(s)} /></div>
                 </button>
               ))}
               {pickRoster.length === 0 && (
@@ -855,8 +856,8 @@ export function MatchRecommend({
                 {displayNameOf(player)}
               </div>
               <div className="mt-2 flex items-center gap-2.5">
-                <TierBadge rp={player.rp} thresholds={thresholds} />
-                <span className="font-mono text-xs text-neon-blue font-bold">{player.rp} RP</span>
+                <TierBadge rp={player.rp} thresholds={thresholds} unranked={unranked(player)} />
+                {!unranked(player) && <span className="font-mono text-xs text-neon-blue font-bold">{player.rp} RP</span>}
                 <span className="text-[10px] text-soft font-semibold">({player.wins}승 {player.losses}패)</span>
               </div>
             </div>
@@ -930,17 +931,17 @@ export function MatchRecommend({
                           <GenderMark gender={s.gender} className="size-4 text-[9px] shrink-0" />
                           <span className="text-base font-black text-strong">{displayNameOf(s)}</span>
                           {s.group && <span className="text-[10px] text-soft">{s.group}</span>}
-                          <TierBadge rp={s.rp} thresholds={thresholds} />
+                          <TierBadge rp={s.rp} thresholds={thresholds} unranked={unranked(s)} />
                           <span className="text-[10px] text-soft">{s.wins}승 {s.losses}패</span>
                         </div>
 
-                        {/* RP 정보: RP값 + 예상 승/패(추정치) */}
+                        {/* RP 정보: RP값 + 예상 승/패(추정치) — 언랭크는 RP 비공개 */}
                         {(() => {
                           const expectedWin = getExpectedDelta(player, s, true);
                           const expectedLoss = getExpectedDelta(player, s, false);
                           return (
                             <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[11px]">
-                              <span className="font-mono text-xs font-bold text-neon-blue">{s.rp} RP</span>
+                              {!unranked(s) && <span className="font-mono text-xs font-bold text-neon-blue">{s.rp} RP</span>}
                               <RpPreview win={expectedWin} loss={expectedLoss} />
                             </div>
                           );
@@ -1048,11 +1049,11 @@ export function MatchRecommend({
                               <span className="truncate">{displayNameOf(s)}</span>
                             </div>
                           </div>
-                          <span className="shrink-0 font-mono text-[10px] font-bold text-neon-green">{s.rp}</span>
+                          {!unranked(s) && <span className="shrink-0 font-mono text-[10px] font-bold text-neon-green">{s.rp}</span>}
                         </div>
 
                         <div className="mt-2 flex items-center gap-1.5">
-                          <TierBadge rp={s.rp} thresholds={thresholds} />
+                          <TierBadge rp={s.rp} thresholds={thresholds} unranked={unranked(s)} />
                           <span className="text-[10px] text-soft">{s.wins}승 {s.losses}패</span>
                         </div>
 
@@ -1101,10 +1102,14 @@ export function MatchRecommend({
                         {displayNameOf(player)} & {displayNameOf(selectedTeammate)}
                       </div>
                       <div className="mt-1 flex items-center gap-2">
-                        <span className="text-[10px] text-soft">팀 합산 RP:</span>
-                        <span className="font-mono text-xs text-neon-green font-bold">{player.rp + selectedTeammate.rp} RP</span>
-                        <span className="text-soft">|</span>
-                        <TierBadge rp={selectedTeammate.rp} thresholds={thresholds} />
+                        {!unranked(player) && !unranked(selectedTeammate) && (
+                          <>
+                            <span className="text-[10px] text-soft">팀 합산 RP:</span>
+                            <span className="font-mono text-xs text-neon-green font-bold">{player.rp + selectedTeammate.rp} RP</span>
+                            <span className="text-soft">|</span>
+                          </>
+                        )}
+                        <TierBadge rp={selectedTeammate.rp} thresholds={thresholds} unranked={unranked(selectedTeammate)} />
                         <span className="text-[10px] text-soft">({displayNameOf(selectedTeammate)})</span>
                       </div>
                     </div>

@@ -659,7 +659,7 @@ export function AdminSettings({
             <div className="space-y-0.5">
               <span className="text-xs font-bold text-neon-blue uppercase tracking-wider block">🎯 배치고사 (언랭크)</span>
               <span className="text-[10px] text-muted-foreground leading-snug block">
-                신규 회원은 <b>배치 경기 수</b>를 채우기 전까지 티어가 <b>언랭크</b>로 표시됩니다. (RP는 그대로 오르내리고, 경기를 채우면 티어가 공개됩니다)
+                신규 회원은 <b>배치 경기 수</b>를 채우기 전까지 <b>언랭크</b>로 표시되며, 티어와 RP가 모두 비공개입니다. (RP는 내부적으로 오르내리고, 경기를 채우면 티어·RP가 함께 공개됩니다)
               </span>
             </div>
             <ToggleSwitch checked={localPlacementEnabled} onChange={() => setLocalPlacementEnabled(!localPlacementEnabled)} />

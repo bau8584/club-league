@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { TierBadge } from "./TierBadge";
 import { TierCrest } from "./TierCrest";
 import { ScoreStrategyGuide } from "./ScoreStrategyGuide";
+import { TitleCollection } from "./TitleCollection";
 import { GenderMark } from "./GenderMark";
 import { useLeagueStore } from "@/lib/league-store";
 import { cn } from "@/lib/utils";
@@ -58,7 +59,7 @@ export function MyRecord({
   decayAppliedDates = {},
   playerId
 }: MyRecordProps) {
-  const { placementEnabled, placementGames } = useLeagueStore();
+  const { placementEnabled, placementGames, myPlayerId } = useLeagueStore();
 
   // 1. 현재 접속한 선수 정보 매칭 (동명이인 처리 포함)
   const me = useMemo(() => {
@@ -189,6 +190,10 @@ export function MyRecord({
     return { status: "active" as const, daysRemaining, warning, text };
   }, [me, thresholds, decaySettings, decayAppliedDates]);
 
+  // 배치고사(언랭크): 배치 경기 수를 채우기 전까지 티어·RP 전부 비공개
+  const myTotalGames = me ? me.wins + me.losses : 0;
+  const isUnranked = placementEnabled && myTotalGames < placementGames;
+
   if (!me || !tierProgress) {
     return (
       <div className="flex flex-col items-center justify-center p-12 text-center border border-dashed border-border rounded-2xl bg-card/25 backdrop-blur-md">
@@ -210,11 +215,12 @@ export function MyRecord({
           {/* Background subtle neon light */}
           <div className={cn(
             "absolute -right-24 -top-24 size-64 rounded-full blur-[100px] pointer-events-none opacity-20",
-            tierProgress.currentTier === "Diamond" && "bg-tier-diamond",
-            tierProgress.currentTier === "Platinum" && "bg-tier-platinum",
-            tierProgress.currentTier === "Gold" && "bg-tier-gold",
-            tierProgress.currentTier === "Silver" && "bg-tier-silver",
-            tierProgress.currentTier === "Bronze" && "bg-tier-bronze",
+            !isUnranked && tierProgress.currentTier === "Diamond" && "bg-tier-diamond",
+            !isUnranked && tierProgress.currentTier === "Platinum" && "bg-tier-platinum",
+            !isUnranked && tierProgress.currentTier === "Gold" && "bg-tier-gold",
+            !isUnranked && tierProgress.currentTier === "Silver" && "bg-tier-silver",
+            !isUnranked && tierProgress.currentTier === "Bronze" && "bg-tier-bronze",
+            isUnranked && "bg-muted-foreground",
           )} />
 
           <CardHeader className="pb-3 relative z-10">
@@ -227,29 +233,32 @@ export function MyRecord({
                 </CardTitle>
               </div>
               
-              {(() => {
-                const myTotal = me.wins + me.losses;
-                const unranked = placementEnabled && myTotal < placementGames;
-                return (
-                  <div className="flex items-center gap-2.5">
-                    <div className="flex flex-col items-end gap-1">
-                      <TierBadge rp={me.rp} thresholds={thresholds} unranked={unranked} />
-                      {unranked && (
-                        <span className="text-[10px] font-bold text-muted-foreground">배치 {myTotal}/{placementGames}경기</span>
-                      )}
-                    </div>
-                    {!unranked && <TierCrest rp={me.rp} thresholds={thresholds} size={60} />}
-                  </div>
-                );
-              })()}
+              <div className="flex items-center gap-2.5">
+                <div className="flex flex-col items-end gap-1">
+                  <TierBadge rp={me.rp} thresholds={thresholds} unranked={isUnranked} />
+                  {isUnranked && (
+                    <span className="text-[10px] font-bold text-muted-foreground">배치 {myTotalGames}/{placementGames}경기</span>
+                  )}
+                </div>
+                {!isUnranked && <TierCrest rp={me.rp} thresholds={thresholds} size={60} />}
+              </div>
             </div>
           </CardHeader>
 
           <CardContent className="space-y-5 relative z-10 pt-1">
-            {/* RP Stats */}
+            {/* RP Stats — 배치고사 중에는 RP 비공개 */}
             <div className="flex items-baseline gap-2">
-              <span className="text-4xl font-extrabold tracking-tight text-foreground">{me.rp}</span>
-              <span className="text-xs font-black uppercase tracking-wider text-neon-blue">RP 점수</span>
+              {isUnranked ? (
+                <>
+                  <span className="text-4xl font-extrabold tracking-tight text-muted-foreground/70">???</span>
+                  <span className="text-xs font-black uppercase tracking-wider text-neon-blue">배치고사 진행 중</span>
+                </>
+              ) : (
+                <>
+                  <span className="text-4xl font-extrabold tracking-tight text-foreground">{me.rp}</span>
+                  <span className="text-xs font-black uppercase tracking-wider text-neon-blue">RP 점수</span>
+                </>
+              )}
             </div>
 
             {/* 휴면 경고 안내 바 (전적 없음 상태는 표시하지 않음) */}
@@ -286,7 +295,29 @@ export function MyRecord({
             </div>
             )}
 
-            {/* Tier progress gauge */}
+            {/* 배치고사 진행 중: 티어·RP 대신 배치 진행도만 노출 */}
+            {isUnranked ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs font-bold text-muted-foreground">
+                <span className="flex items-center gap-1">
+                  <TrendingUp className="size-3.5 text-neon-blue" />
+                  배치고사 진행도
+                </span>
+                <span className="text-neon-blue font-extrabold">{Math.max(0, placementGames - myTotalGames)}경기 남음</span>
+              </div>
+              <div className="relative w-full h-3.5 bg-background/60 border border-border/40 rounded-full overflow-hidden p-0.5">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-neon-blue to-[#00b4d8] transition-all duration-700 shadow-inner"
+                  style={{ width: `${Math.min(100, Math.round((myTotalGames / Math.max(1, placementGames)) * 100))}%` }}
+                />
+              </div>
+              <div className="flex justify-between text-[10px] font-bold text-muted-foreground/80 px-1">
+                <span>배치 {myTotalGames}/{placementGames}경기</span>
+                <span>완료 시 티어·RP 공개</span>
+              </div>
+            </div>
+            ) : (
+            /* Tier progress gauge */
             <div className="space-y-2">
               <div className="flex items-center justify-between text-xs font-bold text-muted-foreground">
                 <span className="flex items-center gap-1">
@@ -323,6 +354,7 @@ export function MyRecord({
                 <span>{tierProgress.nextTier ? `${tierProgress.nextTierLabel} (${tierProgress.nextThreshold} RP)` : "MAX"}</span>
               </div>
             </div>
+            )}
           </CardContent>
         </Card>
 
@@ -382,8 +414,11 @@ export function MyRecord({
         </Card>
       </div>
 
-      {/* 점수 전략 가이드 (최근 전적 위) */}
-      <ScoreStrategyGuide rp={me.rp} />
+      {/* 호칭 수집 및 대표 호칭 장착 */}
+      <TitleCollection me={me} isMe={!!myPlayerId && me.id === myPlayerId} />
+
+      {/* 점수 전략 가이드 (최근 전적 위) — 티어를 노출하므로 배치고사 중에는 숨김 */}
+      {!isUnranked && <ScoreStrategyGuide rp={me.rp} />}
 
       {/* 3. 최근 전적 타임라인 리스트 */}
       <Card className="border-border/60 bg-card/45 backdrop-blur-xl shadow-lg">

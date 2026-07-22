@@ -372,83 +372,86 @@ function Index() {
           <nav className="mt-3 flex gap-1 overflow-x-auto no-scrollbar">
             {session.role === "STUDENT" ? (
               <>
-                {/* 1. 나의 기록 (선수 - 신규) */}
+                {/* 1. 경기 기록 (자율/완전자율 모드에서만) */}
+                {memberCanRecord && (
+                  <TabButton active={tab === "memberRecord"} onClick={() => setTab("memberRecord")} icon={<Swords className="size-4" />}>
+                    경기 기록
+                  </TabButton>
+                )}
+
+                {/* 2. 나의 기록 (선수) */}
                 <TabButton active={tab === "myRecord"} onClick={() => setTab("myRecord")} icon={<Trophy className="size-4" />}>
                   나의 기록
                 </TabButton>
 
-                {/* 1-b. 내 경기 기록 (자율/완전자율 모드에서만) */}
-                {memberCanRecord && (
-                  <TabButton active={tab === "memberRecord"} onClick={() => setTab("memberRecord")} icon={<Swords className="size-4" />}>
-                    내 경기 기록
-                  </TabButton>
-                )}
-
-                {/* 2. 매치 추천 (선수) */}
+                {/* 3. 매치 추천 (선수) */}
                 <TabButton active={tab === "recommend"} onClick={() => setTab("recommend")} icon={<Target className="size-4" />}>
                   매치 추천
                 </TabButton>
 
-                {/* 3. 나의 업적 (선수 - 신규) */}
+                {/* 4. 나의 업적 (선수 - 삭제 예정) */}
                 <TabButton active={tab === "myAchievements"} onClick={() => setTab("myAchievements")} icon={<Award className="size-4" />}>
                   나의 업적
                 </TabButton>
 
-                {/* 4. 티어 순위표 (회원도 열람 가능) */}
+                {/* 5. 티어 순위표 (회원도 열람 가능) */}
                 <TabButton active={tab === "leaderboard"} onClick={() => setTab("leaderboard")} icon={<Trophy className="size-4" />}>
                   티어 순위표
                 </TabButton>
 
-                {/* 5. 오늘의 경기 (전원 열람) */}
+                {/* 6. 오늘의 경기 (전원 열람) */}
                 <TabButton active={tab === "daily"} onClick={() => setTab("daily")} icon={<CalendarDays className="size-4" />}>
                   오늘의 경기
                 </TabButton>
               </>
             ) : (
               <>
-                {/* 과거 시즌 열람 시: 시즌 요약 탭 */}
-                {currentViewSeason !== "현재 시즌" && (
-                  <TabButton active={tab === "seasonSummary"} onClick={() => setTab("seasonSummary")} icon={<BarChart3 className="size-4" />}>
-                    시즌 요약
-                  </TabButton>
-                )}
-
-                {/* 1. 경기 기록 입력 (관리자 전용) */}
+                {/* 1. 경기 기록 (관리자 전용 · 현재 시즌만) */}
                 {currentViewSeason === "현재 시즌" && (
                   <TabButton active={tab === "record"} onClick={() => setTab("record")} icon={<Swords className="size-4" />}>
-                    경기 기록 입력
+                    경기 기록
                   </TabButton>
                 )}
 
-                {/* 2. 매치 추천 (관리자) — 과거 시즌 열람 시 숨김 */}
+                {/* 2. 나의 기록 (선수 연동 시) */}
+                {myLinked && (
+                  <TabButton active={tab === "myRecord"} onClick={() => setTab("myRecord")} icon={<Trophy className="size-4" />}>
+                    나의 기록
+                  </TabButton>
+                )}
+
+                {/* 3. 매치 추천 (관리자) — 과거 시즌 열람 시 숨김 */}
                 {currentViewSeason === "현재 시즌" && (
                   <TabButton active={tab === "recommend"} onClick={() => setTab("recommend")} icon={<Target className="size-4" />}>
                     매치 추천
                   </TabButton>
                 )}
 
-                {/* 3. 티어 순위표 (관리자) */}
+                {/* 4. 나의 업적 (선수 연동 시 · 삭제 예정) */}
+                {myLinked && (
+                  <TabButton active={tab === "myAchievements"} onClick={() => setTab("myAchievements")} icon={<Award className="size-4" />}>
+                    나의 업적
+                  </TabButton>
+                )}
+
+                {/* 5. 티어 순위표 (관리자) */}
                 <TabButton active={tab === "leaderboard"} onClick={() => setTab("leaderboard")} icon={<Trophy className="size-4" />}>
                   티어 순위표
                 </TabButton>
 
-                {/* 3-b. 오늘의 경기 (전원 열람) */}
+                {/* 6. 오늘의 경기 (전원 열람) */}
                 <TabButton active={tab === "daily"} onClick={() => setTab("daily")} icon={<CalendarDays className="size-4" />}>
                   오늘의 경기
                 </TabButton>
 
-                {/* 관리자가 선수와 연동된 경우: 나의 기록 / 나의 업적 */}
-                {myLinked && (
-                  <>
-                    <TabButton active={tab === "myRecord"} onClick={() => setTab("myRecord")} icon={<Trophy className="size-4" />}>
-                      나의 기록
-                    </TabButton>
-                    <TabButton active={tab === "myAchievements"} onClick={() => setTab("myAchievements")} icon={<Award className="size-4" />}>
-                      나의 업적
-                    </TabButton>
-                  </>
+                {/* 7. 시즌 요약 (과거 시즌 열람 시) */}
+                {currentViewSeason !== "현재 시즌" && (
+                  <TabButton active={tab === "seasonSummary"} onClick={() => setTab("seasonSummary")} icon={<BarChart3 className="size-4" />}>
+                    시즌 요약
+                  </TabButton>
                 )}
-                {/* 미연동 관리자: 선수로 참가(연동) */}
+
+                {/* 8. 미연동 관리자: 선수로 참가(연동) */}
                 {!myLinked && currentViewSeason === "현재 시즌" && (
                   <button
                     type="button"
@@ -459,7 +462,7 @@ function Index() {
                   </button>
                 )}
 
-                {/* 4. 관리자 (관리자 전용) */}
+                {/* 9. 관리자 (관리자 전용) */}
                 {currentViewSeason === "현재 시즌" && isClassManager && (
                   <TabButton active={tab === "admin"} onClick={() => setTab("admin")} icon={<Users className="size-4" />}>
                     관리자

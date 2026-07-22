@@ -40,6 +40,7 @@ drop function if exists public.restore_season(uuid, text);
 drop function if exists public.rename_season(uuid, text, text);
 drop function if exists public.delete_season(uuid, text, boolean);
 drop function if exists public.record_match_transaction(uuid, uuid, uuid, uuid, jsonb);
+drop function if exists public.record_match_transaction(uuid, uuid, uuid, uuid, jsonb, uuid, uuid, int, int);
 drop function if exists public.restore_class_data(uuid, jsonb, jsonb);
 drop function if exists public.join_league(uuid);
 drop function if exists public.leave_league(uuid);
@@ -83,6 +84,7 @@ create table if not exists public.players (
   lose_count    int  not null default 0,
   recent_matches text,
   display_name  text,
+  equipped_title text,            -- 회원이 장착한 대표 호칭 id (미장착이면 null)
   is_deleted    boolean not null default false,
   created_at    timestamptz not null default now()
 );
@@ -101,6 +103,10 @@ create table if not exists public.matches (
   loser2_id    uuid references public.players(id) on delete set null,  -- 복식 패배팀 파트너
   winner_score int,
   loser_score  int,
+  rp_delta_winner  int,   -- 이 경기로 승자에게 적용된 RP 변동(보너스/패널티 포함). 롤백 정확도용. 과거행은 NULL
+  rp_delta_loser   int,   -- 패자에게 적용된 RP 변동
+  rp_delta_winner2 int,   -- 복식 승리팀 파트너
+  rp_delta_loser2  int,   -- 복식 패배팀 파트너
   season       text,
   status       text not null default 'confirmed',  -- confirmed | pending | rejected (승인모드용)
   created_at   timestamptz not null default now()
@@ -145,7 +151,8 @@ alter table public.season_standings enable row level security;
 -- ── 7) players_public : 본명(name) 제외 공개 뷰 ──────────────
 create or replace view public.players_public as
   select id, league_id, rp, tier, win_count, lose_count, nickname,
-         group_label, gender, is_deleted, recent_matches, display_name, user_id
+         group_label, gender, is_deleted, recent_matches, display_name, user_id,
+         equipped_title
   from public.players;
 
 -- ============================================================
@@ -333,15 +340,19 @@ end; $$;
 create or replace function public.record_match_transaction(
   p_class_id uuid, p_match_id uuid, p_winner_id uuid, p_loser_id uuid, p_player_updates jsonb,
   p_winner2_id uuid default null, p_loser2_id uuid default null,
-  p_winner_score int default null, p_loser_score int default null
+  p_winner_score int default null, p_loser_score int default null,
+  p_rp_delta_winner  int default null, p_rp_delta_loser   int default null,
+  p_rp_delta_winner2 int default null, p_rp_delta_loser2  int default null
 ) returns void language plpgsql security definer set search_path = public, extensions as $$
 declare r record;
 begin
   if not public.is_class_recorder(p_class_id) then raise exception '권한이 없습니다.'; end if;
   insert into public.matches
-    (id, league_id, winner_id, loser_id, winner2_id, loser2_id, winner_score, loser_score, created_at)
+    (id, league_id, winner_id, loser_id, winner2_id, loser2_id, winner_score, loser_score,
+     rp_delta_winner, rp_delta_loser, rp_delta_winner2, rp_delta_loser2, created_at)
   values
-    (p_match_id, p_class_id, p_winner_id, p_loser_id, p_winner2_id, p_loser2_id, p_winner_score, p_loser_score, now());
+    (p_match_id, p_class_id, p_winner_id, p_loser_id, p_winner2_id, p_loser2_id, p_winner_score, p_loser_score,
+     p_rp_delta_winner, p_rp_delta_loser, p_rp_delta_winner2, p_rp_delta_loser2, now());
   for r in select * from jsonb_to_recordset(p_player_updates) as x(id uuid, rp int) loop
     update public.players set rp = r.rp where id = r.id and league_id = p_class_id;
   end loop;
@@ -657,7 +668,7 @@ grant execute on function public.list_class_seasons(uuid)           to authentic
 grant execute on function public.get_season_standings_public(uuid, text) to authenticated, anon;
 grant execute on function public.rename_season(uuid, text, text)    to authenticated;
 grant execute on function public.delete_season(uuid, text, boolean) to authenticated;
-grant execute on function public.record_match_transaction(uuid, uuid, uuid, uuid, jsonb, uuid, uuid, int, int) to authenticated;
+grant execute on function public.record_match_transaction(uuid, uuid, uuid, uuid, jsonb, uuid, uuid, int, int, int, int, int, int) to authenticated;
 grant execute on function public.restore_class_data(uuid, jsonb, jsonb) to authenticated;
 grant execute on function public.join_league(uuid)                  to authenticated;
 grant execute on function public.join_league_by_code(text)          to authenticated;
