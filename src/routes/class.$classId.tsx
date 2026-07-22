@@ -15,8 +15,7 @@ import { SeasonSummary } from "@/components/league/SeasonSummary";
 import { Toaster } from "@/components/ui/sonner";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { Crown, Swords, Trophy, Users, User, Pencil, Target, LogOut, School, ShieldAlert, Award, BarChart3, ArrowLeft, Lock, MoreVertical, Palette, CalendarDays } from "lucide-react";
-import { MyAchievements } from "@/components/league/MyAchievements";
+import { Crown, Swords, Trophy, Users, User, Pencil, Target, LogOut, School, ShieldAlert, BarChart3, ArrowLeft, Lock, MoreVertical, Palette, CalendarDays } from "lucide-react";
 import { ThemePicker } from "@/components/ThemePicker";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 
@@ -30,7 +29,7 @@ export const Route = createFileRoute("/class/$classId")({
   component: Index,
 });
 
-type Tab = "leaderboard" | "daily" | "recommend" | "record" | "memberRecord" | "admin" | "myRecord" | "myAchievements" | "seasonSummary";
+type Tab = "leaderboard" | "daily" | "recommend" | "record" | "memberRecord" | "admin" | "myRecord" | "seasonSummary";
 
 function Index() {
   const { classId } = Route.useParams();
@@ -132,7 +131,7 @@ function Index() {
   // 선수 탭 접근 통제 보안 가드 (myRecord, recommend, myAchievements + 허용 시 memberRecord)
   useEffect(() => {
     if (session && session.role === "STUDENT") {
-      const allowed = ["leaderboard", "daily", "recommend", "myRecord", "myAchievements", ...(memberCanRecord ? ["memberRecord"] : [])];
+      const allowed = ["leaderboard", "daily", "recommend", "myRecord", ...(memberCanRecord ? ["memberRecord"] : [])];
       if (!allowed.includes(tab)) {
         setTab("myRecord");
       }
@@ -389,11 +388,6 @@ function Index() {
                   매치 추천
                 </TabButton>
 
-                {/* 4. 나의 업적 (선수 - 삭제 예정) */}
-                <TabButton active={tab === "myAchievements"} onClick={() => setTab("myAchievements")} icon={<Award className="size-4" />}>
-                  나의 업적
-                </TabButton>
-
                 {/* 5. 티어 순위표 (회원도 열람 가능) */}
                 <TabButton active={tab === "leaderboard"} onClick={() => setTab("leaderboard")} icon={<Trophy className="size-4" />}>
                   티어 순위표
@@ -424,13 +418,6 @@ function Index() {
                 {currentViewSeason === "현재 시즌" && (
                   <TabButton active={tab === "recommend"} onClick={() => setTab("recommend")} icon={<Target className="size-4" />}>
                     매치 추천
-                  </TabButton>
-                )}
-
-                {/* 4. 나의 업적 (선수 연동 시 · 삭제 예정) */}
-                {myLinked && (
-                  <TabButton active={tab === "myAchievements"} onClick={() => setTab("myAchievements")} icon={<Award className="size-4" />}>
-                    나의 업적
                   </TabButton>
                 )}
 
@@ -567,12 +554,6 @@ function Index() {
           />
         )}
 
-        {(session.role === "STUDENT" || myLinked) && tab === "myAchievements" && (
-          <MyAchievements
-            studentId={session.studentId || myPlayerId || ""}
-          />
-        )}
-        
         {session.role !== "STUDENT" && tab === "record" && (
           <RecordMatch
             students={students}

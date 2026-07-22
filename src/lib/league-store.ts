@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo, createContext, useContext } from "react";
-import type { Student, Match, ScheduledMatch, Gender, TierName, TierSettings, DynamicBonuses, DynamicPenalties, TiersRecord, DecaySettingsRecord, Achievement, MatchInputMode } from "./league-types";
+import type { Student, Match, ScheduledMatch, Gender, TierName, TierSettings, DynamicBonuses, DynamicPenalties, TiersRecord, DecaySettingsRecord, MatchInputMode } from "./league-types";
 import { studentKey, getTier, getTierSubdivision, getFullTierLabel, TIER_ORDER } from "./league-types";
 import { toast } from "sonner";
 import { supabase } from "../supabaseClient";
@@ -60,7 +60,6 @@ import {
   DEFAULT_DYNAMIC_BONUSES,
   migrateSettings
 } from "./settings-migration";
-import { calculateAchievements as calculateAchievementsPure } from "./achievement-calculator";
 import { buildTitleIndex, TITLE_BY_ID } from "./title-calculator";
 
 export type ActiveBonuses = {
@@ -2878,11 +2877,6 @@ function useLeagueStoreInternal() {
     return true;
   }, [loadScheduled, scheduledMatches]);
 
-  // 선수용 '나의 업적' 자동 연산 함수 (Derived State)
-  const calculateAchievements = useCallback((studentId: string): Achievement[] => {
-    return calculateAchievementsPure(students, matches, tierThresholds, studentId);
-  }, [students, matches, tierThresholds]);
-
   // 호칭 인덱스: 이번 시즌 데이터로 리그 전체 호칭 보유 현황을 한 번에 계산
   const titleIndex = useMemo(
     () => buildTitleIndex(students, matches, tierThresholds),
@@ -3207,7 +3201,6 @@ function useLeagueStoreInternal() {
     updateMatchScore,
     activeBonuses,
     saveLeagueSettings,
-    calculateAchievements,
     titleIndex,
     getEarnedTitles,
     getEquippedTitle,

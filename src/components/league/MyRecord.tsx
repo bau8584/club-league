@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { TierBadge } from "./TierBadge";
 import { TierCrest } from "./TierCrest";
 import { ScoreStrategyGuide } from "./ScoreStrategyGuide";
-import { TitleCollection } from "./TitleCollection";
+import { TitleSelect } from "./TitleSelect";
 import { GenderMark } from "./GenderMark";
 import { useLeagueStore } from "@/lib/league-store";
 import { cn } from "@/lib/utils";
@@ -231,6 +231,10 @@ export function MyRecord({
                   <GenderMark gender={me.gender} />
                   <span>{me.name}</span>
                 </CardTitle>
+                {/* 대표 호칭 선택 드롭다운 */}
+                <div className="pt-1.5">
+                  <TitleSelect me={me} isMe={!!myPlayerId && me.id === myPlayerId} />
+                </div>
               </div>
               
               <div className="flex items-center gap-2.5">
@@ -413,9 +417,6 @@ export function MyRecord({
           </CardContent>
         </Card>
       </div>
-
-      {/* 호칭 수집 및 대표 호칭 장착 */}
-      <TitleCollection me={me} isMe={!!myPlayerId && me.id === myPlayerId} />
 
       {/* 점수 전략 가이드 (최근 전적 위) — 티어를 노출하므로 배치고사 중에는 숨김 */}
       {!isUnranked && <ScoreStrategyGuide rp={me.rp} />}

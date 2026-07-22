@@ -7,7 +7,7 @@ import { TierBadge } from "@/components/league/TierBadge";
 import { GenderMark } from "@/components/league/GenderMark";
 import { TitleBadge } from "@/components/league/TitleBadge";
 import { cn } from "@/lib/utils";
-import { Search, SlidersHorizontal, ChevronDown, X, Swords } from "lucide-react";
+import { Search, SlidersHorizontal, ChevronDown, X } from "lucide-react";
 import { getTier, isUnranked, TIER_ORDER, TIER_STYLES, type TierName, type Student } from "@/lib/league-types";
 
 type GenderFilter = "all" | "M" | "F";
@@ -42,12 +42,7 @@ export function Leaderboard({
 
   // 이중 보안 상태 및 자동 잠금 훅
   const [isUnlocked, setIsUnlocked] = useState(false);
-  const { session, placementEnabled, placementGames, myPlayerId, createChallenge, getEquippedTitle } = useLeagueStore();
-  const handleChallenge = (targetId: string, name: string) => {
-    if (window.confirm(`${name} 님에게 도전장을 보낼까요? ⚔️\n상대가 수락하면 양쪽에 입장 알림이 뜹니다.`)) {
-      createChallenge(targetId);
-    }
-  };
+  const { session, placementEnabled, placementGames, getEquippedTitle } = useLeagueStore();
   const isDemo = session?.loginId === "guest" || session?.schoolName?.includes("꿈나무");
 
   useEffect(() => {
@@ -188,11 +183,10 @@ export function Leaderboard({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border/60 bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
-                <th className="px-4 py-3 text-left w-12 sm:w-16">순위</th>
+                <th className="px-2 py-3 text-left w-10 sm:w-14">순위</th>
                 <th className="px-3 py-3 text-left hidden sm:table-cell">레벨</th>
                 <th className="px-4 py-3 text-left">닉네임</th>
                 <th className="px-4 py-3 text-left">티어</th>
-                <th className="px-4 py-3 text-right">RP</th>
                 <th className="px-4 py-3 text-center hidden md:table-cell">최근 5경기</th>
                 <th className="px-4 py-3 text-right hidden sm:table-cell">승률</th>
               </tr>
@@ -203,7 +197,7 @@ export function Leaderboard({
                 const winRate = total === 0 ? 0 : Math.round((s.wins / total) * 100);
                 return (
                   <tr key={s.id} className="border-b border-border/30 transition-colors hover:bg-accent/40">
-                    <td className="px-4 py-3 font-bold tabular-nums w-12 sm:w-16">
+                    <td className="px-2 py-3 font-bold tabular-nums w-10 sm:w-14">
                       <RankBadge rank={rank} />
                     </td>
                     <td className="px-3 py-3 text-muted-foreground hidden sm:table-cell">{s.group || "-"}</td>
@@ -229,22 +223,11 @@ export function Leaderboard({
                             🔥 {getWinStreak(s.recent)}연승
                           </span>
                         )}
-                        {myPlayerId && s.id !== myPlayerId && (
-                          <button
-                            type="button"
-                            onClick={() => handleChallenge(s.id, s.nickname || s.name)}
-                            title="도전장 보내기"
-                            className="inline-flex items-center gap-0.5 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-black text-amber-500 transition-all hover:bg-amber-500/20 active:scale-95"
-                          >
-                            <Swords className="size-3" /> 도전
-                          </button>
-                        )}
                       </div>
                     </td>
                     <td className="px-4 py-3">
                       <TierBadge rp={s.rp} thresholds={thresholds} />
                     </td>
-                    <td className="px-4 py-3 text-right font-mono font-bold text-neon-blue text-glow-blue">{s.rp}</td>
                     <td className="px-4 py-3 hidden md:table-cell">
                       <div className="flex items-center justify-center gap-1">
                         {Array.from({ length: 5 }).map((_, idx) => {
@@ -273,7 +256,7 @@ export function Leaderboard({
                 );
               })}
               {visible.length === 0 && (
-                <tr><td colSpan={7} className="px-4 py-10 text-center text-muted-foreground animate-pulse">조건에 맞는 선수가 없습니다.</td></tr>
+                <tr><td colSpan={6} className="px-4 py-10 text-center text-muted-foreground animate-pulse">조건에 맞는 선수가 없습니다.</td></tr>
               )}
             </tbody>
           </table>
