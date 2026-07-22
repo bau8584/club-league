@@ -3,7 +3,7 @@
 // SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY 는 Edge 런타임이 자동 주입한다.
 // VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY / VAPID_SUBJECT 만 함수 시크릿으로 설정하면 된다.
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { buildPushPayload } from "npm:@block65/webcrypto-web-push@0.5.4";
+import { buildPushPayload } from "npm:@block65/webcrypto-web-push@1.0.2";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
