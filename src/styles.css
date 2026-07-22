@@ -30,9 +30,21 @@
   font-display: swap;
 }
 
+/* ── Pretendard (가변) — 본문/기본 폰트 ─────────────────────────────
+   Nixgon(개성 강한 라운드 디스플레이체)과 짝지을 중성적 고가독 산세리프.
+   공식 배포(OFL)의 가변 woff2를 현대 한글 전체 + 영문으로 서브셋한 단일 파일로
+   100~900 전 굵기를 커버. 기존 기본 폰트(Inter)를 완전히 대체한다. */
+@font-face {
+  font-family: 'Pretendard';
+  src: url('/fonts/pretendard-var.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 @theme inline {
   /* 디스플레이 폰트(닉스곤) — .font-display 유틸리티 생성. 본문 폰트와 분리. */
-  --font-display: 'Nixgon', 'Inter', system-ui, -apple-system, sans-serif;
+  --font-display: 'Nixgon', 'Pretendard', system-ui, -apple-system, sans-serif;
   /* 이 앱은 숫자/RP/전적을 관례적으로 .font-mono 로 표기한다. "숫자도 닉스곤" 방침에 따라
      mono 토큰을 닉스곤 우선으로 재정의 — 닉스곤 숫자는 이미 고정폭(tabular)이라 정렬이 유지된다.
      진짜 코드/모노스페이스가 필요한 곳(에러 스택·대량입력·초대코드)은 .font-code 사용. */
@@ -302,7 +314,8 @@
     color: var(--color-foreground);
     background-image: var(--body-gradient);
     background-attachment: fixed;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    /* 기본 폰트: Pretendard (기존 Inter 제거). 로드 전/실패 시에만 한글 시스템 폴백. */
+    font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
   }
 
   /* 제목: 디스플레이 폰트(닉스곤) + 살짝 타이트한 자간 */

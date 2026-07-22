@@ -137,7 +137,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       },
       { rel: "manifest", href: "/manifest.json" },
       { rel: "apple-touch-icon", href: "/assets/tiers/gold.png" },
-      // 상단/히어로 제목에 쓰이는 디스플레이 폰트 우선 로드 (닉스곤 Bold·Medium)
+      // 본문 기본 폰트(Pretendard 가변)와 상단/히어로 제목용 디스플레이 폰트(Nixgon) 우선 로드
+      { rel: "preload", as: "font", type: "font/woff2", href: "/fonts/pretendard-var.woff2", crossOrigin: "anonymous" },
       { rel: "preload", as: "font", type: "font/woff2", href: "/fonts/nixgon-bold.woff2", crossOrigin: "anonymous" },
       { rel: "preload", as: "font", type: "font/woff2", href: "/fonts/nixgon-medium.woff2", crossOrigin: "anonymous" },
     ],
