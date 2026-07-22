@@ -345,7 +345,6 @@ create or replace function public.record_match_transaction(
   p_rp_delta_winner  int default null, p_rp_delta_loser   int default null,
   p_rp_delta_winner2 int default null, p_rp_delta_loser2  int default null
 ) returns void language plpgsql security definer set search_path = public, extensions as $$
-declare r record;
 begin
   if not public.is_class_recorder(p_class_id) then raise exception '권한이 없습니다.'; end if;
   insert into public.matches
@@ -354,9 +353,96 @@ begin
   values
     (p_match_id, p_class_id, p_winner_id, p_loser_id, p_winner2_id, p_loser2_id, p_winner_score, p_loser_score,
      p_rp_delta_winner, p_rp_delta_loser, p_rp_delta_winner2, p_rp_delta_loser2, now());
-  for r in select * from jsonb_to_recordset(p_player_updates) as x(id uuid, rp int) loop
-    update public.players set rp = r.rp where id = r.id and league_id = p_class_id;
+  -- 동시 입력 안전: 절대값(p_player_updates) 대신 델타로 서버에서 원자적 증감.
+  update public.players set rp = greatest(0, rp + coalesce(p_rp_delta_winner, 0))
+    where id = p_winner_id and league_id = p_class_id;
+  update public.players set rp = greatest(0, rp + coalesce(p_rp_delta_loser, 0))
+    where id = p_loser_id and league_id = p_class_id;
+  if p_winner2_id is not null then
+    update public.players set rp = greatest(0, rp + coalesce(p_rp_delta_winner2, 0))
+      where id = p_winner2_id and league_id = p_class_id;
+  end if;
+  if p_loser2_id is not null then
+    update public.players set rp = greatest(0, rp + coalesce(p_rp_delta_loser2, 0))
+      where id = p_loser2_id and league_id = p_class_id;
+  end if;
+end; $$;
+
+-- 경기 롤백: 저장된 델타로 서버에서 원자적 역산 + 삭제(동시 입력 안전).
+create or replace function public.rollback_match(p_class_id uuid, p_match_id uuid)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+declare m public.matches%rowtype;
+begin
+  if not public.is_class_teacher(p_class_id) then raise exception '권한이 없습니다.'; end if;
+  select * into m from public.matches where id = p_match_id and league_id = p_class_id;
+  if not found then return; end if;
+  if m.rp_delta_winner is not null then
+    update public.players set rp = greatest(0, rp - m.rp_delta_winner) where id = m.winner_id and league_id = p_class_id;
+  end if;
+  if m.rp_delta_loser is not null then
+    update public.players set rp = greatest(0, rp - m.rp_delta_loser) where id = m.loser_id and league_id = p_class_id;
+  end if;
+  if m.winner2_id is not null and m.rp_delta_winner2 is not null then
+    update public.players set rp = greatest(0, rp - m.rp_delta_winner2) where id = m.winner2_id and league_id = p_class_id;
+  end if;
+  if m.loser2_id is not null and m.rp_delta_loser2 is not null then
+    update public.players set rp = greatest(0, rp - m.rp_delta_loser2) where id = m.loser2_id and league_id = p_class_id;
+  end if;
+  delete from public.matches where id = p_match_id and league_id = p_class_id;
+end; $$;
+
+-- RP 정합성 재계산(관리자): rp = 1000 + Σ(현 시즌 경기 델타) − Σ(현 시즌 감점).
+--   델타 없는(구) 경기가 낀 선수는 건너뛴다. 수동 조정 RP는 복원되지 않는다.
+create or replace function public.recompute_league_rp(p_class_id uuid)
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare
+  v_season  text;
+  v_updated int := 0;
+  v_skipped int := 0;
+  r         record;
+  v_target  int;
+  v_has_null_delta boolean;
+begin
+  if not public.is_class_teacher(p_class_id) then raise exception '권한이 없습니다.'; end if;
+  v_season := public.current_season_of(p_class_id);
+  for r in
+    select id from public.players where league_id = p_class_id and coalesce(is_deleted, false) = false
+  loop
+    select exists(
+      select 1 from public.matches m
+      where m.league_id = p_class_id and m.season = v_season
+        and (
+          (m.winner_id  = r.id and m.rp_delta_winner  is null) or
+          (m.loser_id   = r.id and m.rp_delta_loser   is null) or
+          (m.winner2_id = r.id and m.rp_delta_winner2 is null) or
+          (m.loser2_id  = r.id and m.rp_delta_loser2  is null)
+        )
+    ) into v_has_null_delta;
+    if v_has_null_delta then v_skipped := v_skipped + 1; continue; end if;
+
+    select 1000
+      + coalesce((
+          select sum(
+            case when m.winner_id  = r.id then coalesce(m.rp_delta_winner, 0)  else 0 end +
+            case when m.loser_id   = r.id then coalesce(m.rp_delta_loser, 0)   else 0 end +
+            case when m.winner2_id = r.id then coalesce(m.rp_delta_winner2, 0) else 0 end +
+            case when m.loser2_id  = r.id then coalesce(m.rp_delta_loser2, 0)  else 0 end
+          )
+          from public.matches m
+          where m.league_id = p_class_id and m.season = v_season
+            and (m.winner_id = r.id or m.loser_id = r.id or m.winner2_id = r.id or m.loser2_id = r.id)
+        ), 0)
+      - coalesce((
+          select sum(coalesce(d.decay_rp, 0)) from public.decay_log d
+          where d.league_id = p_class_id and d.player_id = r.id and d.season = v_season
+        ), 0)
+    into v_target;
+    v_target := greatest(0, v_target);
+
+    update public.players set rp = v_target where id = r.id and rp is distinct from v_target;
+    if found then v_updated := v_updated + 1; end if;
   end loop;
+  return jsonb_build_object('season', v_season, 'updated', v_updated, 'skipped', v_skipped);
 end; $$;
 
 create or replace function public.restore_class_data(p_class_id uuid, p_students jsonb, p_matches jsonb)
@@ -674,6 +760,8 @@ grant execute on function public.get_season_standings_public(uuid, text) to auth
 grant execute on function public.rename_season(uuid, text, text)    to authenticated;
 grant execute on function public.delete_season(uuid, text, boolean) to authenticated;
 grant execute on function public.record_match_transaction(uuid, uuid, uuid, uuid, jsonb, uuid, uuid, int, int, int, int, int, int) to authenticated;
+grant execute on function public.rollback_match(uuid, uuid)      to authenticated;
+grant execute on function public.recompute_league_rp(uuid)       to authenticated;
 grant execute on function public.restore_class_data(uuid, jsonb, jsonb) to authenticated;
 grant execute on function public.join_league(uuid)                  to authenticated;
 grant execute on function public.join_league_by_code(text)          to authenticated;

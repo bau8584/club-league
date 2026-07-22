@@ -22,12 +22,13 @@ export function MatchDetailSheet({
   onOpenChange: (v: boolean) => void;
   thresholds?: Record<TierName, number>;
 }) {
-  const { students, placementEnabled, placementGames } = useLeagueStore();
+  const { students, placementEnabled, placementGames, deletedById } = useLeagueStore();
   const byId = useMemo(() => {
     const m = new Map<string, Student>();
-    students.forEach((s) => m.set(s.id, s));
+    deletedById.forEach((s, id) => m.set(id, s)); // 삭제된 회원 이름 먼저
+    students.forEach((s) => m.set(s.id, s));        // 활성 회원이 우선
     return m;
-  }, [students]);
+  }, [students, deletedById]);
 
   if (!match) return null;
   const isDouble = match.matchType === "double" || !!match.playerA2Id;

@@ -14,6 +14,8 @@ import {
   apiFetchMatches,
   apiInsertMatch,
   apiDeleteMatch,
+  apiRollbackMatch,
+  apiRecomputeLeagueRp,
   apiDeleteStudentMatches,
   apiInsertMatchesBulk,
   apiUpdateMatchWinnerLoser,
@@ -33,6 +35,8 @@ import {
   apiRestoreClassData,
   apiRecordMatchTransaction,
   apiClaimPlayer,
+  apiGetLeagueMembers,
+  apiUnlinkPlayer,
   apiSetPlayerLevel,
   apiSetMemberAdmin,
   apiTransferOwnership,
@@ -130,6 +134,8 @@ type UserSession = {
 function useLeagueStoreInternal() {
   const [hydrated, setHydrated] = useState(false);
   const [students, setStudents] = useState<Student[]>([]);
+  // 삭제(soft delete)된 회원 — 목록엔 안 뜨지만 과거 경기 이름 표시용으로 보관
+  const [deletedPlayers, setDeletedPlayers] = useState<Student[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [scheduledMatches, setScheduledMatches] = useState<ScheduledMatch[]>([]);
   const loadScheduledRef = useRef<((classId: string) => void) | null>(null);
@@ -169,6 +175,24 @@ function useLeagueStoreInternal() {
   const [session, setSession] = useState<UserSession>(null);
   const [currentClassId, setCurrentClassId] = useState<string | null>(null);
   const currentClassIdRef = useRef<string | null>(null);
+
+  // 삭제된 회원 목록 로드(과거 경기 이름 표시용) — 클래스 진입 시 1회
+  useEffect(() => {
+    if (!currentClassId) { setDeletedPlayers([]); return; }
+    apiFetchDeletedStudents(currentClassId).then(({ data }) => {
+      setDeletedPlayers(((data as any[]) || []).map((s) => ({
+        id: s.id, name: s.name ?? "", nickname: s.nickname ?? "", group: s.group_label ?? null,
+        gender: (s.gender || "U") as Gender, rp: s.rp ?? 1000, wins: 0, losses: 0, recent: [],
+      })));
+    }).catch(() => { /* 비치명적 */ });
+  }, [currentClassId]);
+
+  // 활성 + 삭제된 회원을 합친 이름 조회용 맵(경기 이력에서 삭제된 회원 이름 보존)
+  const deletedById = useMemo(() => {
+    const m = new Map<string, Student>();
+    deletedPlayers.forEach((s) => m.set(s.id, s));
+    return m;
+  }, [deletedPlayers]);
   useEffect(() => {
     currentClassIdRef.current = currentClassId;
   }, [currentClassId]);
@@ -905,16 +929,8 @@ function useLeagueStoreInternal() {
 
     if (currentClassId) {
       try {
-        // Delete match from Supabase
-        const { error: deleteErr } = await apiDeleteMatch(matchId);
-        if (deleteErr) throw deleteErr;
-
-        // Update affected students' RP in Supabase
-        for (const s of nextStudents) {
-          if (activePlayerIds.includes(s.id)) {
-            await apiUpdateStudentRp(s.id, s.rp);
-          }
-        }
+        // 서버에서 원자적으로 rp 역산 + 경기 삭제(동시 입력 안전). 로컬은 이미 낙관적 반영됨.
+        await apiRollbackMatch(currentClassId, matchId);
         toast.success("경기가 삭제되었습니다!");
       } catch (err: any) {
         console.error("Failed to delete match in Supabase:", err.message);
@@ -930,6 +946,27 @@ function useLeagueStoreInternal() {
       setIsSyncing(false);
     }
   }, [students, matches, rpVariables, currentClassId, isClassOwner]);
+
+  // RP 정합성 재계산(관리자 안전망): 현 시즌 경기 델타·감점 기준으로 rp를 서버에서 다시 맞춘다.
+  //  동시 입력 등으로 rp 캐시가 어긋났을 때 복구용. (수동 RP 조정은 이력이 없어 복원되지 않음)
+  const recomputeLeagueRp = useCallback(async (): Promise<boolean> => {
+    const cid = currentClassIdRef.current;
+    if (!cid) return false;
+    if (!isClassManagerRef.current) { toast.error("권한이 없습니다."); return false; }
+    if (currentViewSeasonRef.current !== "현재 시즌") { toast.error("현재 시즌에서만 재계산할 수 있습니다."); return false; }
+    try {
+      const { data, error } = await apiRecomputeLeagueRp(cid);
+      if (error) throw error;
+      await loadClassDataRef.current?.(cid, true);
+      const r = (data ?? {}) as { updated?: number; skipped?: number };
+      toast.success(`RP 재계산 완료 · ${r.updated ?? 0}명 보정${r.skipped ? ` · ${r.skipped}명 건너뜀(구 기록)` : ""}`);
+      return true;
+    } catch (err: any) {
+      console.error("Failed to recompute league rp:", err.message);
+      toast.error("RP 재계산 실패: " + err.message);
+      return false;
+    }
+  }, []);
 
   // 개별 선수 전적 리셋 및 동기화
   const resetStudent = useCallback(async (studentId: string) => {
@@ -1330,106 +1367,20 @@ function useLeagueStoreInternal() {
     isSyncingRef.current = true;
     setIsSyncing(true);
 
-    const matchesToRemove = matches.filter((m) => m.playerAId === studentId || m.playerBId === studentId || m.playerA2Id === studentId || m.playerB2Id === studentId);
-    const nextMatches = matches.filter((m) => m.playerAId !== studentId && m.playerBId !== studentId && m.playerA2Id !== studentId && m.playerB2Id !== studentId);
-
-    // 1. 삭제할 선수 제외
-    let nextStudents = students.filter((s) => s.id !== studentId);
-
-    // 2. 삭제되는 경기들의 상대방 & 아군 파트너 전적 복구
-    matchesToRemove.forEach((m) => {
-      const aWon = m.scoreA > m.scoreB;
-      const isPlayerA = m.playerAId === studentId || m.playerA2Id === studentId;
-      
-      const partnerId = isPlayerA 
-        ? (m.playerAId === studentId ? m.playerA2Id : m.playerAId) 
-        : (m.playerBId === studentId ? m.playerB2Id : m.playerBId);
-        
-      const oppIds = isPlayerA 
-        ? [m.playerBId, m.playerB2Id].filter(Boolean) as string[] 
-        : [m.playerAId, m.playerA2Id].filter(Boolean) as string[];
-
-      const affectedPlayers = [
-        ...oppIds.map(id => ({ id, isOpponent: true })),
-        partnerId ? { id: partnerId, isOpponent: false } : null
-      ].filter(Boolean) as { id: string; isOpponent: boolean }[];
-
-      nextStudents = nextStudents.map((s) => {
-        const affected = affectedPlayers.find(ap => ap.id === s.id);
-        if (!affected) return s;
-
-        let rpDelta = 0;
-        const won = affected.isOpponent ? !isPlayerA : isPlayerA;
-        
-        if (s.id === m.playerAId) {
-          rpDelta = m.rpDeltaA !== undefined ? -m.rpDeltaA : (won ? -rpVariables.winDelta : rpVariables.loseDelta);
-        } else if (s.id === m.playerBId) {
-          rpDelta = m.rpDeltaB !== undefined ? -m.rpDeltaB : (won ? -rpVariables.winDelta : rpVariables.loseDelta);
-        } else if (s.id === m.playerA2Id) {
-          rpDelta = m.rpDeltaA2 !== undefined ? -m.rpDeltaA2 : (won ? -rpVariables.winDelta : rpVariables.loseDelta);
-        } else if (s.id === m.playerB2Id) {
-          rpDelta = m.rpDeltaB2 !== undefined ? -m.rpDeltaB2 : (won ? -rpVariables.winDelta : rpVariables.loseDelta);
-        }
-
-        const newRp = Math.max(0, s.rp + rpDelta);
-        const newWins = Math.max(0, s.wins - (won ? 1 : 0));
-        const newLosses = Math.max(0, s.losses - (won ? 0 : 1));
-
-        return {
-          ...s,
-          rp: newRp,
-          wins: newWins,
-          losses: newLosses,
-        };
-      });
-    });
-
-    // 3. 상대방들의 recent 배열 재구성
-    nextStudents = nextStudents.map((s) => {
-      const sMatches = nextMatches
-        .filter((m) => m.playerAId === s.id || m.playerBId === s.id || m.playerA2Id === s.id || m.playerB2Id === s.id)
-        .sort((x, y) => new Date(y.date).getTime() - new Date(x.date).getTime())
-        .slice(0, 5);
-
-      const newRecent = sMatches.map((m) => {
-        const mIsA = m.playerAId === s.id || m.playerA2Id === s.id;
-        const mAWon = m.scoreA > m.scoreB;
-        const mWon = mIsA ? mAWon : !mAWon;
-        return mWon ? "W" : "L";
-      });
-
-      return {
-        ...s,
-        recent: newRecent,
-      };
-    });
-
+    // 겉만 삭제(soft delete): 목록에서만 숨기고, 그 회원의 경기 기록과
+    // 다른 회원의 RP·전적은 전부 그대로 보존한다. 이름은 이력 표시용으로 따로 보관.
+    const removed = students.find((s) => s.id === studentId) || null;
     const previousStudents = [...students];
-    const previousMatches = [...matches];
-    setMatches(nextMatches);
-    setStudents(nextStudents);
+    setStudents(students.filter((s) => s.id !== studentId));
+    if (removed) setDeletedPlayers((prev) => (prev.some((p) => p.id === removed.id) ? prev : [...prev, removed]));
 
     if (currentClassId) {
       try {
-        // Soft Delete student in Supabase
         await apiSoftDeleteStudent(studentId);
-        // Delete student's matches
-        await apiDeleteStudentMatches(studentId);
-
-        // Update affected partners/opponents RP in Supabase
-        for (const s of nextStudents) {
-          const isAffected = matchesToRemove.some(m => 
-            m.playerAId === s.id || m.playerBId === s.id || m.playerA2Id === s.id || m.playerB2Id === s.id
-          );
-          if (isAffected) {
-            await apiUpdateStudentRp(s.id, s.rp);
-          }
-        }
-        toast.success("선수가 삭제되었습니다!");
+        toast.success("회원을 삭제했습니다. 경기 기록과 다른 회원 점수는 그대로 보존됩니다.");
       } catch (err: any) {
-        console.error("Failed to delete student in Supabase:", err.message);
-        toast.error("선수 삭제에 실패했습니다: " + err.message);
-        setMatches(previousMatches);
+        console.error("Failed to soft-delete student:", err.message);
+        toast.error("회원 삭제에 실패했습니다: " + err.message);
         setStudents(previousStudents);
       } finally {
         isSyncingRef.current = false;
@@ -1439,7 +1390,7 @@ function useLeagueStoreInternal() {
       isSyncingRef.current = false;
       setIsSyncing(false);
     }
-  }, [students, matches, rpVariables, currentClassId, isClassOwner]);
+  }, [students, currentClassId]);
 
   // 특정 선수 정보 전체 수정 및 동기화
   const updateStudentInfo = useCallback(async (
@@ -1596,7 +1547,7 @@ function useLeagueStoreInternal() {
     if (!classId) return false;
     const { error } = await apiRestoreStudent(studentId);
     if (error) { toast.error("복원에 실패했습니다: " + error.message); return false; }
-    toast.success("선수을 복원했습니다. (과거 경기 기록은 복구되지 않습니다)");
+    toast.success("회원을 복원했습니다. 경기 기록도 그대로 남아 있어요.");
     await loadClassDataRef.current?.(classId);
     return true;
   }, [isClassOwner]);
@@ -2974,7 +2925,14 @@ function useLeagueStoreInternal() {
     const { error } = await apiUpdateReservationPlayers(id, [...ids, pid]);
     if (error) { toast.error("참가 실패: " + error.message); return false; }
     if (cid) await loadScheduled(cid);
-    toast.success("예약에 참가했어요.");
+    // 남을 추가한 경우(관리자 추가 등) 그 사람에게 알림
+    if (pid !== myPlayerId) {
+      notifyPlayers([pid], {
+        title: "🏸 경기 예약에 추가됐어요!", body: "예약 경기에 당신이 추가됐어요. 코트로 모이세요.",
+        url: cid ? `/class/${cid}?tab=matches` : "/", tag: `resv-add-${id}-${pid}`,
+      });
+    }
+    toast.success(pid !== myPlayerId ? `${nameOf(pid)}님을 추가하고 알림을 보냈어요.` : "예약에 참가했어요.");
     return true;
   }, [loadScheduled, myPlayerId, scheduledMatches, students]);
 
@@ -3282,6 +3240,26 @@ function useLeagueStoreInternal() {
     return true;
   }, []);
 
+  // 관리자: 리그 멤버(uid·이메일·역할) 목록 조회 — 연동 계정 확인용
+  const fetchLeagueMembers = useCallback(async (): Promise<{ uid: string; email: string; role: string }[]> => {
+    const cid = currentClassIdRef.current;
+    if (!cid) return [];
+    const { data, error } = await apiGetLeagueMembers(cid);
+    if (error) { console.error("Failed to fetch league members:", error.message); toast.error("회원 계정 정보를 불러오지 못했습니다."); return []; }
+    return (data ?? []) as { uid: string; email: string; role: string }[];
+  }, []);
+
+  // 관리자: 선수 닉네임에서 계정 연동 해제
+  const unlinkPlayer = useCallback(async (playerId: string): Promise<boolean> => {
+    if (!isClassManagerRef.current) { toast.error("권한이 없습니다."); return false; }
+    const { error } = await apiUnlinkPlayer(playerId);
+    if (error) { toast.error("연동 해제에 실패했습니다: " + error.message); return false; }
+    toast.success("계정 연동을 해제했습니다.");
+    const cid = currentClassIdRef.current;
+    if (cid) await loadClassDataRef.current?.(cid, true);
+    return true;
+  }, []);
+
   // 새 프로필을 만들어 내 계정에 연동
   const createMyPlayer = useCallback(async (profile: {
     nickname: string; gender: Gender; group?: string | null; birthYear?: number | null;
@@ -3308,9 +3286,10 @@ function useLeagueStoreInternal() {
     hydrated, 
     currentClassId,
     loadClassData,
-    students, 
-    matches, 
-    title, 
+    students,
+    deletedById,
+    matches,
+    title,
     setTitle, 
     matchInputMode,
     saveMatchInputMode,
@@ -3332,6 +3311,7 @@ function useLeagueStoreInternal() {
     recordMatch,
     upsertStudents,
     deleteMatch,
+    recomputeLeagueRp,
     recomputeRpPreview,
     applyRecomputedRp,
     resetStudent,
@@ -3342,6 +3322,8 @@ function useLeagueStoreInternal() {
     isClassMember,
     myPlayerId,
     claimPlayer,
+    fetchLeagueMembers,
+    unlinkPlayer,
     createMyPlayer,
     session,
     logoutUser,

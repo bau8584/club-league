@@ -880,7 +880,7 @@ export function Lobby() {
                   value={joinCode}
                   onChange={(e) => setJoinCode(e.target.value)}
                   placeholder="6자리 리그 코드 또는 초대 링크"
-                  className="h-10 border-border/60 focus:border-neon-green transition-all font-mono text-xs"
+                  className="h-10 border-border/60 focus:border-neon-green transition-all font-code text-xs"
                 />
                 <p className="text-[10px] text-muted-foreground leading-snug">
                   ※ 참여하면 그 리그의 선수·경기를 관리할 수 있습니다(리그 전체 범위). 리그 글로벌 설정·시즌·데이터는 개설자만 가능합니다.
@@ -922,7 +922,7 @@ export function Lobby() {
                   <Input
                     readOnly
                     value={inviteLeague.join_code ?? inviteLeague.id}
-                    className="h-12 font-mono text-center text-2xl font-black tracking-[0.4em] uppercase"
+                    className="h-12 font-code text-center text-2xl font-black tracking-[0.4em] uppercase"
                   />
                   <Button type="button" onClick={() => { navigator.clipboard.writeText(inviteLeague.join_code ?? inviteLeague.id); toast.success("리그 코드가 복사되었습니다!"); }}
                     className="h-12 px-3 bg-neon-green hover:bg-neon-green/90 text-primary-foreground font-bold shrink-0">
@@ -938,7 +938,7 @@ export function Lobby() {
               <div className="space-y-1.5">
                 <Label className="text-xs font-bold text-muted-foreground">또는 초대 링크</Label>
                 <div className="flex gap-2">
-                  <Input readOnly value={`${window.location.origin}/join?classId=${inviteLeague.id}`} className="h-10 font-mono text-[11px]" />
+                  <Input readOnly value={`${window.location.origin}/join?classId=${inviteLeague.id}`} className="h-10 font-code text-[11px]" />
                   <Button type="button" variant="outline" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/join?classId=${inviteLeague.id}`); toast.success("초대 링크가 복사되었습니다!"); }}
                     className="h-10 px-3 font-bold shrink-0">
                     <Copy className="size-4" />

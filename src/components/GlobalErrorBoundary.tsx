@@ -72,7 +72,7 @@ export class GlobalErrorBoundary extends Component<Props, State> {
                   {this.state.showDetails ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
                 </button>
                 {this.state.showDetails && (
-                  <div className="p-4 border-t border-border/30 bg-black/40 font-mono text-[10px] text-destructive overflow-auto max-h-40 leading-relaxed break-all">
+                  <div className="p-4 border-t border-border/30 bg-black/40 font-code text-[10px] text-destructive overflow-auto max-h-40 leading-relaxed break-all">
                     <p className="font-extrabold mb-1">{this.state.error.toString()}</p>
                     <pre className="whitespace-pre-wrap">{this.state.error.stack}</pre>
                   </div>

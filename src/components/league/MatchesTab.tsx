@@ -27,7 +27,7 @@ export function MatchesTab({ incomingInitials, onConsumeInitials, openMatchId, o
   onConsumeMatchId?: () => void;
 } = {}) {
   const {
-    session, students, matches, scheduledMatches, tierThresholds, rpVariables,
+    session, students, deletedById, matches, scheduledMatches, tierThresholds, rpVariables,
     matchInputMode, isClassManager, myPlayerId, currentViewSeason,
     recordMatch, updateStudentGender,
     createReservation, cancelReservation, linkReservationResult,
@@ -40,9 +40,10 @@ export function MatchesTab({ incomingInitials, onConsumeInitials, openMatchId, o
 
   const byId = useMemo(() => {
     const m = new Map<string, Student>();
-    students.forEach((s) => m.set(s.id, s));
+    deletedById.forEach((s, id) => m.set(id, s)); // 삭제된 회원 이름 먼저
+    students.forEach((s) => m.set(s.id, s));        // 활성 회원이 우선
     return m;
-  }, [students]);
+  }, [students, deletedById]);
 
   // ── 예약 생성 폼 ──
   const [reserveOpen, setReserveOpen] = useState(false); // 접기 기본

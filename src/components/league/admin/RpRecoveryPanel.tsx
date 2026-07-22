@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { History, RotateCcw, ArrowRight } from "lucide-react";
+import { History, RotateCcw, ArrowRight, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLeagueStore } from "@/lib/league-store";
 import {
@@ -13,13 +13,26 @@ import {
 type Row = { id: string; name: string; before: number; after: number };
 
 export function RpRecoveryPanel() {
-  const { recomputeRpPreview, applyRecomputedRp, matches, currentViewSeason } = useLeagueStore();
+  const { recomputeRpPreview, applyRecomputedRp, recomputeLeagueRp, matches, currentViewSeason } = useLeagueStore();
   const readOnly = currentViewSeason !== "현재 시즌";
   const noMatches = !matches || matches.length === 0;
 
   const [open, setOpen] = useState(false);
   const [rows, setRows] = useState<Row[]>([]);
   const [applying, setApplying] = useState(false);
+  const [recomputing, setRecomputing] = useState(false);
+
+  // 서버 정합성 재계산: 저장된 경기별 델타·감점 기준으로 rp를 정확히 복구(동시 입력 어긋남 복구용).
+  const handleServerRecompute = async () => {
+    if (readOnly || noMatches || recomputing) return;
+    if (!window.confirm(
+      "현재 시즌 경기 기록·감점을 기준으로 모든 회원 RP를 서버에서 정확히 다시 맞춥니다.\n" +
+      "동시 입력 등으로 RP가 어긋났을 때 복구용입니다.\n\n" +
+      "※ 관리자가 수동으로 직접 조정한 RP는 복원되지 않고 이력 기준값으로 덮어써집니다.\n\n진행할까요?"
+    )) return;
+    setRecomputing(true);
+    try { await recomputeLeagueRp(); } finally { setRecomputing(false); }
+  };
 
   const openPreview = () => {
     if (readOnly || noMatches) return;
@@ -64,6 +77,22 @@ export function RpRecoveryPanel() {
         {noMatches && (
           <p className="mt-2 text-[11px] font-bold text-muted-foreground">경기 기록이 없어 복원할 수 없습니다.</p>
         )}
+
+        {/* 서버 정합성 재계산 — 동시 입력으로 RP 캐시가 어긋났을 때 정확 복구 */}
+        <div className="mt-3 flex flex-col gap-2 border-t border-border/25 pt-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="min-w-0 text-xs text-muted-foreground leading-snug">
+            <b className="text-foreground">정합성 재계산(서버)</b> — 여러 명 동시 입력 등으로 RP가 어긋났을 때, 저장된
+            경기별 변동·감점으로 <b className="text-foreground">정확히 복구</b>합니다.
+          </p>
+          <Button
+            onClick={handleServerRecompute}
+            disabled={readOnly || noMatches || recomputing}
+            variant="outline"
+            className="shrink-0 self-start border-amber-500/40 font-black text-amber-600 hover:bg-amber-500/10 active:scale-95 disabled:opacity-40"
+          >
+            <RefreshCw className={cn("mr-2 size-4", recomputing && "animate-spin")} /> {recomputing ? "재계산 중..." : "정합성 재계산"}
+          </Button>
+        </div>
       </Card>
 
       <AlertDialog open={open} onOpenChange={(o) => { if (!o) setOpen(false); }}>

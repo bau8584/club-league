@@ -177,6 +177,17 @@ export async function apiDeleteMatch(matchId: string) {
     .eq("id", matchId);
 }
 
+// 경기 롤백: 저장된 델타로 서버에서 원자적으로 rp 역산 + 경기 삭제(동시성 안전).
+export async function apiRollbackMatch(classId: string, matchId: string) {
+  const { error } = await supabase.rpc("rollback_match", { p_class_id: classId, p_match_id: matchId });
+  if (error) throw error;
+}
+
+// RP 정합성 재계산(관리자): 현 시즌 경기 델타·감점 기준으로 rp를 다시 맞춘다.
+export async function apiRecomputeLeagueRp(classId: string) {
+  return supabase.rpc("recompute_league_rp", { p_class_id: classId });
+}
+
 export async function apiDeleteStudentMatches(studentId: string) {
   return supabase
     .from("matches")
@@ -442,6 +453,16 @@ export async function apiClaimPlayer(playerId: string) {
 // 방장: 멤버 ↔ 관리자 승격/강등
 export async function apiSetMemberAdmin(classId: string, uid: string, makeAdmin: boolean) {
   return supabase.rpc("set_member_admin", { p_class_id: classId, p_uid: uid, p_make_admin: makeAdmin });
+}
+
+// 관리자: 리그 멤버(uid·이메일·역할) 목록 — 연동 계정 조회용 (security definer, 관리자 전용)
+export async function apiGetLeagueMembers(classId: string) {
+  return supabase.rpc("get_league_members", { p_class_id: classId });
+}
+
+// 관리자: 선수 닉네임에서 계정 연동 해제 (user_id=null). 전적·명단 행은 보존.
+export async function apiUnlinkPlayer(playerId: string) {
+  return supabase.from("players").update({ user_id: null }).eq("id", playerId);
 }
 
 // 방장(최고관리자) 위임 — 소유권 이전 + 기존 방장은 공동방장으로 환원

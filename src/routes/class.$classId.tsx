@@ -6,6 +6,7 @@ import { Leaderboard } from "@/features/leaderboard/Leaderboard";
 import { DailyResults } from "@/components/league/DailyResults";
 import { MatchesTab } from "@/components/league/MatchesTab";
 import { ScheduledMatchBanner } from "@/components/league/ScheduledMatchBanner";
+import { PushPrompt } from "@/components/PushPrompt";
 import { PushToggle } from "@/components/PushToggle";
 import { AdminPanel } from "@/components/league/AdminPanel";
 import { Onboarding } from "@/features/onboarding/Onboarding";
@@ -458,6 +459,9 @@ function Index() {
         )}
         {/* 내가 배정된 호출 대진 입장 배너 (전 역할 공통) */}
         <ScheduledMatchBanner />
+
+        {/* 첫 방문 알림 켜기 안내(웹 푸시는 사용자가 직접 켜야만 가능) */}
+        <PushPrompt leagueId={classId} />
 
         {/* Tenant Panels */}
         {tab === "seasonSummary" && currentViewSeason !== "현재 시즌" && (

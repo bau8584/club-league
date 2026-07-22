@@ -3,7 +3,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { Users, Save, Trash2, ShieldAlert, HelpCircle, RotateCcw, ChevronDown, ClipboardPaste, UserPlus, Link2, Link2Off, ShieldCheck, Crown } from "lucide-react";
+import { Users, Save, Trash2, ShieldAlert, HelpCircle, RotateCcw, ChevronDown, ClipboardPaste, UserPlus, Link2, Link2Off, ShieldCheck, Crown, Copy, Check, X, Mail } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLeagueStore } from "@/lib/league-store";
 import type { Gender, Student, Match, TierName } from "@/lib/league-types";
@@ -55,7 +55,7 @@ function parseRoster(text: string): ParsedRow[] {
 }
 
 export function AdminStudentManage({ students, onDeleteStudent, thresholds }: AdminStudentManageProps) {
-  const { upsertStudents, updateStudentInfo, bulkUpdateStudents, fetchDeletedStudents, restoreDeletedStudent, hardDeleteStudent, levelMode, levels, ownerUid, adminUids, setMemberAdmin, transferOwnership, setCoOwner, coOwnerUids, isClassPrimaryOwner, isClassOwner } = useLeagueStore();
+  const { upsertStudents, updateStudentInfo, bulkUpdateStudents, fetchDeletedStudents, restoreDeletedStudent, hardDeleteStudent, levelMode, levels, ownerUid, adminUids, setMemberAdmin, transferOwnership, setCoOwner, coOwnerUids, isClassPrimaryOwner, isClassOwner, fetchLeagueMembers, unlinkPlayer } = useLeagueStore();
 
   // 최고관리자(원조 방장) 위임 — 되돌리기 어려우므로 2단계 확인
   const handleTransferOwnership = (uid: string, label: string) => {
@@ -69,6 +69,39 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
   const [trash, setTrash] = useState<DeletedStudent[]>([]);
   const [trashLoading, setTrashLoading] = useState(false);
   const [hardTarget, setHardTarget] = useState<{ id: string; name: string } | null>(null);
+
+  // ── 계정 연동 정보 팝업 ──
+  const [linkStudent, setLinkStudent] = useState<Student | null>(null);
+  const [members, setMembers] = useState<{ uid: string; email: string; role: string }[] | null>(null);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [unlinking, setUnlinking] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const openLink = async (s: Student) => {
+    setLinkStudent(s);
+    setCopied(false);
+    if (members === null && !membersLoading) {
+      setMembersLoading(true);
+      try { setMembers(await fetchLeagueMembers()); } finally { setMembersLoading(false); }
+    }
+  };
+  const linkedAccount = linkStudent?.userId ? (members?.find((m) => m.uid === linkStudent.userId) ?? null) : null;
+  const roleKo = (role?: string) => (role === "owner" ? "방장" : role === "admin" ? "관리자" : role === "member" ? "회원" : "");
+  const copyEmail = async () => {
+    if (!linkedAccount?.email) return;
+    try { await navigator.clipboard.writeText(linkedAccount.email); setCopied(true); toast.success("이메일을 복사했습니다."); }
+    catch { toast.error("복사에 실패했습니다. 직접 선택해 복사하세요."); }
+  };
+  const handleUnlink = async () => {
+    if (!linkStudent) return;
+    const nm = linkStudent.nickname || linkStudent.name;
+    if (!window.confirm(`${nm} 님의 계정 연동을 해제할까요?\n\n• 전적·명단 행은 그대로 보존됩니다.\n• 본인이 다시 로그인하면 닉네임을 다시 연동해야 합니다.`)) return;
+    setUnlinking(true);
+    try {
+      const ok = await unlinkPlayer(linkStudent.id);
+      if (ok) setLinkStudent(null);
+    } finally { setUnlinking(false); }
+  };
 
   const loadTrash = async () => {
     setTrashLoading(true);
@@ -212,7 +245,7 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
             onChange={(e) => setPasteText(e.target.value)}
             rows={6}
             placeholder={"예시)\nA조, 길동이\nA조, 철수\n영희"}
-            className="w-full rounded-lg bg-input border border-border/30 p-3 text-xs font-mono leading-relaxed focus:outline-none focus:ring-1 focus:ring-neon-blue"
+            className="w-full rounded-lg bg-input border border-border/30 p-3 text-xs font-code leading-relaxed focus:outline-none focus:ring-1 focus:ring-neon-blue"
           />
           <div className="flex items-center justify-between gap-2">
             <span className="text-[11px] text-muted-foreground">미리보기: <b className="text-foreground">{pastePreview.length}명</b> 인식됨</span>
@@ -295,11 +328,13 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
                     <td className="px-3 py-1.5"><input type="checkbox" checked={selected.has(s.id)} onChange={() => toggleSelect(s.id)} className="size-4 accent-neon-blue align-middle" /></td>
                     <td className="px-2 py-1.5">
                       <div className="flex items-center gap-1.5">
-                        {s.userId ? (
-                          <Link2 className="size-3.5 shrink-0 text-emerald-400" aria-label="구글 연동됨"><title>구글 계정 연동됨</title></Link2>
-                        ) : (
-                          <Link2Off className="size-3.5 shrink-0 text-muted-foreground/50" aria-label="미연동"><title>구글 계정 미연동</title></Link2Off>
-                        )}
+                        <button type="button" onClick={() => openLink(s)}
+                          className="shrink-0 rounded p-0.5 transition-colors hover:bg-accent/60 active:scale-95"
+                          title={s.userId ? "구글 계정 연동됨 · 클릭해 상세" : "미연동 · 클릭해 상세"}>
+                          {s.userId
+                            ? <Link2 className="size-3.5 text-emerald-400" aria-label="구글 연동됨" />
+                            : <Link2Off className="size-3.5 text-muted-foreground/50" aria-label="미연동" />}
+                        </button>
                         <Input type="text" value={r.nickname}
                           onChange={(e) => setField(s, { nickname: e.target.value })}
                           placeholder="(없음)"
@@ -535,6 +570,60 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* 계정 연동 정보 팝업 */}
+      {linkStudent && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" onClick={() => setLinkStudent(null)}>
+          <div className="relative w-full max-w-sm rounded-2xl border border-border/50 bg-background p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <button onClick={() => setLinkStudent(null)} title="닫기"
+              className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"><X className="size-5" /></button>
+            <div className="mb-4 flex items-center gap-2">
+              {linkStudent.userId ? <Link2 className="size-5 text-emerald-400" /> : <Link2Off className="size-5 text-muted-foreground/60" />}
+              <h3 className="text-base font-black text-foreground">계정 연동 정보</h3>
+            </div>
+
+            <div className="mb-3 flex items-center gap-2">
+              <span className="text-sm font-bold text-foreground">{linkStudent.nickname || linkStudent.name}</span>
+              {linkStudent.userId && linkedAccount && (
+                <span className="rounded-full border border-neon-blue/30 bg-neon-blue/10 px-2 py-0.5 text-[10px] font-black text-neon-blue">{roleKo(linkedAccount.role)}</span>
+              )}
+            </div>
+
+            {!linkStudent.userId ? (
+              <div className="rounded-xl border border-dashed border-border/40 bg-muted/15 px-3 py-4 text-center text-xs text-muted-foreground">
+                아직 구글 계정과 연동되지 않았습니다.<br />회원이 로그인한 뒤 이 닉네임을 직접 연동합니다.
+              </div>
+            ) : (
+              <>
+                <div className="rounded-xl border border-border/40 bg-muted/15 px-3 py-2.5">
+                  <p className="text-[10px] font-bold text-muted-foreground">연동된 구글 계정</p>
+                  <div className="mt-1 flex items-center gap-2">
+                    <Mail className="size-3.5 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 flex-1 truncate font-mono text-sm text-foreground">
+                      {membersLoading ? "불러오는 중..." : (linkedAccount?.email ?? "이메일을 확인할 수 없음")}
+                    </span>
+                    {linkedAccount?.email && (
+                      <button onClick={copyEmail} title="이메일 복사"
+                        className="shrink-0 rounded-md border border-border/50 p-1.5 text-muted-foreground transition-colors hover:border-neon-blue/40 hover:text-foreground">
+                        {copied ? <Check className="size-3.5 text-emerald-400" /> : <Copy className="size-3.5" />}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
+                  연동을 해제하면 이 닉네임과 계정의 연결만 끊깁니다. <b className="text-foreground">전적·명단 행은 보존</b>되며, 본인이 다시 로그인하면 닉네임을 다시 연동해야 합니다.
+                </p>
+
+                <button onClick={handleUnlink} disabled={unlinking}
+                  className="mt-4 flex w-full items-center justify-center gap-1.5 rounded-xl border border-destructive/40 bg-destructive/10 py-2.5 text-sm font-black text-destructive transition-all hover:bg-destructive/20 active:scale-[0.98] disabled:opacity-50">
+                  <Link2Off className="size-4" /> {unlinking ? "해제 중..." : "계정 연동 끊기"}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </Card>
   );
 }

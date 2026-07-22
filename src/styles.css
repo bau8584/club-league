@@ -4,7 +4,40 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ── NIXGONFONTS 2.0 (라운드 고딕) — 디스플레이/강조/숫자용 ──────────
+   원본 TTF(각 ~0.9MB)를 현대 한글 전체 + 영문·숫자로 서브셋해 woff2로 변환.
+   단일 패밀리 'Nixgon'에 3웨이트를 매핑 → 요소의 font-weight로 자동 선택
+   (L=300 / M=500 / B=700). 본문은 기존 Inter/system 유지. */
+@font-face {
+  font-family: 'Nixgon';
+  src: url('/fonts/nixgon-light.woff2') format('woff2');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Nixgon';
+  src: url('/fonts/nixgon-medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Nixgon';
+  src: url('/fonts/nixgon-bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 @theme inline {
+  /* 디스플레이 폰트(닉스곤) — .font-display 유틸리티 생성. 본문 폰트와 분리. */
+  --font-display: 'Nixgon', 'Inter', system-ui, -apple-system, sans-serif;
+  /* 이 앱은 숫자/RP/전적을 관례적으로 .font-mono 로 표기한다. "숫자도 닉스곤" 방침에 따라
+     mono 토큰을 닉스곤 우선으로 재정의 — 닉스곤 숫자는 이미 고정폭(tabular)이라 정렬이 유지된다.
+     진짜 코드/모노스페이스가 필요한 곳(에러 스택·대량입력·초대코드)은 .font-code 사용. */
+  --font-mono: 'Nixgon', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-code: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -272,8 +305,16 @@
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
   }
 
+  /* 제목: 디스플레이 폰트(닉스곤) + 살짝 타이트한 자간 */
   h1, h2, h3, h4 {
+    font-family: var(--font-display);
     letter-spacing: -0.02em;
+  }
+
+  /* 숫자 통계(RP·티어·전적 등 tabular-nums 사용처)에도 디스플레이 폰트 적용.
+     라운드 숫자의 흔들림을 막기 위해 tabular-nums는 그대로 유지되어 세로 정렬됨. */
+  .tabular-nums {
+    font-family: var(--font-display);
   }
 }
 

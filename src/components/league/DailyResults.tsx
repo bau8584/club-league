@@ -14,7 +14,7 @@ const sameDay = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
 export function DailyResults() {
-  const { matches, students, tierThresholds } = useLeagueStore();
+  const { matches, students, tierThresholds, deletedById } = useLeagueStore();
   const [date, setDate] = useState<Date>(() => new Date());
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -47,9 +47,10 @@ export function DailyResults() {
 
   const byId = useMemo(() => {
     const m = new Map<string, Student>();
-    students.forEach((s) => m.set(s.id, s));
+    deletedById.forEach((s, id) => m.set(id, s)); // 삭제된 회원 이름 먼저
+    students.forEach((s) => m.set(s.id, s));        // 활성 회원이 우선
     return m;
-  }, [students]);
+  }, [students, deletedById]);
 
   // 선택일 경기 (최신순)
   const dayMatches = useMemo(() => {
