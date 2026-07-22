@@ -125,7 +125,7 @@ export function DailyResults() {
             <Calendar className="size-5" />
           </div>
           <div>
-            <h2 className="text-lg font-black tracking-tight text-foreground">오늘의 경기</h2>
+            <h2 className="text-lg font-black tracking-tight text-foreground">하이라이트</h2>
             <p className="text-[11px] text-muted-foreground">{dateLabel}{isToday && " · 오늘"}</p>
           </div>
         </div>

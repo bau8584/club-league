@@ -8,6 +8,8 @@ import { cn } from "@/lib/utils";
 import { useLeagueStore } from "@/lib/league-store";
 import type { Gender, Student, Match, TierName } from "@/lib/league-types";
 import { TierBadge } from "../TierBadge";
+import { AddMemberForm } from "../AddMemberForm";
+import { CURRENT_YEAR, normalizeBirthYear, yy2 } from "@/lib/birth-year";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -52,20 +54,6 @@ function parseRoster(text: string): ParsedRow[] {
   return out;
 }
 
-// 연생(출생연도) 선택 옵션: 약 10~89세 범위
-const CURRENT_YEAR = new Date().getFullYear();
-// 2자리 연생 입력(94, 01, 67)을 4자리(1994, 2001, 1967)로 인식. 빈값/무효 → null.
-function normalizeBirthYear(raw: string): number | null {
-  const t = (raw || "").trim();
-  if (!/^\d{1,4}$/.test(t)) return null;
-  const n = parseInt(t, 10);
-  if (t.length >= 3) return n; // 3~4자리는 그대로(전체 연도 입력)
-  const pivot = CURRENT_YEAR % 100; // 올해 두 자리 이하면 2000년대, 초과면 1900년대
-  return n <= pivot ? 2000 + n : 1900 + n;
-}
-// 4자리 연도 → 2자리 표기 (1994 → "94")
-const yy2 = (year?: number | null) => (year ? String(year % 100).padStart(2, "0") : "");
-
 export function AdminStudentManage({ students, onDeleteStudent, thresholds }: AdminStudentManageProps) {
   const { upsertStudents, updateStudentInfo, bulkUpdateStudents, fetchDeletedStudents, restoreDeletedStudent, hardDeleteStudent, levelMode, levels, ownerUid, adminUids, setMemberAdmin, transferOwnership, setCoOwner, coOwnerUids, isClassPrimaryOwner, isClassOwner } = useLeagueStore();
 
@@ -105,8 +93,6 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
 
   // 개인 추가
   const [addOpen, setAddOpen] = useState(false);
-  const [addForm, setAddForm] = useState<{ nickname: string; group: string; gender: Gender; birthYear: string }>({ nickname: "", group: "", gender: "U", birthYear: "" });
-  const [adding, setAdding] = useState(false);
 
   const availableGroups = useMemo(
     () => Array.from(new Set(students.map((s) => s.group || "").filter((g) => g))).sort((a, b) => a.localeCompare(b, "ko")),
@@ -178,23 +164,6 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
     } finally { setImporting(false); }
   };
 
-  const handleAdd = async () => {
-    const nickname = addForm.nickname.trim();
-    if (!nickname) { toast.error("닉네임을 입력하세요."); return; }
-    setAdding(true);
-    try {
-      await upsertStudents([{
-        name: nickname,
-        nickname,
-        group: addForm.group.trim() || null,
-        gender: addForm.gender,
-        birthYear: normalizeBirthYear(addForm.birthYear),
-      }]);
-      setAddForm({ nickname: "", group: "", gender: "U", birthYear: "" });
-      setAddOpen(false);
-    } finally { setAdding(false); }
-  };
-
   const runConfirm = async () => {
     if (!confirm) return;
     if (confirm.type === "delete") {
@@ -256,60 +225,8 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
       )}
 
       {addOpen && (
-        <div className="mb-5 rounded-xl border border-border/40 bg-muted/10 p-4 space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            <div>
-              <label className="text-[11px] font-bold text-muted-foreground">닉네임</label>
-              <Input value={addForm.nickname} onChange={(e) => setAddForm((f) => ({ ...f, nickname: e.target.value }))}
-                placeholder="닉네임" className="h-9 mt-1 bg-input border-border/30" />
-            </div>
-            <div>
-              <label className="text-[11px] font-bold text-muted-foreground">레벨 (선택)</label>
-              {usePresetLevels ? (
-                <select value={addForm.group} onChange={(e) => setAddForm((f) => ({ ...f, group: e.target.value }))}
-                  className="h-9 mt-1 w-full rounded-md bg-input border border-border/30 px-2 text-sm">
-                  <option value="">선택 안 함</option>
-                  {levels.map((lv) => <option key={lv.name} value={lv.name}>{lv.name}</option>)}
-                </select>
-              ) : (
-                <Input value={addForm.group} onChange={(e) => setAddForm((f) => ({ ...f, group: e.target.value }))}
-                  placeholder="레벨" className="h-9 mt-1 bg-input border-border/30" />
-              )}
-            </div>
-            <div>
-              <label className="text-[11px] font-bold text-muted-foreground">나이(연생) (선택)</label>
-              <Input
-                value={addForm.birthYear}
-                onChange={(e) => setAddForm((f) => ({ ...f, birthYear: e.target.value.replace(/[^0-9]/g, "").slice(0, 4) }))}
-                placeholder="연생 입력 (예: 94, 01)"
-                inputMode="numeric"
-                className="h-9 mt-1 bg-input border-border/30"
-              />
-              {addForm.birthYear && normalizeBirthYear(addForm.birthYear) && (
-                <span className="mt-0.5 block text-[10px] text-muted-foreground">
-                  {normalizeBirthYear(addForm.birthYear)}년생 · 만 {CURRENT_YEAR - normalizeBirthYear(addForm.birthYear)!}세
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1">
-              <span className="text-[11px] font-bold text-muted-foreground mr-1">성별</span>
-              {(["M", "F", "U"] as const).map((g) => (
-                <button key={g} type="button" onClick={() => setAddForm((f) => ({ ...f, gender: g }))}
-                  className={cn("h-7 px-2.5 rounded-md text-[11px] font-black border transition-all active:scale-95",
-                    addForm.gender === g
-                      ? (g === "M" ? "border-sky-500/60 bg-sky-500/20 text-sky-400" : g === "F" ? "border-pink-500/60 bg-pink-500/20 text-pink-400" : "border-neon-blue/60 bg-neon-blue/20 text-neon-blue")
-                      : "border-border/40 text-muted-foreground hover:text-foreground")}>
-                  {g === "M" ? "남" : g === "F" ? "녀" : "미정"}
-                </button>
-              ))}
-            </div>
-            <Button onClick={handleAdd} disabled={adding}
-              className="h-8 px-4 bg-neon-blue hover:bg-neon-blue/80 text-primary-foreground font-black text-[11px] rounded-lg disabled:opacity-40">
-              <UserPlus className="size-3.5 mr-1" /> 추가
-            </Button>
-          </div>
+        <div className="mb-5">
+          <AddMemberForm onAdded={() => setAddOpen(false)} />
         </div>
       )}
 

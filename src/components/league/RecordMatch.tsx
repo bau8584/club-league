@@ -2,9 +2,10 @@ import { useMemo, useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { TierBadge } from "./TierBadge";
+import { AddMemberForm } from "./AddMemberForm";
 import { GenderMark } from "./GenderMark";
 import { cn } from "@/lib/utils";
-import { Trophy, X, Sparkles, User, Users, Crown, Award, Zap, RotateCcw } from "lucide-react";
+import { Trophy, X, Sparkles, User, Users, Crown, Award, Zap, RotateCcw, UserPlus } from "lucide-react";
 import type { Student, Match, TierName } from "@/lib/league-types";
 import { getTier, getTierSubdivision, TIER_ORDER, getFullTierLabel, isUnranked } from "@/lib/league-types";
 import { toast } from "sonner";
@@ -19,7 +20,7 @@ function playerLabel(s: Student): string {
   return s.nickname || s.name;
 }
 
-type PlayerResult = {
+export type PlayerResult = {
   name: string;
   group: string | null;
   gender: "M" | "F" | "U";
@@ -58,7 +59,7 @@ type PlayerResult = {
   placementNeed: number;
 };
 
-type MatchResultData = {
+export type MatchResultData = {
   matchType: "single" | "double";
   winner: PlayerResult;
   winner2?: PlayerResult;
@@ -76,16 +77,21 @@ export function RecordMatch({
   rpVariables,
   onUpdateGender,
   lockedPlayerId,
+  presetResult,
+  onCloseResult,
 }: {
   students: Student[];
   lockedPlayerId?: string | null; // 설정 시 슬롯 A를 이 선수로 고정(일반회원 본인 경기 기록)
+  // 설정 시 입력 폼 대신 저장된 결과(영수증)를 그대로 띄우는 '뷰 전용' 모드
+  presetResult?: MatchResultData | null;
+  onCloseResult?: () => void;
   onRecord: (
-    playerAId: string, 
-    playerBId: string, 
-    scoreA: number, 
-    scoreB: number, 
-    playerA2Id?: string, 
-    playerB2Id?: string, 
+    playerAId: string,
+    playerBId: string,
+    scoreA: number,
+    scoreB: number,
+    playerA2Id?: string,
+    playerB2Id?: string,
     matchType?: "single" | "double"
   ) => Match | undefined;
   initials?: {
@@ -100,7 +106,7 @@ export function RecordMatch({
   rpVariables?: { winDelta: number; loseDelta: number };
   onUpdateGender?: (studentId: string, gender: "M" | "F" | "U") => void;
 }) {
-  const { isSyncing, placementEnabled, placementGames } = useLeagueStore();
+  const { isSyncing, placementEnabled, placementGames, isClassOwner, saveMatchBreakdown } = useLeagueStore();
   const [matchType, setMatchType] = useState<"single" | "double">("double");
   const [a, setA] = useState<Selection>(empty);
   const [a2, setA2] = useState<Selection>(empty);
@@ -114,6 +120,14 @@ export function RecordMatch({
   // Modal states
   const [showModal, setShowModal] = useState(false);
   const [resultData, setResultData] = useState<MatchResultData | null>(null);
+
+  // 뷰 전용: 저장된 결과가 주어지면 입력 없이 곧바로 영수증 모달을 띄운다.
+  useEffect(() => {
+    if (presetResult) {
+      setResultData(presetResult);
+      setShowModal(true);
+    }
+  }, [presetResult]);
 
   // 성별 정보 누락 자동 완성을 위한 상태
   const [genderModalOpen, setGenderModalOpen] = useState(false);
@@ -770,14 +784,18 @@ export function RecordMatch({
     const l2 = aWon ? playerB2 : playerA2;
 
     // 4. Set match result details for the modal
-    setResultData({
+    const built: MatchResultData = {
       matchType,
       winner: getPlayerResult(w1, aWon ? "A" : "B", true, winnerScore),
       winner2: w2 ? getPlayerResult(w2, aWon ? "A2" : "B2", true, winnerScore) : undefined,
       loser: getPlayerResult(l1, aWon ? "B" : "A", false, loserScore),
       loser2: l2 ? getPlayerResult(l2, aWon ? "B2" : "A2", false, loserScore) : undefined,
       aWon,
-    });
+    };
+    setResultData(built);
+
+    // 4-1. 결과 영수증을 DB에 저장 → 최근 경기 클릭 시 동일한 창으로 복원
+    saveMatchBreakdown(matchObj.id, built);
 
     // 5. Open popup modal
     setShowModal(true);
@@ -1029,6 +1047,8 @@ export function RecordMatch({
 
   return (
     <div className="space-y-6">
+      {/* 뷰 전용(presetResult) 모드에서는 입력 폼을 숨기고 결과 모달만 띄운다 */}
+      {!presetResult && (<>
       {/* 단식 / 복식 경기 방식 선택 토글 */}
       <div className="flex justify-center mb-6">
         <div className="inline-flex rounded-xl bg-muted/40 p-1 border border-border/30 backdrop-blur">
@@ -1107,6 +1127,7 @@ export function RecordMatch({
                 thresholds={thresholds}
                 placementEnabled={placementEnabled}
                 placementGames={placementGames}
+                canAddMember={isClassOwner}
               />
             )}
           </div>
@@ -1155,6 +1176,7 @@ export function RecordMatch({
           </>
         )}
       </Button>
+      </>)}
 
       {/* Match Result Modal Popup */}
       {showModal && resultData && (() => {
@@ -1298,7 +1320,7 @@ export function RecordMatch({
             <div
               className={cn(
                 "relative my-auto w-full max-w-5xl overflow-hidden border bg-surface-deep rounded-2xl p-4 md:p-6 flex flex-col items-center animate-in zoom-in duration-300",
-                isRankUp ? `animate-glow-${promotedTier.toLowerCase()}` : "border-neon-blue/30 glow-primary animate-glow-pulse"
+                isRankUp ? `animate-glow-${promotedTier.toLowerCase()}` : "result-modal border-neon-blue/30 glow-primary animate-glow-pulse"
               )}
             >
               {/* Embedded custom CSS */}
@@ -1575,15 +1597,16 @@ export function RecordMatch({
                   onClick={() => {
                     setShowModal(false);
                     setResultData(null);
+                    onCloseResult?.();
                   }}
                   className={cn(
-                    "h-12 px-12 text-foreground font-black uppercase tracking-widest active:scale-95 transition-all w-full sm:w-auto rounded-lg border",
-                    isRankUp 
+                    "result-close-btn h-12 px-12 text-foreground font-black uppercase tracking-widest active:scale-95 transition-all w-full sm:w-auto rounded-lg border",
+                    isRankUp
                       ? "bg-gradient-to-r from-win via-win to-win hover:from-win hover:to-win border-win/40 shadow-[0_0_25px_rgba(16,185,129,0.35)]"
                       : "bg-gradient-to-r from-neon-blue via-neon-blue to-neon-blue hover:from-neon-blue hover:to-neon-blue border-neon-blue/40 glow-primary"
                   )}
                 >
-                  확인 (다음 경기)
+                  {presetResult ? "닫기" : "확인 (다음 경기)"}
                 </Button>
               </div>
 
@@ -1777,14 +1800,15 @@ function Slot({ accent, label, player, active, locked, onOpen, onClear, threshol
 }
 
 // 선수 선택 picker: 검색 → 레벨 칩 → 선수 목록 (한 번에 1개만 펼쳐짐)
-function PlayerPicker({ students, accent, group, onPick, thresholds, placementEnabled, placementGames }: {
+function PlayerPicker({ students, accent, group, onPick, thresholds, placementEnabled, placementGames, canAddMember }: {
   students: Student[]; accent: Accent; group: string | null;
   onPick: (group: string, studentId: string) => void; thresholds?: Record<string, number>;
-  placementEnabled: boolean; placementGames: number;
+  placementEnabled: boolean; placementGames: number; canAddMember?: boolean;
 }) {
   const a = ACCENT[accent];
   const [search, setSearch] = useState("");
   const [grp, setGrp] = useState<string>(group ?? ALL_GROUP);
+  const [addOpen, setAddOpen] = useState(false);
 
   const activeGroups = useMemo(() => {
     const set = new Set<string>();
@@ -1839,10 +1863,35 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
             <div className="mt-1.5 flex w-full shrink-0 justify-center"><TierBadge rp={s.rp} thresholds={thresholds} unranked={isUnranked(s, placementEnabled, placementGames)} /></div>
           </button>
         ))}
-        {roster.length === 0 && (
+        {roster.length === 0 && !canAddMember && (
           <span className="col-span-full block py-2 text-xs text-muted-foreground">선수가 없습니다</span>
         )}
+        {canAddMember && (
+          <button
+            type="button"
+            onClick={() => setAddOpen(true)}
+            className="flex min-h-[4.75rem] w-full flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-neon-blue/40 bg-surface-deep px-2 py-2.5 text-center text-neon-blue transition-all hover:border-neon-blue/70 hover:bg-neon-blue/5 active:scale-95 cursor-pointer"
+          >
+            <UserPlus className="size-5" />
+            <span className="text-xs font-bold">회원 추가</span>
+          </button>
+        )}
       </div>
+
+      {/* 회원 추가 팝업 — 관리자 전용. 추가된 회원은 목록에 나타남(자동 선택 안 함). */}
+      {addOpen && (
+        <div className="fixed inset-0 z-[105] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200" onClick={() => setAddOpen(false)}>
+          <div className="relative w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-sm font-black text-foreground flex items-center gap-1.5"><UserPlus className="size-4 text-neon-blue" /> 회원 추가</span>
+              <button type="button" onClick={() => setAddOpen(false)} title="닫기" className="rounded-lg p-1.5 text-muted-foreground hover:bg-surface-panel hover:text-foreground transition-all">
+                <X className="size-5" />
+              </button>
+            </div>
+            <AddMemberForm onAdded={() => setAddOpen(false)} className="bg-surface-deep" />
+          </div>
+        </div>
+      )}
     </Card>
   );
 }

@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { TierBadge } from "@/components/league/TierBadge";
 import { GenderMark } from "@/components/league/GenderMark";
 import { TitleBadge } from "@/components/league/TitleBadge";
+import { PlayerDetailSheet } from "@/components/league/PlayerDetailSheet";
 import { cn } from "@/lib/utils";
 import { Search, SlidersHorizontal, ChevronDown, X } from "lucide-react";
 import { getTier, isUnranked, TIER_ORDER, TIER_STYLES, type TierName, type Student } from "@/lib/league-types";
@@ -33,6 +34,8 @@ export function Leaderboard({
   const [gender, setGender] = useState<GenderFilter>("all");
   const [query, setQuery] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [detailStudent, setDetailStudent] = useState<Student | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
 
   const activeCount = (group.length > 0 ? 1 : 0) + (tier.length > 0 ? 1 : 0) + (gender !== "all" ? 1 : 0);
   const resetFilters = () => { setGroup([]); setTier([]); setGender("all"); };
@@ -184,7 +187,6 @@ export function Leaderboard({
             <thead>
               <tr className="border-b border-border/60 bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
                 <th className="px-2 py-3 text-left w-10 sm:w-14">순위</th>
-                <th className="px-3 py-3 text-left hidden sm:table-cell">레벨</th>
                 <th className="px-4 py-3 text-left">닉네임</th>
                 <th className="px-4 py-3 text-left">티어</th>
                 <th className="px-4 py-3 text-center hidden md:table-cell">최근 5경기</th>
@@ -200,21 +202,17 @@ export function Leaderboard({
                     <td className="px-2 py-3 font-bold tabular-nums w-10 sm:w-14">
                       <RankBadge rank={rank} />
                     </td>
-                    <td className="px-3 py-3 text-muted-foreground hidden sm:table-cell">{s.group || "-"}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2 font-semibold">
                         <GenderMark gender={s.gender} />
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2">
-                          <span className="flex items-center gap-1.5">
-                            {(() => { const t = getEquippedTitle(s); return t ? <TitleBadge title={t} /> : null; })()}
-                            {s.nickname || s.name}
-                          </span>
-                          {s.group && (
-                            <span className="text-[10px] text-muted-foreground sm:hidden">
-                              ({s.group})
-                            </span>
-                          )}
-                        </div>
+                        <button
+                          type="button"
+                          onClick={() => { setDetailStudent(s); setDetailOpen(true); }}
+                          className="flex items-center gap-1.5 text-left transition-colors hover:text-neon-blue active:scale-[0.98]"
+                        >
+                          {(() => { const t = getEquippedTitle(s); return t ? <TitleBadge title={t} /> : null; })()}
+                          <span>{s.nickname || s.name}</span>
+                        </button>
                         {getWinStreak(s.recent) >= 3 && (
                           <span
                             className="inline-flex items-center gap-0.5 rounded-full bg-orange-500/15 px-2 py-0.5 text-[10px] font-black text-orange-500 ring-1 ring-orange-500/30 animate-pulse shadow-[0_0_12px_rgba(249,115,22,0.2)]"
@@ -256,12 +254,20 @@ export function Leaderboard({
                 );
               })}
               {visible.length === 0 && (
-                <tr><td colSpan={6} className="px-4 py-10 text-center text-muted-foreground animate-pulse">조건에 맞는 선수가 없습니다.</td></tr>
+                <tr><td colSpan={5} className="px-4 py-10 text-center text-muted-foreground animate-pulse">조건에 맞는 선수가 없습니다.</td></tr>
               )}
             </tbody>
           </table>
         </div>
       </Card>
+
+      <PlayerDetailSheet
+        student={detailStudent}
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+        students={students}
+        thresholds={thresholds}
+      />
     </div>
   );
 }

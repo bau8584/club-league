@@ -53,6 +53,10 @@ export type ScheduledMatch = {
   player_b2_id: string | null;
   court: string | null;
   status: "waiting" | "called" | "done" | "cancelled" | "challenge";
+  player_ids?: string[] | null;      // 인원 소집 예약 참가자(팀 미정). 결과 입력 때 팀 확정.
+  result_match_id?: string | null;   // 완료 시 연결된 실제 경기(matches) id
+  notified_by?: string | null;       // 마지막으로 알림 보낸 선수 id
+  notified_at?: string | null;       // 마지막 알림 시각(ISO)
   created_at: string;
 };
 
@@ -149,6 +153,9 @@ export type Match = {
   willOfSteelBonusB?: number;
   willOfSteelBonusA2?: number;
   willOfSteelBonusB2?: number;
+
+  // 결과 영수증 완전 복원용 스냅샷(선수별 이전/최종RP·티어·보너스 내역). DB: rp_breakdown(jsonb)
+  rpBreakdown?: unknown | null;
 };
 
 /**

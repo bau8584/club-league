@@ -49,6 +49,11 @@ import {
   apiCreateScheduledMatch,
   apiUpdateScheduledStatus,
   apiDeleteScheduledMatch,
+  apiCreateReservation,
+  apiLinkScheduledResult,
+  apiUpdateReservationPlayers,
+  apiTouchReservationNotify,
+  apiSaveMatchBreakdown,
   apiCreateChallenge,
   apiRespondChallenge
 } from "@/services/league-api";
@@ -292,7 +297,8 @@ function useLeagueStoreInternal() {
         rpDeltaA2: m.rp_delta_winner2 ?? undefined,
         rpDeltaB2: m.rp_delta_loser2 ?? undefined,
         date: m.created_at || new Date().toISOString(),
-        matchType: m.winner2_id ? "double" : "single"
+        matchType: m.winner2_id ? "double" : "single",
+        rpBreakdown: m.rp_breakdown ?? null
       }));
 
       // 3. Fetch students - 관리 권한자(소유자/공동관리자/기록원)는 실명 포함 조회
@@ -716,6 +722,20 @@ function useLeagueStoreInternal() {
 
     return match;
   }, [students, matches, rpVariables, tierThresholds, currentClassId]);
+
+  // 결과 영수증 스냅샷 저장 — record_match_transaction(RPC) 삽입이 커밋될 때까지 잠깐 재시도
+  const saveMatchBreakdown = useCallback(async (matchId: string, breakdown: unknown): Promise<void> => {
+    // 로컬 상태에도 즉시 반영(방금 기록한 경기를 바로 클릭해도 보이도록)
+    setMatches((prev) => prev.map((m) => (m.id === matchId ? { ...m, rpBreakdown: breakdown } : m)));
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const { data, error } = await supabase
+        .from("matches").update({ rp_breakdown: breakdown }).eq("id", matchId).select("id");
+      if (!error && data && data.length > 0) return;
+      await new Promise((r) => setTimeout(r, 400));
+    }
+    // 마지막 시도(실패해도 치명적 아님)
+    await apiSaveMatchBreakdown(matchId, breakdown);
+  }, []);
 
   // ── RP 복원: 경기 기록을 rp=1000부터 시간순 재생해 최종 상태를 다시 계산 ──
   const replayStudents = useCallback((): Student[] => {
@@ -2827,10 +2847,16 @@ function useLeagueStoreInternal() {
     const { error } = await apiUpdateScheduledStatus(id, "called");
     if (error) { toast.error("호출 실패: " + error.message); return false; }
     if (cid) await loadScheduled(cid);
-    if (m) notifyPlayers([m.player_a_id, m.player_b_id, m.player_a2_id, m.player_b2_id], {
-      title: "🏸 경기 입장!", body: "운영진이 대진을 배정했어요. 코트로 입장하세요.",
-      url: cid ? `/class/${cid}` : "/", tag: `sched-${id}`,
-    });
+    if (m) {
+      // 예약(player_ids) / 관리자 대진(슬롯) 양쪽 참가자에게 입장 알림
+      const parts = (m.player_ids?.length
+        ? m.player_ids
+        : [m.player_a_id, m.player_b_id, m.player_a2_id, m.player_b2_id]).filter(Boolean) as string[];
+      notifyPlayers(parts, {
+        title: "🏸 경기 입장!", body: "운영진이 대진을 배정했어요. 코트로 입장하세요.",
+        url: cid ? `/class/${cid}` : "/", tag: `sched-${id}`,
+      });
+    }
     toast.success("입장 호출을 보냈습니다.");
     return true;
   }, [loadScheduled, scheduledMatches]);
@@ -2845,12 +2871,145 @@ function useLeagueStoreInternal() {
     return true;
   }, [loadScheduled]);
 
+  // 예약할 수 있는 권한: 관리자 또는 (자율 입력 모드에서) 연동된 회원
+  const canReserve = () => isClassManagerRef.current || (matchInputModeRef.current !== "admin-only" && !!myPlayerId);
+
+  // 한 사람이 동시에 참여 가능한 예약 최대 개수
+  const RESERVATION_MAX = 3;
+  const partsOfRow = (m: ScheduledMatch): string[] =>
+    ((m.player_ids?.length ? m.player_ids : [m.player_a_id, m.player_b_id, m.player_a2_id, m.player_b2_id]).filter(Boolean)) as string[];
+  const activeReservationCount = (pid: string): number =>
+    scheduledMatches.filter((m) => (m.status === "waiting" || m.status === "called") && partsOfRow(m).includes(pid)).length;
+  const nameOf = (pid: string) => { const s = students.find((x) => x.id === pid); return s ? (s.nickname || s.name) : "회원"; };
+
+  // 인원 소집 예약 생성 — 참가자에게만 푸시
+  const createReservation = useCallback(async (payload: {
+    playerIds: string[]; matchType?: "single" | "double"; court?: string | null;
+  }): Promise<boolean> => {
+    if (!canReserve()) { toast.error("예약 권한이 없습니다."); return false; }
+    const cid = currentClassIdRef.current;
+    if (!cid) return false;
+    if (payload.playerIds.length < 2) { toast.error("참가자를 2명 이상 선택하세요."); return false; }
+    // 관리자는 본인 미포함 예약 허용, 일반 회원은 본인이 포함된 경기만 예약 가능
+    if (!isClassManagerRef.current && (!myPlayerId || !payload.playerIds.includes(myPlayerId))) {
+      toast.error("본인이 포함된 경기만 예약할 수 있습니다."); return false;
+    }
+    // 한 사람 최대 3개 예약 제한
+    const over = payload.playerIds.find((pid) => activeReservationCount(pid) >= RESERVATION_MAX);
+    if (over) { toast.error(`${nameOf(over)}님은 이미 예약 ${RESERVATION_MAX}개에 참여 중이에요.`); return false; }
+    const { error } = await apiCreateReservation({ classId: cid, ...payload });
+    if (error) { toast.error("예약 실패: " + error.message); return false; }
+    await loadScheduled(cid);
+    notifyPlayers(payload.playerIds, {
+      title: "🏸 경기 예약!", body: "경기가 예약됐어요. 코트로 모이세요.",
+      url: `/class/${cid}`, tag: `resv-${Date.now()}`,
+    });
+    toast.success("경기를 예약했습니다.");
+    return true;
+  }, [loadScheduled, myPlayerId]);
+
+  // 예약 취소
+  const cancelReservation = useCallback(async (id: string): Promise<boolean> => {
+    if (!canReserve()) { toast.error("권한이 없습니다."); return false; }
+    // 관리자는 아무 예약이나 취소, 일반 회원은 본인이 참가한 예약만 취소
+    if (!isClassManagerRef.current) {
+      const m = scheduledMatches.find((x) => x.id === id);
+      const parts = m ? ((m.player_ids?.length
+        ? m.player_ids
+        : [m.player_a_id, m.player_b_id, m.player_a2_id, m.player_b2_id]).filter(Boolean) as string[]) : [];
+      if (!myPlayerId || !parts.includes(myPlayerId)) { toast.error("본인이 참가한 예약만 취소할 수 있습니다."); return false; }
+    }
+    const cid = currentClassIdRef.current;
+    const { error } = await apiDeleteScheduledMatch(id);
+    if (error) { toast.error("취소 실패: " + error.message); return false; }
+    if (cid) await loadScheduled(cid);
+    return true;
+  }, [loadScheduled, myPlayerId, scheduledMatches]);
+
+  // 예약을 실제 경기 결과에 연결 + 참가자에게 결과 푸시
+  const linkReservationResult = useCallback(async (
+    reservationId: string, matchId: string, participantIds: string[], summary: string,
+  ): Promise<void> => {
+    const cid = currentClassIdRef.current;
+    // 낙관적 제거: 결과 입력 즉시 예약 목록에서 사라지게 한다.
+    setScheduledMatches((prev) => prev.filter((m) => m.id !== reservationId));
+    const { error } = await apiLinkScheduledResult(reservationId, matchId);
+    if (error) { console.warn("[reservation] link failed", error); toast.error("예약 완료 처리 실패: " + error.message); }
+    if (cid) await loadScheduled(cid);
+    notifyPlayers(participantIds, {
+      title: "🏁 경기 결과 등록!", body: summary || "경기 결과가 등록됐어요. 확인해 보세요.",
+      // 푸시를 누르면 그 경기의 결과 창이 바로 뜨도록 match id 전달
+      url: cid ? `/class/${cid}?tab=matches&match=${matchId}` : "/", tag: `resv-result-${reservationId}`,
+    });
+  }, [loadScheduled]);
+
+  // 예약에서 나가기(내 이름만 제거) — 1명 이하만 남으면 예약 삭제
+  const leaveReservation = useCallback(async (id: string): Promise<boolean> => {
+    if (!myPlayerId) return false;
+    const cid = currentClassIdRef.current;
+    const m = scheduledMatches.find((x) => x.id === id);
+    if (!m) return false;
+    const ids = partsOfRow(m).filter((x) => x !== myPlayerId);
+    const { error } = ids.length <= 1
+      ? await apiDeleteScheduledMatch(id)
+      : await apiUpdateReservationPlayers(id, ids);
+    if (error) { toast.error("나가기 실패: " + error.message); return false; }
+    if (cid) await loadScheduled(cid);
+    toast.success(ids.length <= 1 ? "예약에서 나갔어요. (인원이 부족해 예약이 취소됐어요)" : "예약에서 나갔어요.");
+    return true;
+  }, [loadScheduled, myPlayerId, scheduledMatches]);
+
+  // 예약에 참가(내 이름 추가) / 관리자가 타인 추가
+  const joinReservation = useCallback(async (id: string, playerId?: string): Promise<boolean> => {
+    const cid = currentClassIdRef.current;
+    const pid = playerId ?? myPlayerId;
+    if (!pid) { toast.error("연동된 선수가 없어요."); return false; }
+    // 타인 추가는 관리자만
+    if (playerId && playerId !== myPlayerId && !isClassManagerRef.current) { toast.error("다른 사람은 관리자만 추가할 수 있어요."); return false; }
+    const m = scheduledMatches.find((x) => x.id === id);
+    if (!m) return false;
+    const ids = partsOfRow(m);
+    if (ids.includes(pid)) { toast.error("이미 이 예약에 참가 중이에요."); return false; }
+    if (activeReservationCount(pid) >= RESERVATION_MAX) { toast.error(`${nameOf(pid)}님은 이미 예약 ${RESERVATION_MAX}개에 참여 중이에요.`); return false; }
+    const { error } = await apiUpdateReservationPlayers(id, [...ids, pid]);
+    if (error) { toast.error("참가 실패: " + error.message); return false; }
+    if (cid) await loadScheduled(cid);
+    toast.success("예약에 참가했어요.");
+    return true;
+  }, [loadScheduled, myPlayerId, scheduledMatches, students]);
+
+  // 예약 참가자에게 '지금 코트로' 알림 — 1분 쿨다운, 발신자 기록(전원 사용 가능)
+  const notifyReservation = useCallback(async (id: string): Promise<boolean> => {
+    const cid = currentClassIdRef.current;
+    const m = scheduledMatches.find((x) => x.id === id);
+    if (!m) return false;
+    if (m.notified_at && Date.now() - new Date(m.notified_at).getTime() < 60_000) {
+      toast.error("방금 알림을 보냈어요. 1분 뒤에 다시 보낼 수 있어요."); return false;
+    }
+    const parts = partsOfRow(m);
+    await apiTouchReservationNotify(id, myPlayerId ?? null);
+    if (cid) await loadScheduled(cid);
+    notifyPlayers(parts, {
+      title: "🏸 지금 코트로!", body: `${myPlayerId ? nameOf(myPlayerId) : "누군가"}님이 경기 알림을 보냈어요.`,
+      url: cid ? `/class/${cid}?tab=matches` : "/", tag: `resv-call-${id}`,
+    });
+    toast.success("알림을 보냈어요.");
+    return true;
+  }, [loadScheduled, myPlayerId, scheduledMatches, students]);
+
   // 도전장 보내기 (회원) — 내 연동 선수가 상대를 지목
   const createChallenge = useCallback(async (targetPlayerId: string): Promise<boolean> => {
     const cid = currentClassIdRef.current;
     if (!cid) return false;
     if (!myPlayerId) { toast.error("연동된 선수가 없어 도전장을 보낼 수 없습니다."); return false; }
     if (myPlayerId === targetPlayerId) { toast.error("자신에게는 도전할 수 없습니다."); return false; }
+    // 이미 진행 중인 도전장/예약(대기·호출)에 두 사람이 함께 있으면 중복 방지
+    const dup = scheduledMatches.some((m) => {
+      if (!(m.status === "challenge" || m.status === "waiting" || m.status === "called")) return false;
+      const parts = ((m.player_ids?.length ? m.player_ids : [m.player_a_id, m.player_b_id, m.player_a2_id, m.player_b2_id]).filter(Boolean)) as string[];
+      return parts.includes(myPlayerId) && parts.includes(targetPlayerId);
+    });
+    if (dup) { toast.error("이미 이 상대와 진행 중인 도전장/예약이 있어요."); return false; }
     const { error } = await apiCreateChallenge({ classId: cid, challengerId: myPlayerId, targetId: targetPlayerId });
     if (error) { toast.error("도전장 전송 실패: " + error.message); return false; }
     await loadScheduled(cid);
@@ -2860,7 +3019,7 @@ function useLeagueStoreInternal() {
     });
     toast.success("도전장을 보냈습니다! ⚔️");
     return true;
-  }, [myPlayerId, loadScheduled]);
+  }, [myPlayerId, loadScheduled, scheduledMatches]);
 
   // 도전장 응답 (지목당한 회원) — 수락(입장)/거절
   const respondChallenge = useCallback(async (id: string, accept: boolean): Promise<boolean> => {
@@ -3233,6 +3392,13 @@ function useLeagueStoreInternal() {
     createScheduledMatch,
     callScheduledMatch,
     removeScheduledMatch,
+    createReservation,
+    cancelReservation,
+    linkReservationResult,
+    leaveReservation,
+    joinReservation,
+    notifyReservation,
+    saveMatchBreakdown,
     createChallenge,
     respondChallenge,
     tierSettings,

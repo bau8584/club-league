@@ -38,7 +38,11 @@ export function ScheduledMatchBanner() {
       const created = m.created_at ? new Date(m.created_at).getTime() : now;
       if (now - created > RECENT_MS) return false;
       if (m.status === "called") {
-        return [m.player_a_id, m.player_b_id, m.player_a2_id, m.player_b2_id].includes(myPlayerId);
+        // 예약(player_ids) / 관리자 대진(슬롯) 양쪽에서 내가 참가자인지 확인
+        const parts = (m.player_ids?.length
+          ? m.player_ids
+          : [m.player_a_id, m.player_b_id, m.player_a2_id, m.player_b2_id]).filter(Boolean) as string[];
+        return parts.includes(myPlayerId);
       }
       if (m.status === "challenge") {
         // 지목당한 사람(=player_b)에게만 도전장 배너
@@ -55,6 +59,11 @@ export function ScheduledMatchBanner() {
 
   const current = mine[0];
   const isChallenge = current.status === "challenge";
+  // 예약 호출: 팀 미정(참가자 풀). 관리자 대진/도전장은 A/B 팀 확정.
+  const isReservation = !isChallenge && (current.player_ids?.length ?? 0) > 0;
+  const reservationOthers = isReservation
+    ? teamLabel((current.player_ids || []).filter((id) => id && id !== myPlayerId))
+    : "";
 
   // 입장(called): 상대팀 / 도전장: 도전자(player_a)
   const myTeam = [current.player_a_id, current.player_a2_id].includes(myPlayerId)
@@ -104,11 +113,18 @@ export function ScheduledMatchBanner() {
           </p>
 
           <div className="mt-6 w-full space-y-3 rounded-2xl border border-border/40 bg-muted/20 p-5">
-            <div className="flex items-center justify-center gap-3 text-lg font-black">
-              <span className="text-neon-blue">나{partner ? ` · ${partner}` : ""}</span>
-              <span className="text-xs font-black text-muted-foreground">VS</span>
-              <span className="text-foreground">{opponent || "상대"}</span>
-            </div>
+            {isReservation ? (
+              <div className="flex flex-col items-center gap-1 text-center">
+                <span className="text-lg font-black text-neon-blue">나{reservationOthers ? ` · ${reservationOthers}` : ""}</span>
+                <span className="text-[11px] font-bold text-muted-foreground">팀은 코트에서 정하세요</span>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center gap-3 text-lg font-black">
+                <span className="text-neon-blue">나{partner ? ` · ${partner}` : ""}</span>
+                <span className="text-xs font-black text-muted-foreground">VS</span>
+                <span className="text-foreground">{opponent || "상대"}</span>
+              </div>
+            )}
             <div className="flex items-center justify-center gap-2 text-[11px] font-bold text-muted-foreground">
               <span>{current.match_type === "double" ? "복식" : "단식"}</span>
               {current.court && <><span>·</span><span>{current.court}</span></>}

@@ -16,9 +16,10 @@ import {
   Zap, 
   User, 
   Users, 
-  ChevronRight, 
-  Medal, 
-  Percent 
+  ChevronRight,
+  ChevronDown,
+  Medal,
+  Percent
 } from "lucide-react";
 import { 
   getTier, 
@@ -82,6 +83,8 @@ export function MyRecord({
 
   // 최근 경기 더보기: 기본 5개, 버튼마다 +5
   const [visibleCount, setVisibleCount] = useState(5);
+  // 최근 전적은 티어순위표·경기 탭에도 나오므로 기본은 접어 화면을 간결하게(경기별 RP 변동 확인 시 펼침)
+  const [recentOpen, setRecentOpen] = useState(false);
 
   // 3. 승률 및 티어 진척도 계산
   const stats = useMemo(() => {
@@ -423,8 +426,12 @@ export function MyRecord({
 
       {/* 3. 최근 전적 타임라인 리스트 */}
       <Card className="border-border/60 bg-card/45 backdrop-blur-xl shadow-lg">
-        <CardHeader className="pb-3 border-b border-border/30">
-          <div className="flex items-center justify-between">
+        <CardHeader className={cn("pb-3", recentOpen && "border-b border-border/30")}>
+          <button
+            type="button"
+            onClick={() => setRecentOpen((v) => !v)}
+            className="flex w-full items-center justify-between text-left"
+          >
             <div>
               <span className="text-[10px] font-black uppercase tracking-wider text-neon-blue">History Timeline</span>
               <CardTitle className="text-lg font-black tracking-tight text-foreground flex items-center gap-1.5 mt-0.5">
@@ -432,12 +439,14 @@ export function MyRecord({
                 나의 최근 경기 전적
               </CardTitle>
             </div>
-            <span className="text-xs text-muted-foreground font-semibold">
+            <span className="flex items-center gap-2 text-xs text-muted-foreground font-semibold">
               최근 경기수 <span className="font-bold text-foreground">{myMatches.length}</span>건
+              <ChevronDown className={cn("size-4 transition-transform", recentOpen && "rotate-180")} />
             </span>
-          </div>
+          </button>
         </CardHeader>
 
+        {recentOpen && (
         <CardContent className="p-0">
           {myMatches.length === 0 ? (
             <div className="text-center py-16 px-4">
@@ -569,6 +578,7 @@ export function MyRecord({
             </div>
           )}
         </CardContent>
+        )}
       </Card>
 
     </div>

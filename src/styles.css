@@ -289,6 +289,27 @@
   color: var(--strong);
 }
 
+/* 라이트 테마(모던/클레이): 경기 결과 모달의 파란 글로우/펄스 테두리 제거 + 은은한 중립 그림자.
+   (다크 테마의 시안 네온 연출은 그대로 유지) */
+[data-theme="modern"] .result-modal,
+[data-theme="clay"] .result-modal {
+  animation: none !important;
+  border-color: var(--border) !important;
+  box-shadow: 0 24px 70px oklch(0 0 0 / 0.14) !important;
+}
+/* 라이트 테마: 닫기 버튼을 테마 기본 버튼(고대비)으로 — 검정+안보이는 글자 방지 */
+[data-theme="modern"] .result-close-btn,
+[data-theme="clay"] .result-close-btn {
+  background-image: none !important;
+  background-color: var(--primary) !important;
+  color: var(--primary-foreground) !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+[data-theme="clay"] .result-close-btn {
+  border-radius: 9999px;
+}
+
 /* 클레이모피즘: 카드를 통통한 3D 점토로 (이중 그림자 + 인셋 하이라이트) */
 [data-theme="clay"] .theme-card {
   border-radius: 1.75rem;

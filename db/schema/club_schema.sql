@@ -107,6 +107,7 @@ create table if not exists public.matches (
   rp_delta_loser   int,   -- 패자에게 적용된 RP 변동
   rp_delta_winner2 int,   -- 복식 승리팀 파트너
   rp_delta_loser2  int,   -- 복식 패배팀 파트너
+  rp_breakdown jsonb,     -- 결과 영수증 완전 복원용(선수별 보너스 내역 스냅샷)
   season       text,
   status       text not null default 'confirmed',  -- confirmed | pending | rejected (승인모드용)
   created_at   timestamptz not null default now()
@@ -599,8 +600,12 @@ create table if not exists public.scheduled_matches (
   player_b_id   uuid references public.players(id) on delete cascade,
   player_a2_id  uuid references public.players(id) on delete set null,
   player_b2_id  uuid references public.players(id) on delete set null,
+  player_ids    uuid[] not null default '{}',    -- 인원 소집 예약 참가자(팀 미정)
   court         text,
   status        text not null default 'waiting', -- waiting | called | done | cancelled
+  result_match_id uuid references public.matches(id) on delete set null, -- 완료된 실제 경기 링크
+  notified_by   uuid references public.players(id) on delete set null,   -- 마지막으로 알림 보낸 사람
+  notified_at   timestamptz,                     -- 마지막 알림 시각(1분 쿨다운)
   created_by    uuid default auth.uid(),
   created_at    timestamptz not null default now()
 );

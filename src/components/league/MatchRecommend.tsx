@@ -16,11 +16,11 @@ import {
   Users,
   RotateCcw,
   UserCheck,
-  UserPlus,
   ChevronDown
 } from "lucide-react";
 import type { Student, Match } from "@/lib/league-types";
 import { getTier, isUnranked } from "@/lib/league-types";
+import { getTodayPlayerIds } from "@/lib/today-players";
 import { useLeagueStore } from "@/lib/league-store";
 import { toast } from "sonner";
 
@@ -84,6 +84,11 @@ const TIER_RANK_MAP: Record<string, number> = {
   Diamond: 5
 };
 
+// 적응형 완화: 후보가 이 수보다 적으면 하드 필터(오늘 참여자·최근 2경기 제외)를
+// 단계적으로 풀어 "항상 뭔가는 추천"되게 한다. 완화되어 섞이더라도 오늘 참여자는
+// 점수 우대로 상위에 오고, 최근 2경기 상대는 감점으로 하위에 간다(하드→소프트).
+const MIN_POOL = 4;
+
 export function MatchRecommend({
   students,
   matches,
@@ -96,6 +101,7 @@ export function MatchRecommend({
   onUpdateGender,
   isStudentView = false,
   isReadOnly = false,
+  canReserve = false,
 }: {
   students: Student[];
   matches: Match[];
@@ -119,6 +125,7 @@ export function MatchRecommend({
   onUpdateGender?: (studentId: string, gender: "M" | "F" | "U") => void;
   isStudentView?: boolean;
   isReadOnly?: boolean;
+  canReserve?: boolean;
 }) {
   const { dynamicBonuses, dynamicPenalties, tiers, placementEnabled, placementGames } = useLeagueStore();
   const unranked = (s: Student) => isUnranked(s, placementEnabled, placementGames);
@@ -126,6 +133,8 @@ export function MatchRecommend({
   // Local states for MatchRecommend 2.0
   const [gameType, setGameType] = useState<"single" | "double">("double");
   const [selectedTeammateId, setSelectedTeammateId] = useState<string | null>(null);
+  // 추천 대상 범위: 기본은 오늘 경기한 사람만(체크), 해제하면 전체 회원
+  const [todayOnly, setTodayOnly] = useState(true);
 
   // 동호회: 다른 레벨 매칭 시 대상 레벨(문자열). 학년/반 숫자 prop 대신 로컬 상태로 관리.
   const [targetGroup, setTargetGroup] = useState<string | null>(null);
@@ -195,6 +204,12 @@ export function MatchRecommend({
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [students]);
+
+  // 오늘 한 번이라도 경기에 참여한 선수 id 집합 (추천 대상 기본 필터).
+  const todayPlayerIds = useMemo(() => getTodayPlayerIds(matches), [matches]);
+
+  // 추천 후보 범위 판정: "오늘 참여자만"이 꺼져 있거나 오늘 경기한 사람이면 포함.
+  const inTodayScope = (s: Student) => !todayOnly || todayPlayerIds.has(s.id);
 
   // 선택 단계: 레벨별 선수 목록
   const groupsForSel = availableGroups;
@@ -484,11 +499,23 @@ export function MatchRecommend({
   const singleRecommendations = useMemo(() => {
     if (!player || gameType !== "single") return [];
 
-    // 매칭 범위는 레벨와 무관하게 전체 회원 대상 (본인/제외 대상만 제외)
-    const candidates = students.filter((s) => !strictExcludedIds.has(s.id));
+    // 적응형 후보 풀: ①오늘 ∧ 최근2제외 → ②오늘 → ③전체(본인만 제외).
+    // 임계(MIN_POOL) 미만이면 다음 단계로 완화해 항상 후보가 나오게 한다.
+    const nonSelf = students.filter((s) => s.id !== player.id);
+    let candidates = nonSelf.filter((s) => inTodayScope(s) && !strictExcludedIds.has(s.id));
+    if (candidates.length < MIN_POOL) {
+      const todayPool = nonSelf.filter((s) => inTodayScope(s));
+      if (todayPool.length > candidates.length) candidates = todayPool;
+    }
+    if (candidates.length < MIN_POOL) candidates = nonSelf;
 
     const scored = candidates.map((candidate) => {
       let score = 100;
+
+      // 오늘 참여자 우대(완화로 명단이 섞여도 오늘 온 사람이 상위)
+      if (todayPlayerIds.has(candidate.id)) score += 60;
+      // 최근 2경기 상대는 감점(하드 제외를 소프트로 완화한 보완)
+      if (strictExcludedIds.has(candidate.id)) score -= 60;
 
       const rpGap = Math.abs(candidate.rp - player.rp);
 
@@ -558,7 +585,7 @@ export function MatchRecommend({
     return scored
       .sort((a, b) => b.score - a.score)
       .slice(0, 6);
-  }, [player, students, gameType, strictExcludedIds, mode, targetGroup, thresholds, recentOpponentIds]);
+  }, [player, students, gameType, strictExcludedIds, mode, targetGroup, thresholds, recentOpponentIds, todayPlayerIds, todayOnly]);
 
   // ----------------------------------------------------
   // [복식 1단계: 팀원 추천 엔진]
@@ -566,8 +593,10 @@ export function MatchRecommend({
   const partnerRecommendations = useMemo(() => {
     if (!player || gameType !== "double") return [];
 
-    // 파트너 후보: 레벨와 무관하게 본인 제외 전원. (추천은 점수순 정렬, 검색으로 직접 선택도 가능)
-    const candidates = students.filter((s) => s.id !== player.id);
+    // 적응형 파트너 후보: 오늘 참여자 → (임계 미만이면) 전체(본인만 제외).
+    const nonSelf = students.filter((s) => s.id !== player.id);
+    let candidates = nonSelf.filter((s) => inTodayScope(s));
+    if (candidates.length < MIN_POOL) candidates = nonSelf;
 
     // Partner history (last 5 double matches)
     const recentPartnerIds = new Set<string>();
@@ -582,6 +611,9 @@ export function MatchRecommend({
 
     const scored = candidates.map((candidate) => {
       let score = 100;
+
+      // 오늘 참여자 우대(완화로 명단이 섞여도 오늘 온 사람이 상위)
+      if (todayPlayerIds.has(candidate.id)) score += 40;
 
       const playerTier = getTier(player.rp, thresholds);
       const candidateTier = getTier(candidate.rp, thresholds);
@@ -628,7 +660,7 @@ export function MatchRecommend({
     });
 
     return scored.sort((a, b) => b.score - a.score);
-  }, [player, students, gameType, playerMatches, thresholds, dynamicBonuses]);
+  }, [player, students, gameType, playerMatches, thresholds, dynamicBonuses, todayPlayerIds, todayOnly]);
 
   // ----------------------------------------------------
   // [복식 2단계: 상대 팀 매칭 엔진]
@@ -641,8 +673,10 @@ export function MatchRecommend({
 
     const ourCombinedRp = player.rp + partner.rp;
 
-    // Opponent candidates pool — 레벨와 무관하게 전체 (본인/파트너 제외)
-    const oppCandidates = students.filter((s) => s.id !== player.id && s.id !== partner.id);
+    // 적응형 상대 후보: 오늘 참여자 → (임계 미만이면) 전체(본인·파트너 제외).
+    const nonSelf = students.filter((s) => s.id !== player.id && s.id !== partner.id);
+    let oppCandidates = nonSelf.filter((s) => inTodayScope(s));
+    if (oppCandidates.length < MIN_POOL) oppCandidates = nonSelf;
 
     if (oppCandidates.length < 2) return [];
 
@@ -658,6 +692,10 @@ export function MatchRecommend({
         const rpGap = Math.abs(ourCombinedRp - combinedRp);
 
         let score = 100;
+
+        // 오늘 참여자 우대(완화로 명단이 섞여도 오늘 온 팀이 상위)
+        if (todayPlayerIds.has(o1.id)) score += 30;
+        if (todayPlayerIds.has(o2.id)) score += 30;
 
         // RP gap penalty
         score -= rpGap * 1.5;
@@ -727,7 +765,7 @@ export function MatchRecommend({
     return pairs
       .sort((a, b) => b.score - a.score)
       .slice(0, 3);
-  }, [player, selectedTeammateId, students, gameType, mode, targetGroup, playerMatches, thresholds, recentOpponentIds, dynamicBonuses]);
+  }, [player, selectedTeammateId, students, gameType, mode, targetGroup, playerMatches, thresholds, recentOpponentIds, dynamicBonuses, todayPlayerIds, todayOnly]);
 
   const showPromptToSelect = useMemo(() => {
     if (!player) return false;
@@ -897,6 +935,26 @@ export function MatchRecommend({
         )}
       </div>
 
+      {/* 추천 대상 범위: 기본은 오늘 참여자만, 해제하면 전체 회원 */}
+      {player && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-surface-line bg-surface-deep px-3 py-2">
+          <label className="flex cursor-pointer items-center gap-2 text-[11px] font-bold text-soft select-none">
+            <input
+              type="checkbox"
+              checked={todayOnly}
+              onChange={(e) => setTodayOnly(e.target.checked)}
+              className="size-3.5 accent-neon-blue"
+            />
+            오늘 참여자만
+          </label>
+          <span className="text-[10px] text-muted-foreground">
+            {todayOnly
+              ? `오늘 경기한 ${todayPlayerIds.size}명 대상${todayPlayerIds.size === 0 ? " · 기록 없음 → 체크 해제" : ""}`
+              : "전체 회원 대상"}
+          </span>
+        </div>
+      )}
+
       {/* 2. Flat Single match recommendations */}
       {player && gameType === "single" && (
         <div className="space-y-4">
@@ -952,21 +1010,21 @@ export function MatchRecommend({
                       </div>
 
                       {/* Action Button */}
-                      {isStudentView ? (
-                        <div className="mt-5 w-full text-center py-2 rounded-lg border border-neon-blue/30 bg-neon-blue/5 text-neon-blue text-xs font-black tracking-wide">
-                          추천 라이벌
-                        </div>
-                      ) : isReadOnly ? (
-                        <div className="mt-5 w-full text-center py-2 rounded-lg border border-surface-line bg-surface-panel text-soft text-xs font-bold tracking-wide">
-                          경기하기 (읽기 전용)
-                        </div>
-                      ) : (
+                      {canReserve ? (
                         <Button
                           onClick={() => onSelectRecommendedMatch(player.id, s.id, undefined, undefined, "single")}
                           className="mt-5 w-full bg-gradient-to-r from-neon-blue to-tier-diamond hover:opacity-90 text-slate-950 font-bold active:scale-[0.98] transition-all text-xs"
                         >
-                          이 회원과 경기하기
+                          이 대진으로 예약
                         </Button>
+                      ) : isReadOnly ? (
+                        <div className="mt-5 w-full text-center py-2 rounded-lg border border-surface-line bg-surface-panel text-soft text-xs font-bold tracking-wide">
+                          예약 (읽기 전용)
+                        </div>
+                      ) : (
+                        <div className="mt-5 w-full text-center py-2 rounded-lg border border-neon-blue/30 bg-neon-blue/5 text-neon-blue text-xs font-black tracking-wide">
+                          추천 라이벌
+                        </div>
                       )}
                     </Card>
                   );
@@ -976,7 +1034,7 @@ export function MatchRecommend({
                   <AlertCircle className="size-10 text-soft mb-2" />
                   <div className="text-sm font-bold text-strong">추천할 수 있는 대전 상대가 없습니다.</div>
                   <p className="text-xs text-soft mt-1 max-w-sm">
-                    지정된 범위에 등록된 다른 회원이 없거나 최근 2경기 이내에 치른 대결자 중복방지 필터링으로 인해 후보군이 비어 있습니다.
+                    명단에 본인 외 다른 회원이 없습니다. 회원을 추가한 뒤 다시 시도해 주세요.
                   </p>
                 </Card>
               )}
@@ -1205,21 +1263,21 @@ export function MatchRecommend({
                             </div>
 
                             {/* Action Trigger */}
-                            {isStudentView ? (
-                              <div className="mt-5 w-full text-center py-2 rounded-lg border border-neon-green/30 bg-neon-green/5 text-neon-green text-xs font-black tracking-wide">
-                                추천 복식 라이벌
-                              </div>
-                            ) : isReadOnly ? (
-                              <div className="mt-5 w-full text-center py-2 rounded-lg border border-surface-line bg-surface-panel text-soft text-xs font-bold tracking-wide">
-                                경기하기 (읽기 전용)
-                              </div>
-                            ) : (
+                            {canReserve ? (
                               <Button
                                 onClick={() => onSelectRecommendedMatch(player.id, pair.o1.id, selectedTeammate!.id, pair.o2.id, "double")}
                                 className="mt-5 w-full bg-gradient-to-r from-neon-green to-emerald-400 hover:opacity-90 text-slate-950 font-bold active:scale-[0.98] transition-all text-xs"
                               >
-                                이 팀과 경기하기
+                                이 대진으로 예약
                               </Button>
+                            ) : isReadOnly ? (
+                              <div className="mt-5 w-full text-center py-2 rounded-lg border border-surface-line bg-surface-panel text-soft text-xs font-bold tracking-wide">
+                                예약 (읽기 전용)
+                              </div>
+                            ) : (
+                              <div className="mt-5 w-full text-center py-2 rounded-lg border border-neon-green/30 bg-neon-green/5 text-neon-green text-xs font-black tracking-wide">
+                                추천 복식 라이벌
+                              </div>
                             )}
                           </Card>
                         );

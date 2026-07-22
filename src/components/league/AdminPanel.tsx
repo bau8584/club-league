@@ -17,8 +17,7 @@ import {
   Settings,
   UserPlus,
   ChevronDown,
-  Moon,
-  Megaphone
+  Moon
 } from "lucide-react";
 import type { Gender, Student, Match, TierName, TierSettings, DynamicBonuses, DynamicPenalties } from "@/lib/league-types";
 import { useLeagueStore, type ActiveBonuses } from "@/lib/league-store";
@@ -43,7 +42,6 @@ import { AdminMatchRecords } from "./admin/AdminMatchRecords";
 import { SeasonManagePanel } from "./admin/SeasonManagePanel";
 import { CurrentSeasonPanel } from "./admin/CurrentSeasonPanel";
 import { DecayManager } from "./admin/DecayManager";
-import { MatchScheduler } from "./admin/MatchScheduler";
 import { RpRecoveryPanel } from "./admin/RpRecoveryPanel";
 
 type Row = { grade: number; classNum: number; number: number; name: string; gender?: Gender };
@@ -53,7 +51,6 @@ const ADMIN_MENU_ITEMS = [
   { id: "settings", label: "리그 글로벌 설정", icon: Settings, desc: "리그 이름, 티어, RP 규칙 설정" },
   { id: "studentManage", label: "회원 관리", icon: User, desc: "회원 명단, RP·나이 수정 및 삭제" },
   { id: "matchRecords", label: "리그 기록 관리", icon: Swords, desc: "전체 경기 조회, 점수 수정/삭제" },
-  { id: "scheduler", label: "대진 호출", icon: Megaphone, desc: "대진 배정·입장 호출(실시간 알림)" },
   { id: "decay", label: "휴면 감점", icon: Moon, desc: "티어별 감점 설정·실시·내역" },
   { id: "dataManage", label: "데이터 관리", icon: Database, desc: "JSON 백업 다운로드 및 복원" },
   { id: "seasonManage", label: "시즌 관리", icon: Calendar, desc: "시즌 초기화 및 신규 시즌 생성" },
@@ -412,11 +409,6 @@ export function AdminPanel({
         )}
         {activeTab === "studentManage" && isOwner && (
           <div className="mt-6"><LevelManager /></div>
-        )}
-
-        {/* scheduler Tab — 대진 호출(관리자 접근) */}
-        {activeTab === "scheduler" && (
-          <MatchScheduler />
         )}
 
         {/* decay Tab — 휴면 감점 설정·실시·내역 */}

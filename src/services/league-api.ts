@@ -120,6 +120,41 @@ export async function apiUpdateScheduledStatus(id: string, status: "waiting" | "
   return supabase.from("scheduled_matches").update({ status }).eq("id", id);
 }
 
+// 인원 소집 예약 — 팀 미정, 참가자만 지정(player_ids). 결과 입력 때 팀이 확정된다.
+export async function apiCreateReservation(payload: {
+  classId: string;
+  playerIds: string[];
+  matchType?: "single" | "double";
+  court?: string | null;
+}) {
+  return supabase.from("scheduled_matches").insert({
+    league_id: payload.classId,
+    match_type: payload.matchType ?? "double",
+    player_ids: payload.playerIds,
+    court: payload.court ?? null,
+    status: "waiting",
+  });
+}
+
+// 예약을 실제 경기 결과(matches 행)에 연결하고 완료 처리
+export async function apiLinkScheduledResult(id: string, matchId: string) {
+  return supabase.from("scheduled_matches")
+    .update({ status: "done", result_match_id: matchId })
+    .eq("id", id);
+}
+
+// 예약 참가자(player_ids) 수정 — 참가/빼기/추가
+export async function apiUpdateReservationPlayers(id: string, playerIds: string[]) {
+  return supabase.from("scheduled_matches").update({ player_ids: playerIds }).eq("id", id);
+}
+
+// 알림 발신 기록(누가/언제) — 1분 쿨다운 계산 + 발신자 표시용
+export async function apiTouchReservationNotify(id: string, by: string | null) {
+  return supabase.from("scheduled_matches")
+    .update({ notified_by: by, notified_at: new Date().toISOString() })
+    .eq("id", id);
+}
+
 export async function apiDeleteScheduledMatch(id: string) {
   return supabase.from("scheduled_matches").delete().eq("id", id);
 }
@@ -390,6 +425,11 @@ export async function apiRecordMatchTransaction(payload: {
     p_rp_delta_loser2: payload.rpDeltaLoser2 ?? null
   });
   if (error) throw error;
+}
+
+// 결과 영수증 스냅샷 저장 (record_match_transaction RPC 성공 직후 호출)
+export async function apiSaveMatchBreakdown(matchId: string, breakdown: unknown) {
+  return supabase.from("matches").update({ rp_breakdown: breakdown }).eq("id", matchId);
 }
 
 // --- 일반 회원(self-signup) API ---

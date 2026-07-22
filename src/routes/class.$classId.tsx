@@ -4,18 +4,17 @@ import { useLeagueStore } from "@/lib/league-store";
 import { toast } from "sonner";
 import { Leaderboard } from "@/features/leaderboard/Leaderboard";
 import { DailyResults } from "@/components/league/DailyResults";
+import { MatchesTab } from "@/components/league/MatchesTab";
 import { ScheduledMatchBanner } from "@/components/league/ScheduledMatchBanner";
 import { PushToggle } from "@/components/PushToggle";
-import { RecordMatch } from "@/components/league/RecordMatch";
 import { AdminPanel } from "@/components/league/AdminPanel";
-import { MatchRecommend } from "@/components/league/MatchRecommend";
 import { Onboarding } from "@/features/onboarding/Onboarding";
 import { MyRecord } from "@/components/league/MyRecord";
 import { SeasonSummary } from "@/components/league/SeasonSummary";
 import { Toaster } from "@/components/ui/sonner";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { Crown, Swords, Trophy, Users, User, Pencil, Target, LogOut, School, ShieldAlert, BarChart3, ArrowLeft, Lock, MoreVertical, Palette, CalendarDays } from "lucide-react";
+import { Crown, Swords, Trophy, Users, User, Pencil, LogOut, School, ShieldAlert, BarChart3, ArrowLeft, Lock, MoreVertical, Palette, CalendarDays, RefreshCw, IdCard } from "lucide-react";
 import { ThemePicker } from "@/components/ThemePicker";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 
@@ -29,7 +28,7 @@ export const Route = createFileRoute("/class/$classId")({
   component: Index,
 });
 
-type Tab = "leaderboard" | "daily" | "recommend" | "record" | "memberRecord" | "admin" | "myRecord" | "seasonSummary";
+type Tab = "leaderboard" | "matches" | "daily" | "admin" | "myRecord" | "seasonSummary";
 
 function Index() {
   const { classId } = Route.useParams();
@@ -40,7 +39,6 @@ function Index() {
     title,
     setTitle,
     loadClassData,
-    recordMatch,
     upsertStudents,
     deleteMatch,
     resetStudent,
@@ -54,7 +52,6 @@ function Index() {
     createMyPlayer,
     levelMode,
     levels,
-    matchInputMode,
     session,
     logoutUser,
     tierThresholds,
@@ -91,74 +88,52 @@ function Index() {
   const myLinked = !!myPlayerId;
   const [linkOpen, setLinkOpen] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
-  const [recommendInitials, setRecommendInitials] = useState<{
-    playerAId: string;
-    playerBId: string;
-    playerA2Id?: string;
-    playerB2Id?: string;
-    matchType?: "single" | "double";
-  } | null>(null);
-
-  // Persistent Match Recommendation States (Elevated for Session Preservation)
-  const [recommendSel, setRecommendSel] = useState<{ grade: number | null; classNum: number | null; studentId: string | null }>({ grade: null, classNum: null, studentId: null });
-  const [recommendMode, setRecommendMode] = useState<"class" | "otherClass" | "otherGrade">("class");
-  const [recommendTargetGrade, setRecommendTargetGrade] = useState<number | null>(null);
-  const [recommendTargetClass, setRecommendTargetClass] = useState<number | null>(null);
+  // 결과 푸시(?match=<id>)로 진입하면 경기 탭에서 그 경기 결과 창을 연다
+  const [openMatchId, setOpenMatchId] = useState<string | null>(
+    () => (typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("match") : null)
+  );
 
   // Role-based default tab redirect on session login
   useEffect(() => {
     if (session) {
-      if (session.role === "STUDENT") {
+      if (openMatchId) {
+        setTab("matches"); // 결과 푸시로 들어온 경우 경기 탭 고정
+      } else if (session.role === "STUDENT") {
         setTab("myRecord"); // 선수의 경우 첫 탭인 나의 기록으로 진입
       } else {
-        setTab("record"); // 관리자의 경우 첫 탭인 경기 기록 입력으로 진입
+        setTab("matches"); // 관리자의 경우 통합 경기 탭으로 진입
       }
     }
-  }, [session]);
+  }, [session, openMatchId]);
 
   // 과거 시즌 조회 시 쓰기/설정 탭에서 조회 전용 탭(시즌 요약)으로 강제 이동
   useEffect(() => {
     if (currentViewSeason !== "현재 시즌") {
-      if (tab === "record" || tab === "admin" || tab === "recommend") {
+      if (tab === "admin") {
         setTab("seasonSummary");
       }
     }
   }, [currentViewSeason, tab]);
 
   // 일반회원이 본인 경기를 기록할 수 있는지 (자율/완전자율 모드 + 현재 시즌)
-  const memberCanRecord = matchInputMode !== "admin-only" && currentViewSeason === "현재 시즌";
 
   // 선수 탭 접근 통제 보안 가드 (myRecord, recommend, myAchievements + 허용 시 memberRecord)
   useEffect(() => {
     if (session && session.role === "STUDENT") {
-      const allowed = ["leaderboard", "daily", "recommend", "myRecord", ...(memberCanRecord ? ["memberRecord"] : [])];
+      const allowed = ["leaderboard", "matches", "daily", "myRecord"];
       if (!allowed.includes(tab)) {
         setTab("myRecord");
       }
     }
-  }, [session, tab, memberCanRecord]);
+  }, [session, tab]);
 
   // 관리 권한이 없는 사용자가 관리자 탭 접근 시 차단
   useEffect(() => {
     if (session && session.role === "TEACHER" && !isClassManager && tab === "admin") {
       toast.error("해당 메뉴에 접근할 권한이 없습니다.");
-      setTab("record");
+      setTab("matches");
     }
   }, [session, isClassManager, tab]);
-
-  // 선수 로그인 시 AI 매치메이킹 타겟(recommendSel)을 본인 정보로 즉시 고정
-  useEffect(() => {
-    if (session && session.role === "STUDENT" && session.studentId) {
-      const student = students.find((s) => s.id === session.studentId);
-      if (student) {
-        setRecommendSel({
-          grade: null,
-          classNum: null,
-          studentId: student.id
-        });
-      }
-    }
-  }, [session, students]);
 
   // Prevent closing the page during synchronization
   useEffect(() => {
@@ -174,18 +149,6 @@ function Index() {
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
   }, [isSyncing]);
-
-  const handleSelectRecommendedMatch = (
-    playerAId: string, 
-    playerBId: string,
-    playerA2Id?: string,
-    playerB2Id?: string,
-    matchType?: "single" | "double"
-  ) => {
-    setRecommendInitials({ playerAId, playerBId, playerA2Id, playerB2Id, matchType });
-    // 일반회원은 본인 경기 기록 탭으로, 관리자는 기록 입력 탭으로
-    setTab(session?.role === "STUDENT" ? "memberRecord" : "record");
-  };
 
   if (!hydrated || !session) {
     return <DashboardSkeleton />;
@@ -284,6 +247,12 @@ function Index() {
                   <DropdownMenuContent align="end" className="w-60 p-3"><ThemePicker /></DropdownMenuContent>
                 </DropdownMenu>
 
+                {/* 새로고침 (홈 화면 PWA엔 브라우저 새로고침이 없어 최신 배포·데이터를 강제로 불러옴) */}
+                <button onClick={() => window.location.reload()} title="새로고침 (최신 버전·데이터 불러오기)"
+                  className="flex size-9 items-center justify-center rounded-lg border border-border/60 bg-card/60 text-muted-foreground hover:text-neon-blue hover:border-neon-blue/40 active:scale-95 transition-all">
+                  <RefreshCw className="size-4" />
+                </button>
+
                 {/* 경기 알림(웹 푸시) */}
                 <PushToggle leagueId={classId} />
 
@@ -300,8 +269,12 @@ function Index() {
                 </button>
               </div>
 
-              {/* 모바일: 경기 알림 버튼 (케밥 옆에 직접 노출) */}
-              <div className="lg:hidden">
+              {/* 모바일: 새로고침 + 경기 알림 버튼 (케밥 옆에 직접 노출) */}
+              <div className="lg:hidden flex items-center gap-1">
+                <button onClick={() => window.location.reload()} title="새로고침 (최신 버전·데이터 불러오기)"
+                  className="flex size-9 items-center justify-center rounded-lg border border-border/60 bg-card/60 text-muted-foreground hover:text-neon-blue hover:border-neon-blue/40 active:scale-95 transition-all">
+                  <RefreshCw className="size-4" />
+                </button>
                 <PushToggle leagueId={classId} />
               </div>
 
@@ -371,64 +344,48 @@ function Index() {
           <nav className="mt-3 flex gap-1 overflow-x-auto no-scrollbar">
             {session.role === "STUDENT" ? (
               <>
-                {/* 1. 경기 기록 (자율/완전자율 모드에서만) */}
-                {memberCanRecord && (
-                  <TabButton active={tab === "memberRecord"} onClick={() => setTab("memberRecord")} icon={<Swords className="size-4" />}>
-                    경기 기록
-                  </TabButton>
-                )}
-
-                {/* 2. 나의 기록 (선수) */}
-                <TabButton active={tab === "myRecord"} onClick={() => setTab("myRecord")} icon={<Trophy className="size-4" />}>
-                  나의 기록
+                {/* 1.5 경기 (예약 + 결과 입력 + 최근 경기 통합 · 전원) */}
+                <TabButton active={tab === "matches"} onClick={() => setTab("matches")} icon={<Swords className="size-4" />}>
+                  경기장
                 </TabButton>
 
-                {/* 3. 매치 추천 (선수) */}
-                <TabButton active={tab === "recommend"} onClick={() => setTab("recommend")} icon={<Target className="size-4" />}>
-                  매치 추천
+                {/* 2. 내 카드 (선수) */}
+                <TabButton active={tab === "myRecord"} onClick={() => setTab("myRecord")} icon={<IdCard className="size-4" />}>
+                  내 카드
                 </TabButton>
 
                 {/* 5. 티어 순위표 (회원도 열람 가능) */}
                 <TabButton active={tab === "leaderboard"} onClick={() => setTab("leaderboard")} icon={<Trophy className="size-4" />}>
-                  티어 순위표
+                  랭킹
                 </TabButton>
 
                 {/* 6. 오늘의 경기 (전원 열람) */}
                 <TabButton active={tab === "daily"} onClick={() => setTab("daily")} icon={<CalendarDays className="size-4" />}>
-                  오늘의 경기
+                  하이라이트
                 </TabButton>
               </>
             ) : (
               <>
-                {/* 1. 경기 기록 (관리자 전용 · 현재 시즌만) */}
-                {currentViewSeason === "현재 시즌" && (
-                  <TabButton active={tab === "record"} onClick={() => setTab("record")} icon={<Swords className="size-4" />}>
-                    경기 기록
-                  </TabButton>
-                )}
+                {/* 1.5 경기 (예약 + 결과 입력 + 최근 경기 통합) */}
+                <TabButton active={tab === "matches"} onClick={() => setTab("matches")} icon={<CalendarDays className="size-4" />}>
+                  경기장
+                </TabButton>
 
-                {/* 2. 나의 기록 (선수 연동 시) */}
+                {/* 2. 내 카드 (선수 연동 시) */}
                 {myLinked && (
-                  <TabButton active={tab === "myRecord"} onClick={() => setTab("myRecord")} icon={<Trophy className="size-4" />}>
-                    나의 기록
-                  </TabButton>
-                )}
-
-                {/* 3. 매치 추천 (관리자) — 과거 시즌 열람 시 숨김 */}
-                {currentViewSeason === "현재 시즌" && (
-                  <TabButton active={tab === "recommend"} onClick={() => setTab("recommend")} icon={<Target className="size-4" />}>
-                    매치 추천
+                  <TabButton active={tab === "myRecord"} onClick={() => setTab("myRecord")} icon={<IdCard className="size-4" />}>
+                    내 카드
                   </TabButton>
                 )}
 
                 {/* 5. 티어 순위표 (관리자) */}
                 <TabButton active={tab === "leaderboard"} onClick={() => setTab("leaderboard")} icon={<Trophy className="size-4" />}>
-                  티어 순위표
+                  랭킹
                 </TabButton>
 
                 {/* 6. 오늘의 경기 (전원 열람) */}
                 <TabButton active={tab === "daily"} onClick={() => setTab("daily")} icon={<CalendarDays className="size-4" />}>
-                  오늘의 경기
+                  하이라이트
                 </TabButton>
 
                 {/* 7. 시즌 요약 (과거 시즌 열람 시) */}
@@ -521,26 +478,10 @@ function Index() {
 
         {tab === "daily" && <DailyResults />}
 
-        {tab === "recommend" && (
-          <MatchRecommend
-            students={students}
-            matches={matches}
-            onSelectRecommendedMatch={handleSelectRecommendedMatch}
-            sel={recommendSel}
-            onSelChange={setRecommendSel}
-            mode={recommendMode}
-            onModeChange={setRecommendMode}
-            targetGrade={recommendTargetGrade}
-            onTargetGradeChange={setRecommendTargetGrade}
-            targetClass={recommendTargetClass}
-            onTargetClassChange={setRecommendTargetClass}
-            thresholds={tierThresholds}
-            onUpdateGender={updateStudentGender}
-            isStudentView={session?.role === "STUDENT"}
-            isReadOnly={currentViewSeason !== "현재 시즌"}
-          />
+        {tab === "matches" && (
+          <MatchesTab openMatchId={openMatchId} onConsumeMatchId={() => setOpenMatchId(null)} />
         )}
-        
+
         {(session.role === "STUDENT" || myLinked) && tab === "myRecord" && (
           <MyRecord
             session={session}
@@ -554,31 +495,6 @@ function Index() {
           />
         )}
 
-        {session.role !== "STUDENT" && tab === "record" && (
-          <RecordMatch
-            students={students}
-            onRecord={recordMatch}
-            initials={recommendInitials}
-            onClearInitials={() => setRecommendInitials(null)}
-            thresholds={tierThresholds}
-            rpVariables={rpVariables}
-            onUpdateGender={updateStudentGender}
-          />
-        )}
-
-        {/* 일반회원 본인 경기 기록 — free: 본인 고정 / free-all: 자유 선택 */}
-        {session.role === "STUDENT" && tab === "memberRecord" && memberCanRecord && (
-          <RecordMatch
-            students={students}
-            onRecord={recordMatch}
-            initials={recommendInitials}
-            onClearInitials={() => setRecommendInitials(null)}
-            thresholds={tierThresholds}
-            rpVariables={rpVariables}
-            onUpdateGender={updateStudentGender}
-            lockedPlayerId={matchInputMode === "free" ? myPlayerId : null}
-          />
-        )}
 
          {session.role !== "STUDENT" && tab === "admin" && isClassManager && (
           <AdminPanel
