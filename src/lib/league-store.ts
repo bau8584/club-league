@@ -2369,35 +2369,11 @@ function useLeagueStoreInternal() {
       setDynamicPenalties(finalDynamicPenalties);
     }
 
-    // Map tier settings to the new "tiers" structure
-    const nextTiers = {
-      bronze: {
-        threshold: tierThresholds.Bronze ?? 0,
-        winRp: finalTierSettings?.Bronze?.winDelta ?? 20,
-        loseRp: finalTierSettings?.Bronze?.loseDelta ?? 0
-      },
-      silver: {
-        threshold: tierThresholds.Silver ?? 1000,
-        winRp: finalTierSettings?.Silver?.winDelta ?? 15,
-        loseRp: finalTierSettings?.Silver?.loseDelta ?? 5
-      },
-      gold: {
-        threshold: tierThresholds.Gold ?? 1200,
-        winRp: finalTierSettings?.Gold?.winDelta ?? 15,
-        loseRp: finalTierSettings?.Gold?.loseDelta ?? 10
-      },
-      platinum: {
-        threshold: tierThresholds.Platinum ?? 1400,
-        winRp: finalTierSettings?.Platinum?.winDelta ?? 10,
-        loseRp: finalTierSettings?.Platinum?.loseDelta ?? 15
-      },
-      diamond: {
-        threshold: tierThresholds.Diamond ?? 1600,
-        winRp: rpVariables.winDelta ?? 10,
-        loseRp: rpVariables.loseDelta ?? 20
-      }
-    };
-    setTiers(nextTiers);
+    // ⚠️ 기준점(threshold)·다이아 승/패는 여기서 클로저 값으로 덮어쓰지 않는다.
+    // (같은 저장 흐름에서 updateLeagueSettings가 먼저 갱신하지만 React state는 아직 이전 값이라,
+    //  여기서 stale 클로저로 tiers 를 재구성하면 방금 저장한 기준점·다이아가 되돌아가는 버그가 있었다.)
+    // 기준점·다이아는 서버에 이미 저장된 값(currentClass.settings.tiers)에서 보존하고,
+    // 이 함수는 브론즈~플래티넘 승/패(tierSettings)만 갱신한다. → nextTiers 는 fetch 이후 아래에서 구성.
 
     // ⚠️ 휴면 감점(decaySettings)은 여기서 건드리지 않는다.
     // 과거엔 단일 decayAmount로 모든 티어를 재구성해 저장하면서 티어별 값이 통일되는 버그가 있었다.
@@ -2406,9 +2382,21 @@ function useLeagueStoreInternal() {
     if (currentClassId) {
       try {
         const { data: currentClass } = await apiFetchClassSettings(currentClassId);
-        
+        const cur = currentClass?.settings || {};
+        const curT: any = cur.tiers || {};
+
+        // 기준점·다이아 승/패는 서버 저장값(curT)에서 보존, 브론즈~플래티넘 승/패만 tierSettings로 갱신.
+        const nextTiers = {
+          bronze:   { threshold: curT.bronze?.threshold   ?? tierThresholds.Bronze   ?? 0,    winRp: finalTierSettings?.Bronze?.winDelta   ?? curT.bronze?.winRp   ?? 20, loseRp: finalTierSettings?.Bronze?.loseDelta   ?? curT.bronze?.loseRp   ?? 0 },
+          silver:   { threshold: curT.silver?.threshold   ?? tierThresholds.Silver   ?? 1000, winRp: finalTierSettings?.Silver?.winDelta   ?? curT.silver?.winRp   ?? 15, loseRp: finalTierSettings?.Silver?.loseDelta   ?? curT.silver?.loseRp   ?? 5 },
+          gold:     { threshold: curT.gold?.threshold     ?? tierThresholds.Gold     ?? 1200, winRp: finalTierSettings?.Gold?.winDelta     ?? curT.gold?.winRp     ?? 15, loseRp: finalTierSettings?.Gold?.loseDelta     ?? curT.gold?.loseRp     ?? 10 },
+          platinum: { threshold: curT.platinum?.threshold ?? tierThresholds.Platinum ?? 1400, winRp: finalTierSettings?.Platinum?.winDelta ?? curT.platinum?.winRp ?? 10, loseRp: finalTierSettings?.Platinum?.loseDelta ?? curT.platinum?.loseRp ?? 15 },
+          diamond:  { threshold: curT.diamond?.threshold  ?? tierThresholds.Diamond  ?? 1600, winRp: curT.diamond?.winRp  ?? rpVariables.winDelta  ?? 10, loseRp: curT.diamond?.loseRp  ?? rpVariables.loseDelta  ?? 20 },
+        };
+        setTiers(nextTiers);
+
         const newSettings = {
-          ...(currentClass?.settings || {}),
+          ...cur,
           activeBonuses: newBonuses,
           tierSettings: finalTierSettings,
           dynamicBonuses: finalDynamicBonuses,

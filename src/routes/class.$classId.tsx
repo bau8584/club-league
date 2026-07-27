@@ -15,7 +15,8 @@ import { SeasonSummary } from "@/components/league/SeasonSummary";
 import { Toaster } from "@/components/ui/sonner";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { Crown, Swords, Trophy, Users, User, Pencil, LogOut, School, ShieldAlert, BarChart3, ArrowLeft, Lock, MoreVertical, Palette, CalendarDays, RefreshCw, IdCard } from "lucide-react";
+import { Crown, Swords, Trophy, Users, User, Pencil, LogOut, School, ShieldAlert, BarChart3, ArrowLeft, Lock, MoreVertical, Palette, CalendarDays, RefreshCw, IdCard, QrCode } from "lucide-react";
+import { InviteDialog } from "@/components/league/InviteDialog";
 import { ThemePicker } from "@/components/ThemePicker";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 
@@ -89,6 +90,7 @@ function Index() {
   const myLinked = !!myPlayerId;
   const [linkOpen, setLinkOpen] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
   // 결과 푸시(?match=<id>)로 진입하면 경기 탭에서 그 경기 결과 창을 연다
   const [openMatchId, setOpenMatchId] = useState<string | null>(
     () => (typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("match") : null)
@@ -329,6 +331,11 @@ function Index() {
                   </div>
 
                   {/* 액션 */}
+                  {isClassManager && (
+                    <DropdownMenuItem onSelect={() => setInviteOpen(true)} className="gap-2 text-xs cursor-pointer">
+                      <QrCode className="size-4 text-neon-blue" /> QR로 초대하기
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuItem onSelect={() => { window.location.href = "/"; }} className="gap-2 text-xs cursor-pointer">
                     <ArrowLeft className="size-4" /> 리그 로비로
                   </DropdownMenuItem>
@@ -462,6 +469,9 @@ function Index() {
 
         {/* 첫 방문 알림 켜기 안내(웹 푸시는 사용자가 직접 켜야만 가능) */}
         <PushPrompt leagueId={classId} />
+
+        {/* 관리자 QR 초대 다이얼로그 */}
+        <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} classId={classId} leagueName={title} />
 
         {/* Tenant Panels */}
         {tab === "seasonSummary" && currentViewSeason !== "현재 시즌" && (
