@@ -241,7 +241,7 @@ export async function apiUpdateMatchWinnerLoser(
 export async function apiFetchStudents(classId: string) {
   return supabase
     .from("players")
-    .select("id, league_id, user_id, rp, tier, win_count, lose_count, nickname, name, group_label, birth_year, gender, is_deleted, recent_matches, display_name, equipped_title")
+    .select("id, league_id, user_id, rp, tier, win_count, lose_count, nickname, name, group_label, birth_year, grade, class_num, student_no, gender, is_deleted, recent_matches, display_name, equipped_title")
     .eq("league_id", classId)
     .or("is_deleted.is.null,is_deleted.eq.false");
 }
@@ -250,7 +250,7 @@ export async function apiFetchStudents(classId: string) {
 export async function apiFetchStudentsPublic(classId: string) {
   return supabase
     .from("players_public")
-    .select("id, league_id, user_id, rp, tier, win_count, lose_count, nickname, group_label, gender, is_deleted, recent_matches, display_name, equipped_title")
+    .select("id, league_id, user_id, rp, tier, win_count, lose_count, nickname, group_label, gender, is_deleted, recent_matches, display_name, equipped_title, grade, class_num, student_no")
     .eq("league_id", classId)
     .or("is_deleted.is.null,is_deleted.eq.false");
 }
@@ -305,6 +305,9 @@ export async function apiUpdateStudentFields(studentId: string, fields: {
   gender?: string;
   group_label?: string | null;
   birth_year?: number | null;
+  grade?: number | null;
+  class_num?: number | null;
+  student_no?: number | null;
   equipped_title?: string | null;
 }) {
   return supabase
@@ -319,6 +322,9 @@ export async function apiInsertStudent(classId: string, info: {
   gender?: string;
   group_label?: string | null;
   birth_year?: number | null;
+  grade?: number | null;
+  class_num?: number | null;
+  student_no?: number | null;
   user_id?: string | null;
   rp?: number;
 }) {
@@ -332,6 +338,9 @@ export async function apiInsertStudent(classId: string, info: {
       gender: info.gender ?? "U",
       group_label: info.group_label ?? null,
       birth_year: info.birth_year ?? null,
+      grade: info.grade ?? null,
+      class_num: info.class_num ?? null,
+      student_no: info.student_no ?? null,
       user_id: info.user_id ?? null
     } satisfies PlayerInsert)
     .select("id")
@@ -377,6 +386,9 @@ export async function apiUpdateStudentInfo(studentId: string, payload: {
   group_label?: string | null;
   rp?: number;
   birth_year?: number | null;
+  grade?: number | null;
+  class_num?: number | null;
+  student_no?: number | null;
 }) {
   return supabase
     .from("players")

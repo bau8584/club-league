@@ -51,6 +51,7 @@ export function Lobby() {
   
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [newLeagueType, setNewLeagueType] = useState<"club" | "school">("club"); // 리그 유형: 동호인/학교
   const [newSchoolName, setNewSchoolName] = useState("");
   const [newSport, setNewSport] = useState("");
   const [customSport, setCustomSport] = useState(false); // 종목 직접 입력 모드
@@ -209,6 +210,7 @@ export function Lobby() {
         .from("leagues")
         .insert({
           name: finalName,
+          league_type: newLeagueType,
           settings: {
             season: finalSeason,
             schoolName: newSchoolName.trim(),
@@ -223,6 +225,8 @@ export function Lobby() {
             })(),
             // 개설 시 선택한 '리그 성향' → 기준점/승패/보너스/패널티 일괄 적용
             ...buildBundleSettings(selectedBundle),
+            // school 리그는 경기 입력을 교사(방장) 전용으로 고정
+            ...(newLeagueType === "school" ? { matchInputMode: "admin-only" as const } : {}),
           },
           owner_uid: userId,
           member_uids: [],
@@ -233,6 +237,7 @@ export function Lobby() {
 
       toast.success("새로운 리그가 개설되었습니다!");
       setIsModalOpen(false);
+      setNewLeagueType("club");
       setNewSchoolName("");
       setNewSport("");
       setCustomSport(false);
@@ -435,7 +440,7 @@ export function Lobby() {
                 {ownedLeagues.map((league) => (
                   <Link
                     key={league.id}
-                    to="/class/$classId"
+                    to={league.league_type === "school" ? "/school/$classId" : "/class/$classId"}
                     params={{ classId: league.id }}
                     className="group block"
                   >
@@ -558,7 +563,7 @@ export function Lobby() {
                 {joinedLeagues.map((league) => (
                   <Link
                     key={league.id}
-                    to="/class/$classId"
+                    to={league.league_type === "school" ? "/school/$classId" : "/class/$classId"}
                     params={{ classId: league.id }}
                     className="group block"
                   >
@@ -622,6 +627,42 @@ export function Lobby() {
             </div>
 
             <form onSubmit={handleCreateLeague} className="space-y-4">
+                  {/* 리그 유형: 동호인(club) / 학교(school) */}
+                  <div className="space-y-1.5 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                    <Label className="text-xs font-bold text-foreground">리그 유형</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setNewLeagueType("club")}
+                        className={cn(
+                          "h-10 rounded-md border text-sm font-bold transition-all",
+                          newLeagueType === "club"
+                            ? "border-neon-blue bg-neon-blue/15 text-neon-blue"
+                            : "border-border/60 bg-background/40 text-muted-foreground"
+                        )}
+                      >
+                        동호인 리그
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNewLeagueType("school")}
+                        className={cn(
+                          "h-10 rounded-md border text-sm font-bold transition-all",
+                          newLeagueType === "school"
+                            ? "border-neon-blue bg-neon-blue/15 text-neon-blue"
+                            : "border-border/60 bg-background/40 text-muted-foreground"
+                        )}
+                      >
+                        학교 리그
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      {newLeagueType === "school"
+                        ? "교사(방장)만 로그인해 경기를 입력하고, 학생은 학년/반/번호로 관리합니다."
+                        : "회원 각자 계정으로 로그인해 경기를 기록할 수 있습니다."}
+                    </p>
+                  </div>
+
                   <div className="grid grid-cols-2 gap-3 animate-in fade-in slide-in-from-bottom-2 duration-200">
                     <div className="space-y-1.5">
                       <Label className="text-xs font-bold text-foreground">클럽 이름</Label>

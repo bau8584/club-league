@@ -27,13 +27,17 @@ export const Route = createFileRoute("/class/$classId")({
       { name: "description", content: "스포츠 리그 & 티어 랭킹 시스템." },
     ],
   }),
-  component: Index,
+  component: () => {
+    const { classId } = Route.useParams();
+    return <LeagueApp classId={classId} />;
+  },
 });
 
 type Tab = "leaderboard" | "matches" | "daily" | "admin" | "myRecord" | "seasonSummary";
 
-function Index() {
-  const { classId } = Route.useParams();
+// club/school 라우트가 공유하는 리그 앱 본체. league_type에 따른 실제 분기는
+// useLeagueStore가 불러오는 leagues.league_type / settings 값(예: matchInputMode)로 처리된다.
+export function LeagueApp({ classId }: { classId: string }) {
   const {
     hydrated,
     students,

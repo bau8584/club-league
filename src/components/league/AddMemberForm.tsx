@@ -13,30 +13,42 @@ import { CURRENT_YEAR, normalizeBirthYear } from "@/lib/birth-year";
  * 닉네임/레벨/나이(연생)/성별 입력 후 upsertStudents로 등록.
  */
 export function AddMemberForm({ onAdded, className }: { onAdded?: (nickname: string) => void; className?: string }) {
-  const { upsertStudents, levelMode, levels } = useLeagueStore();
+  const { upsertStudents, levelMode, levels, leagueType } = useLeagueStore();
   const usePresetLevels = levelMode === "preset" && levels.length > 0;
+  const isSchool = leagueType === "school";
 
-  const [form, setForm] = useState<{ nickname: string; group: string; gender: Gender; birthYear: string }>({
+  const [form, setForm] = useState<{ nickname: string; group: string; gender: Gender; birthYear: string; grade: string; classNum: string; studentNo: string }>({
     nickname: "",
     group: "",
     gender: "U",
     birthYear: "",
+    grade: "",
+    classNum: "",
+    studentNo: "",
   });
   const [adding, setAdding] = useState(false);
 
+  const toIntOrNull = (v: string) => {
+    const n = parseInt(v.trim(), 10);
+    return Number.isFinite(n) ? n : null;
+  };
+
   const handleAdd = async () => {
     const nickname = form.nickname.trim();
-    if (!nickname) { toast.error("닉네임을 입력하세요."); return; }
+    if (!nickname) { toast.error(isSchool ? "이름을 입력하세요." : "닉네임을 입력하세요."); return; }
     setAdding(true);
     try {
       await upsertStudents([{
         name: nickname,
         nickname,
-        group: form.group.trim() || null,
+        group: isSchool ? null : (form.group.trim() || null),
         gender: form.gender,
         birthYear: normalizeBirthYear(form.birthYear),
+        grade: isSchool ? toIntOrNull(form.grade) : null,
+        classNum: isSchool ? toIntOrNull(form.classNum) : null,
+        studentNo: isSchool ? toIntOrNull(form.studentNo) : null,
       }]);
-      setForm({ nickname: "", group: "", gender: "U", birthYear: "" });
+      setForm({ nickname: "", group: "", gender: "U", birthYear: "", grade: "", classNum: "", studentNo: "" });
       onAdded?.(nickname);
     } finally { setAdding(false); }
   };
@@ -45,38 +57,63 @@ export function AddMemberForm({ onAdded, className }: { onAdded?: (nickname: str
     <div className={cn("rounded-xl border border-border/40 bg-muted/10 p-4 space-y-3", className)}>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
         <div>
-          <label className="text-[11px] font-bold text-muted-foreground">닉네임</label>
+          <label className="text-[11px] font-bold text-muted-foreground">{isSchool ? "이름" : "닉네임"}</label>
           <Input value={form.nickname} onChange={(e) => setForm((f) => ({ ...f, nickname: e.target.value }))}
-            placeholder="닉네임" className="h-9 mt-1 bg-input border-border/30" />
+            placeholder={isSchool ? "학생 이름" : "닉네임"} className="h-9 mt-1 bg-input border-border/30" />
         </div>
-        <div>
-          <label className="text-[11px] font-bold text-muted-foreground">레벨 (선택)</label>
-          {usePresetLevels ? (
-            <select value={form.group} onChange={(e) => setForm((f) => ({ ...f, group: e.target.value }))}
-              className="h-9 mt-1 w-full rounded-md bg-input border border-border/30 px-2 text-sm">
-              <option value="">선택 안 함</option>
-              {levels.map((lv) => <option key={lv.name} value={lv.name}>{lv.name}</option>)}
-            </select>
-          ) : (
-            <Input value={form.group} onChange={(e) => setForm((f) => ({ ...f, group: e.target.value }))}
-              placeholder="레벨" className="h-9 mt-1 bg-input border-border/30" />
-          )}
-        </div>
-        <div>
-          <label className="text-[11px] font-bold text-muted-foreground">나이(연생) (선택)</label>
-          <Input
-            value={form.birthYear}
-            onChange={(e) => setForm((f) => ({ ...f, birthYear: e.target.value.replace(/[^0-9]/g, "").slice(0, 4) }))}
-            placeholder="연생 입력 (예: 94, 01)"
-            inputMode="numeric"
-            className="h-9 mt-1 bg-input border-border/30"
-          />
-          {form.birthYear && normalizeBirthYear(form.birthYear) && (
-            <span className="mt-0.5 block text-[10px] text-muted-foreground">
-              {normalizeBirthYear(form.birthYear)}년생 · 만 {CURRENT_YEAR - normalizeBirthYear(form.birthYear)!}세
-            </span>
-          )}
-        </div>
+        {isSchool ? (
+          <>
+            <div className="grid grid-cols-3 gap-1.5">
+              <div>
+                <label className="text-[11px] font-bold text-muted-foreground">학년</label>
+                <Input value={form.grade} onChange={(e) => setForm((f) => ({ ...f, grade: e.target.value.replace(/[^0-9]/g, "").slice(0, 2) }))}
+                  placeholder="학년" inputMode="numeric" className="h-9 mt-1 bg-input border-border/30" />
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-muted-foreground">반</label>
+                <Input value={form.classNum} onChange={(e) => setForm((f) => ({ ...f, classNum: e.target.value.replace(/[^0-9]/g, "").slice(0, 3) }))}
+                  placeholder="반" inputMode="numeric" className="h-9 mt-1 bg-input border-border/30" />
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-muted-foreground">번호</label>
+                <Input value={form.studentNo} onChange={(e) => setForm((f) => ({ ...f, studentNo: e.target.value.replace(/[^0-9]/g, "").slice(0, 3) }))}
+                  placeholder="번호" inputMode="numeric" className="h-9 mt-1 bg-input border-border/30" />
+              </div>
+            </div>
+            <div />
+          </>
+        ) : (
+          <>
+            <div>
+              <label className="text-[11px] font-bold text-muted-foreground">레벨 (선택)</label>
+              {usePresetLevels ? (
+                <select value={form.group} onChange={(e) => setForm((f) => ({ ...f, group: e.target.value }))}
+                  className="h-9 mt-1 w-full rounded-md bg-input border border-border/30 px-2 text-sm">
+                  <option value="">선택 안 함</option>
+                  {levels.map((lv) => <option key={lv.name} value={lv.name}>{lv.name}</option>)}
+                </select>
+              ) : (
+                <Input value={form.group} onChange={(e) => setForm((f) => ({ ...f, group: e.target.value }))}
+                  placeholder="레벨" className="h-9 mt-1 bg-input border-border/30" />
+              )}
+            </div>
+            <div>
+              <label className="text-[11px] font-bold text-muted-foreground">나이(연생) (선택)</label>
+              <Input
+                value={form.birthYear}
+                onChange={(e) => setForm((f) => ({ ...f, birthYear: e.target.value.replace(/[^0-9]/g, "").slice(0, 4) }))}
+                placeholder="연생 입력 (예: 94, 01)"
+                inputMode="numeric"
+                className="h-9 mt-1 bg-input border-border/30"
+              />
+              {form.birthYear && normalizeBirthYear(form.birthYear) && (
+                <span className="mt-0.5 block text-[10px] text-muted-foreground">
+                  {normalizeBirthYear(form.birthYear)}년생 · 만 {CURRENT_YEAR - normalizeBirthYear(form.birthYear)!}세
+                </span>
+              )}
+            </div>
+          </>
+        )}
       </div>
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1">

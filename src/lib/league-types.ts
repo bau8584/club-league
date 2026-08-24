@@ -1,6 +1,13 @@
 export type Gender = "M" | "F" | "U"; // M: 남, F: 여, U: 미지정
 
 /**
+ * 리그 유형
+ * - club: 동호인 리그 (기존, 기본값) — 회원 각자 계정 로그인, group_label 급수 체계
+ * - school: 학교 리그 — 교사(방장)만 로그인, grade/class_num/student_no 축, 경기입력 admin-only 고정
+ */
+export type LeagueType = "club" | "school";
+
+/**
  * 경기결과 입력 방식 (관리자가 리그별로 제어)
  * - admin-only: 관리자(방장/공동관리/기록원)만 입력
  * - free: 자율 — 멤버가 "본인이 참여한 경기"만 기록
@@ -27,6 +34,11 @@ export type Student = {
   birthYear?: number | null; // 연생 -> DB: birth_year
   displayName?: string | null; // 표시 이름 -> DB: display_name
   equippedTitle?: string | null; // 장착한 대표 호칭 id -> DB: equipped_title
+
+  // --- school 리그 전용 (club 리그에서는 항상 null) ---
+  grade?: number | null; // 학년 -> DB: grade
+  classNum?: number | null; // 반 -> DB: class_num
+  studentNo?: number | null; // 번호 -> DB: student_no
 
   // 경기 전적(matches) 데이터를 기반으로 실시간 계산되는 속성들
   recent: ("W" | "L")[]; // 최근 5경기 결과 (가장 최근이 첫 요소)
@@ -170,6 +182,7 @@ export type Class = {
   member_uids: string[] | null; // 멤버(동호인) UID 목록 -> DB: member_uids
   join_code?: string | null; // 6자리 초대 코드 -> DB: join_code
   name: string; // 리그명 -> DB: name
+  league_type?: LeagueType; // 리그 유형(club/school) -> DB: league_type (기본값 'club')
   settings: {
     season?: string; // 시즌 텍스트 정보 (예: "2026-1")
     matchInputMode?: MatchInputMode; // 경기결과 입력 방식 (관리자 제어)

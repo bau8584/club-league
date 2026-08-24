@@ -60,6 +60,7 @@ create table if not exists public.leagues (
   admin_uids  uuid[] not null default '{}',   -- 공동 관리자
   member_uids uuid[] not null default '{}',   -- 일반 멤버(동호인)
   name        text not null,
+  league_type text not null default 'club' check (league_type in ('club', 'school')), -- club(동호인) | school(학교)
   settings    jsonb not null default '{}'::jsonb,
   join_code   text,            -- 6자리 초대 코드(트리거 자동 부여)
   is_deleted  boolean not null default false,
@@ -78,6 +79,9 @@ create table if not exists public.players (
   gender        text not null default 'U',
   group_label   text,            -- 구분조 (학년/반 대체)
   birth_year    int,             -- 연생 (선택)
+  grade         int,             -- school 전용: 학년 (club은 항상 null)
+  class_num     int,             -- school 전용: 반
+  student_no    int,             -- school 전용: 번호
   rp            int  not null default 1000,
   tier          text,
   win_count     int  not null default 0,
@@ -153,7 +157,7 @@ alter table public.season_standings enable row level security;
 create or replace view public.players_public as
   select id, league_id, rp, tier, win_count, lose_count, nickname,
          group_label, gender, is_deleted, recent_matches, display_name, user_id,
-         equipped_title
+         equipped_title, grade, class_num, student_no
   from public.players;
 
 -- ============================================================

@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as JoinRouteImport } from './routes/join'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as SchoolClassIdRouteImport } from './routes/school.$classId'
 import { Route as ClassClassIdRouteImport } from './routes/class.$classId'
 
 const JoinRoute = JoinRouteImport.update({
@@ -23,6 +24,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SchoolClassIdRoute = SchoolClassIdRouteImport.update({
+  id: '/school/$classId',
+  path: '/school/$classId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ClassClassIdRoute = ClassClassIdRouteImport.update({
   id: '/class/$classId',
   path: '/class/$classId',
@@ -33,30 +39,34 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/join': typeof JoinRoute
   '/class/$classId': typeof ClassClassIdRoute
+  '/school/$classId': typeof SchoolClassIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/join': typeof JoinRoute
   '/class/$classId': typeof ClassClassIdRoute
+  '/school/$classId': typeof SchoolClassIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/join': typeof JoinRoute
   '/class/$classId': typeof ClassClassIdRoute
+  '/school/$classId': typeof SchoolClassIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/join' | '/class/$classId'
+  fullPaths: '/' | '/join' | '/class/$classId' | '/school/$classId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/join' | '/class/$classId'
-  id: '__root__' | '/' | '/join' | '/class/$classId'
+  to: '/' | '/join' | '/class/$classId' | '/school/$classId'
+  id: '__root__' | '/' | '/join' | '/class/$classId' | '/school/$classId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   JoinRoute: typeof JoinRoute
   ClassClassIdRoute: typeof ClassClassIdRoute
+  SchoolClassIdRoute: typeof SchoolClassIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -75,6 +85,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/school/$classId': {
+      id: '/school/$classId'
+      path: '/school/$classId'
+      fullPath: '/school/$classId'
+      preLoaderRoute: typeof SchoolClassIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/class/$classId': {
       id: '/class/$classId'
       path: '/class/$classId'
@@ -89,6 +106,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   JoinRoute: JoinRoute,
   ClassClassIdRoute: ClassClassIdRoute,
+  SchoolClassIdRoute: SchoolClassIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

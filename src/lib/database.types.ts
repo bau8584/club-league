@@ -11,6 +11,9 @@ export type PlayerInsert = {
   gender?: string;
   group_label?: string | null;
   birth_year?: number | null;
+  grade?: number | null;        // school 전용
+  class_num?: number | null;    // school 전용
+  student_no?: number | null;   // school 전용
   rp?: number;
   tier?: string | null;
   win_count?: number;
@@ -43,6 +46,7 @@ export type MatchUpdate = Partial<MatchInsert>;
 export type LeagueInsert = {
   owner_uid: string;            // NOT NULL
   name: string;                 // NOT NULL
+  league_type?: string;         // 'club' | 'school' (기본값 'club')
   admin_uids?: string[];
   member_uids?: string[];
   settings?: Record<string, any>;
