@@ -10,6 +10,7 @@ import type { Student, Match, TierName } from "@/lib/league-types";
 import { getTier, getTierSubdivision, TIER_ORDER, getFullTierLabel, isUnranked } from "@/lib/league-types";
 import { toast } from "sonner";
 import { useLeagueStore } from "@/lib/league-store";
+import { useLeagueTerms } from "@/lib/league-terms";
 
 type Selection = { group: string | null; studentId: string | null };
 // 레벨 "전체" 탭이 기본으로 열려 있도록 group을 ALL("__ALL__")로 초기화
@@ -107,6 +108,7 @@ export function RecordMatch({
   onUpdateGender?: (studentId: string, gender: "M" | "F" | "U") => void;
 }) {
   const { isSyncing, placementEnabled, placementGames, isClassOwner, saveMatchBreakdown } = useLeagueStore();
+  const terms = useLeagueTerms();
   const [matchType, setMatchType] = useState<"single" | "double">("double");
   const [a, setA] = useState<Selection>(empty);
   const [a2, setA2] = useState<Selection>(empty);
@@ -1805,6 +1807,7 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
   onPick: (group: string, studentId: string) => void; thresholds?: Record<string, number>;
   placementEnabled: boolean; placementGames: number; canAddMember?: boolean;
 }) {
+  const terms = useLeagueTerms();
   const a = ACCENT[accent];
   const [search, setSearch] = useState("");
   const [grp, setGrp] = useState<string>(group ?? ALL_GROUP);
@@ -1873,7 +1876,7 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
             className="flex min-h-[4.75rem] w-full flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-neon-blue/40 bg-surface-deep px-2 py-2.5 text-center text-neon-blue transition-all hover:border-neon-blue/70 hover:bg-neon-blue/5 active:scale-95 cursor-pointer"
           >
             <UserPlus className="size-5" />
-            <span className="text-xs font-bold">회원 추가</span>
+            <span className="text-xs font-bold">{terms.member} 추가</span>
           </button>
         )}
       </div>
@@ -1883,7 +1886,7 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
         <div className="fixed inset-0 z-[105] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200" onClick={() => setAddOpen(false)}>
           <div className="relative w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
             <div className="mb-2 flex items-center justify-between">
-              <span className="text-sm font-black text-foreground flex items-center gap-1.5"><UserPlus className="size-4 text-neon-blue" /> 회원 추가</span>
+              <span className="text-sm font-black text-foreground flex items-center gap-1.5"><UserPlus className="size-4 text-neon-blue" /> {terms.member} 추가</span>
               <button type="button" onClick={() => setAddOpen(false)} title="닫기" className="rounded-lg p-1.5 text-muted-foreground hover:bg-surface-panel hover:text-foreground transition-all">
                 <X className="size-5" />
               </button>

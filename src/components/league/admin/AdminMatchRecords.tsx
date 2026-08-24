@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { Calendar as DayCalendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { Gender, Student, Match } from "@/lib/league-types";
+import { useLeagueTerms } from "@/lib/league-terms";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -32,6 +33,7 @@ export function AdminMatchRecords({
   onDeleteMatch,
   onUpdateMatchScore,
 }: AdminMatchRecordsProps) {
+  const terms = useLeagueTerms();
   // 관리자 화면에서는 별명을 우선 표시, 없으면 이름
   const displayName = (p: { name: string; nickname?: string | null }) => p.nickname || p.name;
 
@@ -167,7 +169,7 @@ export function AdminMatchRecords({
           <div className="p-1 bg-muted/40 border border-border/20 rounded-xl flex flex-wrap gap-1.5 w-full md:w-max">
             {([
               { id: "recent", label: "최근 경기", icon: Swords },
-              { id: "member", label: "회원 검색", icon: Users },
+              { id: "member", label: `${terms.member} 검색`, icon: Users },
               { id: "date", label: "날짜 검색", icon: Calendar },
             ] as const).map(({ id, label, icon: Icon }) => (
               <button
@@ -215,7 +217,7 @@ export function AdminMatchRecords({
                 className="h-10 w-full max-w-md rounded-xl border border-border/50 bg-input px-3 text-xs font-sans focus:border-neon-blue"
               >
                 <option value="">
-                  {selectedGroups.length ? "급수 내 회원 선택 (전체 보기 = 미선택)" : "회원 선택 (또는 급수 칩으로 좁히기)"}
+                  {selectedGroups.length ? `${terms.groupLabel} 내 ${terms.member} 선택 (전체 보기 = 미선택)` : `${terms.member} 선택 (또는 ${terms.groupLabel} 칩으로 좁히기)`}
                 </option>
                 {memberOptions.map((s) => (
                   <option key={s.id} value={s.id}>
@@ -320,7 +322,7 @@ export function AdminMatchRecords({
                 : (matchFilterType === "member" && (selectedMemberId || selectedGroups.length)) || (matchFilterType === "date" && selectedDate)
                   ? "조건과 일치하는 경기가 없습니다."
                   : matchFilterType === "member"
-                    ? "급수 칩을 고르거나 회원을 선택하세요."
+                    ? `${terms.groupLabel} 칩을 고르거나 ${terms.member}을 선택하세요.`
                     : "달력에서 날짜를 선택하세요."}
             </div>
           )}

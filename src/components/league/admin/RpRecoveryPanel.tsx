@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { History, RotateCcw, ArrowRight, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLeagueStore } from "@/lib/league-store";
+import { useLeagueTerms } from "@/lib/league-terms";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -14,6 +15,7 @@ type Row = { id: string; name: string; before: number; after: number };
 
 export function RpRecoveryPanel() {
   const { recomputeRpPreview, applyRecomputedRp, recomputeLeagueRp, matches, currentViewSeason } = useLeagueStore();
+  const terms = useLeagueTerms();
   const readOnly = currentViewSeason !== "현재 시즌";
   const noMatches = !matches || matches.length === 0;
 
@@ -26,7 +28,7 @@ export function RpRecoveryPanel() {
   const handleServerRecompute = async () => {
     if (readOnly || noMatches || recomputing) return;
     if (!window.confirm(
-      "현재 시즌 경기 기록·감점을 기준으로 모든 회원 RP를 서버에서 정확히 다시 맞춥니다.\n" +
+      `현재 시즌 경기 기록·감점을 기준으로 모든 ${terms.member} RP를 서버에서 정확히 다시 맞춥니다.\n` +
       "동시 입력 등으로 RP가 어긋났을 때 복구용입니다.\n\n" +
       "※ 관리자가 수동으로 직접 조정한 RP는 복원되지 않고 이력 기준값으로 덮어써집니다.\n\n진행할까요?"
     )) return;
@@ -62,7 +64,7 @@ export function RpRecoveryPanel() {
               <History className="size-4 text-amber-500" /> RP 복원 (경기 재계산)
             </h4>
             <p className="mt-1 text-xs text-muted-foreground leading-snug">
-              남아 있는 <b className="text-foreground">경기 기록을 처음부터 다시 계산</b>해 모든 회원의 RP를 되돌립니다.
+              남아 있는 <b className="text-foreground">경기 기록을 처음부터 다시 계산</b>해 모든 {terms.member}의 RP를 되돌립니다.
               RP가 초기화됐지만 경기 기록은 남아 있을 때 사용하세요. (경기가 삭제됐다면 복원 불가)
             </p>
           </div>
@@ -111,7 +113,7 @@ export function RpRecoveryPanel() {
             <table className="w-full text-xs">
               <thead className="sticky top-0 bg-muted/60 text-[10px] uppercase tracking-wider text-muted-foreground backdrop-blur">
                 <tr>
-                  <th className="px-3 py-2 text-left font-bold">회원</th>
+                  <th className="px-3 py-2 text-left font-bold">{terms.member}</th>
                   <th className="px-2 py-2 text-right font-bold">현재</th>
                   <th className="px-2 py-2 text-center font-bold"></th>
                   <th className="px-2 py-2 text-right font-bold">복원</th>

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Users, Save, Trash2, ShieldAlert, HelpCircle, RotateCcw, ChevronDown, ClipboardPaste, UserPlus, Link2, Link2Off, ShieldCheck, Crown, Copy, Check, X, Mail } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLeagueStore } from "@/lib/league-store";
+import { useLeagueTerms, useIsSchoolLeague } from "@/lib/league-terms";
 import type { Gender, Student, Match, TierName } from "@/lib/league-types";
 import { TierBadge } from "../TierBadge";
 import { AddMemberForm } from "../AddMemberForm";
@@ -55,12 +56,14 @@ function parseRoster(text: string): ParsedRow[] {
 }
 
 export function AdminStudentManage({ students, onDeleteStudent, thresholds }: AdminStudentManageProps) {
+  const terms = useLeagueTerms();
+  const isSchool = useIsSchoolLeague();
   const { upsertStudents, updateStudentInfo, bulkUpdateStudents, fetchDeletedStudents, restoreDeletedStudent, hardDeleteStudent, levelMode, levels, ownerUid, adminUids, setMemberAdmin, transferOwnership, setCoOwner, coOwnerUids, isClassPrimaryOwner, isClassOwner, fetchLeagueMembers, unlinkPlayer } = useLeagueStore();
 
   // 최고관리자(원조 방장) 위임 — 되돌리기 어려우므로 2단계 확인
   const handleTransferOwnership = (uid: string, label: string) => {
-    if (!window.confirm(`${label} 님을 최고관리자(원조 방장)로 위임하시겠습니까?\n\n• 모든 리그 권한이 ${label} 님에게 넘어갑니다.\n• 본인은 공동방장으로 변경됩니다.`)) return;
-    if (!window.confirm(`정말 진행할까요? 되돌리려면 새 방장이 다시 위임해야 합니다.`)) return;
+    if (!window.confirm(`${label} 님을 최고관리자(원조 ${terms.owner})로 위임하시겠습니까?\n\n• 모든 리그 권한이 ${label} 님에게 넘어갑니다.\n• 본인은 ${terms.coOwner}으로 변경됩니다.`)) return;
+    if (!window.confirm(`정말 진행할까요? 되돌리려면 새 ${terms.owner}이 다시 위임해야 합니다.`)) return;
     transferOwnership(uid);
   };
   const usePresetLevels = levelMode === "preset" && levels.length > 0;
@@ -86,7 +89,7 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
     }
   };
   const linkedAccount = linkStudent?.userId ? (members?.find((m) => m.uid === linkStudent.userId) ?? null) : null;
-  const roleKo = (role?: string) => (role === "owner" ? "방장" : role === "admin" ? "관리자" : role === "member" ? "회원" : "");
+  const roleKo = (role?: string) => (role === "owner" ? terms.owner : role === "admin" ? terms.manager : role === "member" ? terms.member : "");
   const copyEmail = async () => {
     if (!linkedAccount?.email) return;
     try { await navigator.clipboard.writeText(linkedAccount.email); setCopied(true); toast.success("이메일을 복사했습니다."); }
@@ -211,10 +214,10 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
       <div className="mb-5">
         <div className="flex items-center gap-2 text-neon-blue">
           <Users className="size-5" />
-          <h3 className="font-black text-lg">회원 관리</h3>
+          <h3 className="font-black text-lg">{terms.member} 관리</h3>
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
-          닉네임·레벨·성별·나이를 바로 수정하고, 회원을 선택해 삭제할 수 있어요. 명단을 한 번에 붙여넣어 등록할 수도 있습니다. <span className="text-muted-foreground/70">(RP는 경기 기록으로만 바뀌며 직접 수정하지 않습니다.)</span>
+          {isSchool ? "이름·학년/반/번호·성별을" : "닉네임·레벨·성별·나이를"} 바로 수정하고, {terms.member}을 선택해 삭제할 수 있어요. {terms.roster}을 한 번에 붙여넣어 등록할 수도 있습니다. <span className="text-muted-foreground/70">(RP는 경기 기록으로만 바뀌며 직접 수정하지 않습니다.)</span>
         </p>
       </div>
 
@@ -226,7 +229,7 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
         </Button>
         <Button onClick={() => setAddOpen((v) => !v)} variant="outline"
           className="h-9 px-3 rounded-lg text-xs font-bold border-border/80">
-          <UserPlus className="size-4 mr-1.5" /> 회원 추가
+          <UserPlus className="size-4 mr-1.5" /> {terms.member} 추가
         </Button>
       </div>
 
@@ -280,7 +283,7 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
                 {g}
               </button>
             ))}
-            {students.length === 0 && <span className="text-xs text-muted-foreground py-1">등록된 회원이 없습니다.</span>}
+            {students.length === 0 && <span className="text-xs text-muted-foreground py-1">등록된 {terms.member}이 없습니다.</span>}
           </div>
         </div>
       </div>
@@ -400,23 +403,23 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
                           });
                           setDraft((prev) => { const n = { ...prev }; delete n[s.id]; return n; });
                         }}
-                        title="이 회원만 저장"
+                        title={`이 ${terms.member}만 저장`}
                         className="inline-flex items-center justify-center size-7 rounded-md border border-border/40 text-muted-foreground hover:text-neon-blue hover:border-neon-blue/60 transition-all active:scale-95 disabled:opacity-30">
                         <Save className="size-3.5" />
                       </button>
                     </td>
                     {isClassOwner && (() => {
                       const linked = !!s.userId;
-                      const label = r.nickname || s.name || "이 회원";
+                      const label = r.nickname || s.name || `이 ${terms.member}`;
                       const isOwnerRow = linked && s.userId === ownerUid;
                       const isCoOwnerRow = linked && coOwnerUids.includes(s.userId!);
                       const isAdminRow = linked && adminUids.includes(s.userId!);
                       // 원조 방장 전용 버튼: 공동방장 지정/해제 + 최고관리자 위임
                       const CoOwnerSet = () => (
                         <button type="button"
-                          onClick={() => { if (window.confirm(`${label} 님을 공동방장으로 지정하시겠습니까?\n방장과 동일한 권한(글로벌 설정·시즌·휴면 등)을 함께 행사합니다.`)) setCoOwner(s.userId!, true); }}
+                          onClick={() => { if (window.confirm(`${label} 님을 ${terms.coOwner}으로 지정하시겠습니까?\n${terms.owner}과 동일한 권한(글로벌 설정·시즌·휴면 등)을 함께 행사합니다.`)) setCoOwner(s.userId!, true); }}
                           className="inline-flex items-center gap-0.5 text-[10px] font-bold text-amber-500 underline-offset-2 hover:underline">
-                          <Crown className="size-2.5" /> 공동방장 지정
+                          <Crown className="size-2.5" /> {terms.coOwner} 지정
                         </button>
                       );
                       const TransferBtn = () => (
@@ -430,20 +433,20 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
                         <td className="px-2 py-1.5 text-center whitespace-nowrap">
                           {isOwnerRow ? (
                             <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 text-[10px] font-black text-amber-500">
-                              <Crown className="size-3" /> 방장
+                              <Crown className="size-3" /> {terms.owner}
                             </span>
                           ) : !linked ? (
-                            <span className="text-[10px] text-muted-foreground/60" title="구글 연동된 회원만 권한을 부여할 수 있어요">미연동</span>
+                            <span className="text-[10px] text-muted-foreground/60" title={`구글 연동된 ${terms.member}만 권한을 부여할 수 있어요`}>미연동</span>
                           ) : isCoOwnerRow ? (
                             <div className="flex flex-col items-center gap-0.5">
                               <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-black text-amber-500">
-                                <Crown className="size-3" /> 공동방장
+                                <Crown className="size-3" /> {terms.coOwner}
                               </span>
                               {isClassPrimaryOwner && (
                                 <button type="button"
-                                  onClick={() => { if (window.confirm(`${label} 님의 공동방장을 해제하시겠습니까?\n일반 회원으로 변경됩니다.`)) setCoOwner(s.userId!, false); }}
+                                  onClick={() => { if (window.confirm(`${label} 님의 ${terms.coOwner}을 해제하시겠습니까?\n일반 ${terms.member}으로 변경됩니다.`)) setCoOwner(s.userId!, false); }}
                                   className="text-[10px] font-bold text-muted-foreground underline-offset-2 hover:text-destructive hover:underline">
-                                  공동방장 해제
+                                  {terms.coOwner} 해제
                                 </button>
                               )}
                             </div>
@@ -453,7 +456,7 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
                                 <ShieldCheck className="size-3" /> 관리자
                               </span>
                               <button type="button"
-                                onClick={() => { if (window.confirm(`${label} 님을 관리자에서 일반 회원으로 강등하시겠습니까?`)) setMemberAdmin(s.userId!, false); }}
+                                onClick={() => { if (window.confirm(`${label} 님을 ${terms.manager}에서 일반 ${terms.member}으로 강등하시겠습니까?`)) setMemberAdmin(s.userId!, false); }}
                                 className="text-[10px] font-bold text-muted-foreground underline-offset-2 hover:text-destructive hover:underline">
                                 일반으로 강등
                               </button>
@@ -481,7 +484,7 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
                 );
               })}
               {rows.length === 0 && (
-                <tr><td colSpan={isClassOwner ? 9 : 8} className="py-8 text-center text-muted-foreground text-xs">등록된 회원이 없습니다.</td></tr>
+                <tr><td colSpan={isClassOwner ? 9 : 8} className="py-8 text-center text-muted-foreground text-xs">등록된 {terms.member}이 없습니다.</td></tr>
               )}
             </tbody>
           </table>
@@ -494,18 +497,18 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
       {/* 휴지통 */}
       <div className="mt-6 pt-4 border-t border-border/30">
         <button onClick={toggleTrash} className="flex items-center gap-2 text-sm font-bold text-muted-foreground hover:text-foreground transition-colors">
-          <RotateCcw className="size-4" /> 삭제한 회원 복원
+          <RotateCcw className="size-4" /> 삭제한 {terms.member} 복원
           <ChevronDown className={cn("size-4 transition-transform", trashOpen && "rotate-180")} />
         </button>
         {trashOpen && (
           <div className="mt-3 space-y-2">
             <p className="text-[11px] text-muted-foreground">
-              삭제된 회원을 복원할 수 있어요. <b className="text-amber-500">단, 그 회원의 과거 경기 기록과 상대방 RP 변동은 복구되지 않습니다.</b>
+              삭제된 {terms.member}을 복원할 수 있어요. <b className="text-amber-500">단, 그 {terms.member}의 과거 경기 기록과 상대방 RP 변동은 복구되지 않습니다.</b>
             </p>
             {trashLoading ? (
               <p className="text-xs text-muted-foreground py-3 text-center">불러오는 중...</p>
             ) : trash.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-3 text-center border border-dashed border-border/30 rounded-xl bg-muted/5">삭제한 회원이 없습니다.</p>
+              <p className="text-xs text-muted-foreground py-3 text-center border border-dashed border-border/30 rounded-xl bg-muted/5">삭제한 {terms.member}이 없습니다.</p>
             ) : (
               trash.map((s) => (
                 <div key={s.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/30 bg-muted/15 px-3.5 py-2.5">
@@ -536,7 +539,7 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
               <ShieldAlert className="size-5" /> {hardTarget?.name} 영구 삭제
             </AlertDialogTitle>
             <AlertDialogDescription className="text-sm text-muted-foreground mt-2 leading-relaxed">
-              이 회원을 데이터베이스에서 완전히 제거합니다. 더 이상 복원할 수 없습니다.
+              이 {terms.member}을 데이터베이스에서 완전히 제거합니다. 더 이상 복원할 수 없습니다.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="mt-6 gap-2">
@@ -555,10 +558,10 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
           <AlertDialogHeader>
             <AlertDialogTitle className="text-lg font-black flex items-center gap-2 text-destructive">
               <ShieldAlert className="size-5" />
-              회원 {confirm?.label} 삭제
+              {terms.member} {confirm?.label} 삭제
             </AlertDialogTitle>
             <AlertDialogDescription className="text-sm text-muted-foreground mt-2 leading-relaxed">
-              선택한 회원과 관련 경기 기록이 삭제되고 RP가 롤백됩니다. 되돌릴 수 없습니다.
+              선택한 {terms.member}과 관련 경기 기록이 삭제되고 RP가 롤백됩니다. 되돌릴 수 없습니다.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="mt-6 gap-2">
@@ -591,7 +594,7 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
 
             {!linkStudent.userId ? (
               <div className="rounded-xl border border-dashed border-border/40 bg-muted/15 px-3 py-4 text-center text-xs text-muted-foreground">
-                아직 구글 계정과 연동되지 않았습니다.<br />회원이 로그인한 뒤 이 닉네임을 직접 연동합니다.
+                아직 구글 계정과 연동되지 않았습니다.<br />{terms.member}이 로그인한 뒤 이 {terms.nameLabel}을 직접 연동합니다.
               </div>
             ) : (
               <>

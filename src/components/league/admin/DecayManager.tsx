@@ -7,6 +7,7 @@ import { Moon, Save, Play, History, RefreshCw, AlertTriangle } from "lucide-reac
 import { cn } from "@/lib/utils";
 import type { TierName } from "@/lib/league-types";
 import { useLeagueStore, type DecayLogRow } from "@/lib/league-store";
+import { useLeagueTerms } from "@/lib/league-terms";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -69,6 +70,7 @@ export function DecayManager() {
     saveDecaySettings, previewDormancyDecay, applyDormancyDecay, fetchDecayLog,
     currentViewSeason, tierThresholds, tierSettings, rpVariables,
   } = useLeagueStore();
+  const terms = useLeagueTerms();
 
   const readOnly = currentViewSeason !== "현재 시즌";
 
@@ -261,7 +263,7 @@ export function DecayManager() {
         </div>
         <div>
           <h2 className="text-lg font-black tracking-tight text-foreground">휴면 감점 시스템</h2>
-          <p className="text-[11px] text-muted-foreground">오래 경기하지 않은 회원의 RP를 티어별로 차감합니다.</p>
+          <p className="text-[11px] text-muted-foreground">오래 경기하지 않은 {terms.member}의 RP를 티어별로 차감합니다.</p>
         </div>
       </div>
 
@@ -431,7 +433,7 @@ export function DecayManager() {
         {decayEnabled && preview.length > 0 && (
           <div className="mt-4 overflow-hidden rounded-xl border border-border/30">
             <div className="grid grid-cols-[1fr_auto_auto_auto] gap-2 border-b border-border/30 bg-muted/30 px-3 py-2 text-[10px] font-bold text-muted-foreground">
-              <span>회원</span><span className="text-right">티어</span><span className="text-right">미활동</span><span className="text-right">RP</span>
+              <span>{terms.member}</span><span className="text-right">티어</span><span className="text-right">미활동</span><span className="text-right">RP</span>
             </div>
             <div className="max-h-72 divide-y divide-border/15 overflow-y-auto">
               {preview.map((p) => (
@@ -485,7 +487,7 @@ export function DecayManager() {
                   {rows.map((r) => (
                     <div key={r.id} className="flex items-center justify-between px-3 py-1.5 text-xs">
                       <span className="truncate font-semibold text-foreground">
-                        {r.player_name ?? "(삭제된 회원)"}
+                        {r.player_name ?? `(삭제된 ${terms.member})`}
                         {r.tier && <span className="ml-1.5 text-[10px] font-medium text-muted-foreground">{TIER_LABEL[r.tier as TierName] ?? r.tier}</span>}
                       </span>
                       <span className="shrink-0 font-mono text-[11px]">

@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { useLeagueStore } from "@/lib/league-store";
+import { useLeagueTerms } from "@/lib/league-terms";
 import { toast } from "sonner";
 import { Leaderboard } from "@/features/leaderboard/Leaderboard";
 import { DailyResults } from "@/components/league/DailyResults";
@@ -38,6 +39,7 @@ type Tab = "leaderboard" | "matches" | "daily" | "admin" | "myRecord" | "seasonS
 // club/school 라우트가 공유하는 리그 앱 본체. league_type에 따른 실제 분기는
 // useLeagueStore가 불러오는 leagues.league_type / settings 값(예: matchInputMode)로 처리된다.
 export function LeagueApp({ classId }: { classId: string }) {
+  const terms = useLeagueTerms();
   const {
     hydrated,
     students,
@@ -219,7 +221,7 @@ export function LeagueApp({ classId }: { classId: string }) {
                   "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-bold",
                   session.role === "TEACHER" ? "border-neon-green/40 bg-neon-green/5 text-neon-green" : "border-purple-500/40 bg-purple-500/5 text-purple-400"
                 )}>
-                  {session.role === "TEACHER" ? (isClassOwner ? "최고 관리자" : "관리자") : <><Users className="size-3.5" /> 회원</>}
+                  {session.role === "TEACHER" ? (isClassOwner ? `최고 ${terms.manager}` : terms.manager) : <><Users className="size-3.5" /> {terms.member}</>}
                 </span>
 
                 {/* 시즌 */}
@@ -303,8 +305,8 @@ export function LeagueApp({ classId }: { classId: string }) {
                       session.role === "TEACHER" ? "text-neon-green" : "text-purple-400"
                     )}>
                       {session.role === "TEACHER"
-                        ? (isClassOwner ? "최고 관리자" : "관리자")
-                        : <><Users className="size-3" /> 회원</>}
+                        ? (isClassOwner ? `최고 ${terms.manager}` : terms.manager)
+                        : <><Users className="size-3" /> {terms.member}</>}
                     </span>
                     <span className="text-[11px] text-muted-foreground">등록 선수 <b className="text-neon-green">{students.length}</b></span>
                   </div>

@@ -23,6 +23,7 @@ import { getTier, isUnranked } from "@/lib/league-types";
 import { getTodayPlayerIds } from "@/lib/today-players";
 import { useLeagueStore } from "@/lib/league-store";
 import { toast } from "sonner";
+import { useLeagueTerms } from "@/lib/league-terms";
 
 type Selection = { grade: number | null; classNum: number | null; studentId: string | null };
 
@@ -128,6 +129,7 @@ export function MatchRecommend({
   canReserve?: boolean;
 }) {
   const { dynamicBonuses, dynamicPenalties, tiers, placementEnabled, placementGames } = useLeagueStore();
+  const terms = useLeagueTerms();
   const unranked = (s: Student) => isUnranked(s, placementEnabled, placementGames);
 
   // Local states for MatchRecommend 2.0
@@ -571,7 +573,7 @@ export function MatchRecommend({
         tags.push({
           label: "🌱 교류 환영",
           style: "bg-purple-500/15 text-purple-400 border-purple-500/30",
-          desc: "최근 경기 수가 적은 회원입니다. 함께 플레이하며 리그를 활성화해주세요."
+          desc: `최근 경기 수가 적은 ${terms.member}입니다. 함께 플레이하며 리그를 활성화해주세요.`
         });
       }
 
@@ -747,7 +749,7 @@ export function MatchRecommend({
           tags.push({
             label: "🌱 교류 환영",
             style: "bg-purple-500/15 text-purple-400 border-purple-500/30",
-            desc: "최근 경기 수가 적은 회원이 포함된 팀입니다. 함께 플레이하며 리그를 활성화해주세요."
+            desc: `최근 경기 수가 적은 ${terms.member}이 포함된 팀입니다. 함께 플레이하며 리그를 활성화해주세요.`
           });
         }
 
@@ -788,7 +790,7 @@ export function MatchRecommend({
   }, [partnerRecommendations, teammateSearch]);
 
   // 매칭 범위는 레벨와 무관하게 전체 회원
-  const scopeLabel = "전체 회원";
+  const scopeLabel = `전체 ${terms.member}`;
 
   return (
     <div className="space-y-6">
@@ -812,7 +814,7 @@ export function MatchRecommend({
         {/* Compact selectors (only visible if not student view) */}
         {!isStudentView && !player && (
           <div className="flex flex-col gap-3 bg-surface-panel p-3 sm:p-4 rounded-xl border border-surface-line">
-            <div className="text-xs text-soft font-bold uppercase tracking-wider">매치 추천 대상 회원을 선택하세요</div>
+            <div className="text-xs text-soft font-bold uppercase tracking-wider">매치 추천 대상 {terms.member}을 선택하세요</div>
 
             {/* 검색 (레벨 위) */}
             <input
@@ -887,7 +889,7 @@ export function MatchRecommend({
           <div className="rounded-xl border border-neon-blue/40 bg-surface-panel p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <div className="text-[10px] text-soft font-semibold tracking-wider uppercase">
-                {groupLabelOf(player)} · 회원
+                {groupLabelOf(player)} · {terms.member}
               </div>
               <div className="mt-1 flex items-center gap-2 text-xl font-black text-strong">
                 <GenderMark gender={player.gender} className="size-5 text-[10px]" />
@@ -950,7 +952,7 @@ export function MatchRecommend({
           <span className="text-[10px] text-muted-foreground">
             {todayOnly
               ? `오늘 경기한 ${todayPlayerIds.size}명 대상${todayPlayerIds.size === 0 ? " · 기록 없음 → 체크 해제" : ""}`
-              : "전체 회원 대상"}
+              : `전체 ${terms.member} 대상`}
           </span>
         </div>
       )}
@@ -1034,7 +1036,7 @@ export function MatchRecommend({
                   <AlertCircle className="size-10 text-soft mb-2" />
                   <div className="text-sm font-bold text-strong">추천할 수 있는 대전 상대가 없습니다.</div>
                   <p className="text-xs text-soft mt-1 max-w-sm">
-                    명단에 본인 외 다른 회원이 없습니다. 회원을 추가한 뒤 다시 시도해 주세요.
+                    명단에 본인 외 다른 {terms.member}이 없습니다. {terms.member}을 추가한 뒤 다시 시도해 주세요.
                   </p>
                 </Card>
               )}
@@ -1138,7 +1140,7 @@ export function MatchRecommend({
                 ) : (
                   <div className="col-span-2 md:col-span-3 flex flex-col items-center justify-center rounded-xl border border-dashed border-surface-line bg-surface-deep p-10 text-center">
                     <div className="text-sm font-bold text-strong">{teammateSearch.trim() ? "검색 결과가 없습니다." : "팀원 후보가 없습니다."}</div>
-                    <p className="mt-1 text-xs text-soft">{teammateSearch.trim() ? "다른 닉네임으로 검색해 보세요." : "등록된 다른 회원이 없습니다."}</p>
+                    <p className="mt-1 text-xs text-soft">{teammateSearch.trim() ? "다른 닉네임으로 검색해 보세요." : `등록된 다른 ${terms.member}이 없습니다.`}</p>
                   </div>
                 )}
               </div>
@@ -1287,7 +1289,7 @@ export function MatchRecommend({
                         <AlertCircle className="size-10 text-soft mb-2" />
                         <div className="text-sm font-bold text-strong">매칭 가능한 상대 팀이 없습니다.</div>
                         <p className="text-xs text-soft mt-1 max-w-sm">
-                          지정 범위 내에 등록된 회원이 부족하거나 팀원과 아군을 제외한 선수 데이터가 모자랍니다.
+                          지정 범위 내에 등록된 {terms.member}이 부족하거나 팀원과 아군을 제외한 선수 데이터가 모자랍니다.
                         </p>
                       </Card>
                     )}
@@ -1324,7 +1326,7 @@ export function MatchRecommend({
                   선수 성별 정보 보완
                 </h3>
                 <p className="text-xs text-soft max-w-sm mb-6 leading-relaxed">
-                  <span className="font-bold text-strong">[{displayNameOf(targetStudent)}]</span> 회원의 성별 정보(M/F)가 지정되지 않았습니다.<br />
+                  <span className="font-bold text-strong">[{displayNameOf(targetStudent)}]</span> {terms.member}의 성별 정보(M/F)가 지정되지 않았습니다.<br />
                   매치를 정확하게 추천하기 위해 성별을 입력해주세요.
                 </p>
               </div>

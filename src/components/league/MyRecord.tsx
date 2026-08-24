@@ -7,6 +7,7 @@ import { TitleSelect } from "./TitleSelect";
 import { GenderMark } from "./GenderMark";
 import { useLeagueStore } from "@/lib/league-store";
 import { cn } from "@/lib/utils";
+import { useLeagueTerms } from "@/lib/league-terms";
 import { 
   Trophy, 
   Award, 
@@ -61,6 +62,7 @@ export function MyRecord({
   playerId
 }: MyRecordProps) {
   const { placementEnabled, placementGames, myPlayerId } = useLeagueStore();
+  const terms = useLeagueTerms();
 
   // 1. 현재 접속한 선수 정보 매칭 (동명이인 처리 포함)
   const me = useMemo(() => {
@@ -229,7 +231,7 @@ export function MyRecord({
           <CardHeader className="pb-3 relative z-10">
             <div className="flex items-center justify-between gap-3">
               <div className="space-y-0.5">
-                <span className="text-[10px] font-black uppercase tracking-wider text-neon-blue">회원 프로필</span>
+                <span className="text-[10px] font-black uppercase tracking-wider text-neon-blue">{terms.member} 프로필</span>
                 <CardTitle className="text-2xl font-black tracking-tight text-foreground flex items-center gap-2">
                   <GenderMark gender={me.gender} />
                   <span>{me.name}</span>
@@ -465,7 +467,7 @@ export function MyRecord({
                   ? [m.playerBId, m.playerB2Id].filter(Boolean) as string[]
                   : [m.playerAId, m.playerA2Id].filter(Boolean) as string[];
                 const oppPlayers = oppIds.map(id => students.find((s) => s.id === id)).filter(Boolean) as Student[];
-                const oppName = oppPlayers.map(o => o.nickname || o.name).join(" & ") || "탈퇴한 회원";
+                const oppName = oppPlayers.map(o => o.nickname || o.name).join(" & ") || `탈퇴한 ${terms.member}`;
                 const oppClass = oppPlayers[0]?.group || "기타 소속";
                 
                 // 내 파트너 검색 (복식일 경우)

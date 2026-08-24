@@ -42,7 +42,11 @@ import { LEAGUE_BUNDLES, buildBundleSettings, type BundleKey } from "@/lib/leagu
 import { SPORT_OPTIONS, getSportPreset } from "@/domain/sport-levels";
 import { ThemePicker } from "@/components/ThemePicker";
 
-export function Lobby() {
+/**
+ * 리그 로비. schoolMode=true(/school 진입)면 학교 대상 문구로 바뀌고
+ * 새 리그 개설 시 '학교 리그'가 기본 선택된다. 리그 데이터 자체는 동일하게 다룬다.
+ */
+export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
   const [userEmail, setUserEmail] = useState<string>("");
   const [userId, setUserId] = useState<string>("");
   const [ownedLeagues, setOwnedLeagues] = useState<Class[]>([]);
@@ -51,7 +55,7 @@ export function Lobby() {
   
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [newLeagueType, setNewLeagueType] = useState<"club" | "school">("club"); // 리그 유형: 동호인/학교
+  const [newLeagueType, setNewLeagueType] = useState<"club" | "school">(schoolMode ? "school" : "club"); // 리그 유형: 동호인/학교
   const [newSchoolName, setNewSchoolName] = useState("");
   const [newSport, setNewSport] = useState("");
   const [customSport, setCustomSport] = useState(false); // 종목 직접 입력 모드
@@ -402,11 +406,20 @@ export function Lobby() {
           <div className="flex-1">
             <h2 className="text-xl md:text-2xl font-black text-foreground tracking-tight flex items-center gap-2">
               <Sparkles className="size-5 text-neon-blue animate-pulse" />
-              클럽 스포츠 리그 관리 시스템
+              {schoolMode ? "학교 스포츠 리그 관리 시스템" : "클럽 스포츠 리그 관리 시스템"}
             </h2>
             <p className="text-xs sm:text-sm text-muted-foreground mt-2 leading-relaxed">
-              관리를 맡고 있는 리그(리그)를 선택하거나 새 학기 새로운 리그전을 창설하세요.<br />
-              참여 중인 리그에서는 다른 관리자가 개설한 리그 리그의 경기 기록을 도울 수 있습니다.
+              {schoolMode ? (
+                <>
+                  담당하고 있는 학급·학교 리그를 선택하거나 새 학기 리그전을 개설하세요.<br />
+                  학생 로그인 없이 선생님이 태블릿으로 경기 결과를 입력하고, 학생은 공개 순위표로 확인합니다.
+                </>
+              ) : (
+                <>
+                  관리를 맡고 있는 리그를 선택하거나 새로운 리그전을 창설하세요.<br />
+                  참여 중인 리그에서는 다른 관리자가 개설한 리그의 경기 기록을 도울 수 있습니다.
+                </>
+              )}
             </p>
           </div>
           <Button

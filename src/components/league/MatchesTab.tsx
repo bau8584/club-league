@@ -10,6 +10,7 @@ import { RecordMatch, type MatchResultData, type PlayerResult } from "./RecordMa
 import { MatchRecommend } from "./MatchRecommend";
 import { getTier, type Match, type Student } from "@/lib/league-types";
 import { getTodayPlayerIds } from "@/lib/today-players";
+import { useLeagueTerms } from "@/lib/league-terms";
 
 const dn = (s?: Student | null) => (s ? (s.nickname || s.name) : "?");
 
@@ -33,6 +34,7 @@ export function MatchesTab({ incomingInitials, onConsumeInitials, openMatchId, o
     createReservation, cancelReservation, linkReservationResult,
     leaveReservation, joinReservation, notifyReservation,
   } = useLeagueStore();
+  const terms = useLeagueTerms();
 
   const readOnly = currentViewSeason !== "현재 시즌";
   const canReserve = (isClassManager || (matchInputMode !== "admin-only" && !!myPlayerId)) && !readOnly;
@@ -182,7 +184,7 @@ export function MatchesTab({ incomingInitials, onConsumeInitials, openMatchId, o
     const finalRp = s?.rp ?? 1000;
     const prevRp = finalRp - rpDelta;
     return {
-      name: s ? dn(s) : "탈퇴한 회원",
+      name: s ? dn(s) : `탈퇴한 ${terms.member}`,
       group: s?.group ?? null,
       gender: s?.gender ?? "U",
       prevRp,
@@ -460,7 +462,7 @@ export function MatchesTab({ incomingInitials, onConsumeInitials, openMatchId, o
                   {/* 관리자 사람 추가 인라인 선택 */}
                   {addingTo === r.id && (
                     <div className="mt-2 rounded-lg border border-border/40 bg-background/40 p-2">
-                      <Input value={addSearch} onChange={(e) => setAddSearch(e.target.value)} placeholder="추가할 회원 검색..."
+                      <Input value={addSearch} onChange={(e) => setAddSearch(e.target.value)} placeholder={`추가할 ${terms.member} 검색...`}
                         className="mb-2 h-8 border-border/50 bg-input text-xs" />
                       <div className="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto">
                         {addable.slice(0, 40).map((s) => (
@@ -469,7 +471,7 @@ export function MatchesTab({ incomingInitials, onConsumeInitials, openMatchId, o
                             {dn(s)}{s.group ? ` · ${s.group}` : ""}
                           </button>
                         ))}
-                        {addable.length === 0 && <span className="text-[11px] text-muted-foreground">추가할 회원이 없어요.</span>}
+                        {addable.length === 0 && <span className="text-[11px] text-muted-foreground">추가할 {terms.member}이 없어요.</span>}
                       </div>
                     </div>
                   )}

@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import type { Gender, Student, Match, TierName, TierSettings, DynamicBonuses, DynamicPenalties } from "@/lib/league-types";
 import { useLeagueStore, type ActiveBonuses } from "@/lib/league-store";
+import { useLeagueTerms, useIsSchoolLeague, type LeagueTerms } from "@/lib/league-terms";
 import { GenderMark } from "./GenderMark";
 import { cn } from "@/lib/utils";
 import {
@@ -47,14 +48,15 @@ import { RpRecoveryPanel } from "./admin/RpRecoveryPanel";
 type Row = { grade: number; classNum: number; number: number; name: string; gender?: Gender };
 
 // 관리자 패널의 하위 탭 목록 — PC 사이드바와 모바일 드롭다운이 공유한다.
-const ADMIN_MENU_ITEMS = [
+// 리그 유형(club/school)에 따라 "회원"/"학생" 용어가 갈리므로 terms를 받아 구성한다.
+const buildAdminMenuItems = (terms: LeagueTerms) => [
   { id: "settings", label: "리그 글로벌 설정", icon: Settings, desc: "리그 이름, 티어, RP 규칙 설정" },
-  { id: "studentManage", label: "회원 관리", icon: User, desc: "회원 명단, RP·나이 수정 및 삭제" },
+  { id: "studentManage", label: `${terms.member} 관리`, icon: User, desc: `${terms.roster}, RP·나이 수정 및 삭제` },
   { id: "matchRecords", label: "리그 기록 관리", icon: Swords, desc: "전체 경기 조회, 점수 수정/삭제" },
   { id: "decay", label: "휴면 감점", icon: Moon, desc: "티어별 감점 설정·실시·내역" },
   { id: "dataManage", label: "데이터 관리", icon: Database, desc: "JSON 백업 다운로드 및 복원" },
   { id: "seasonManage", label: "시즌 관리", icon: Calendar, desc: "시즌 초기화 및 신규 시즌 생성" },
-] as const;
+];
 
 function detectGender(token: string): Gender | null {
   const t = token.trim();
@@ -142,10 +144,12 @@ export function AdminPanel({
     dynamicPenalties?: DynamicPenalties
   ) => Promise<void>;
 }) {
+  const terms = useLeagueTerms();
+  const isSchool = useIsSchoolLeague();
   // Active Tab for dashboard split layout
   // 소유자(개설자) 전용 탭 — 관리 관리자(공동관리자/기록원)에게는 숨김
   const OWNER_ONLY_TABS = new Set(["settings", "decay", "dataManage", "seasonManage"]);
-  const menuItems = ADMIN_MENU_ITEMS.filter((i) => isOwner || !OWNER_ONLY_TABS.has(i.id));
+  const menuItems = buildAdminMenuItems(terms).filter((i) => isOwner || !OWNER_ONLY_TABS.has(i.id));
   const [activeTab, setActiveTab] = useState<string>(isOwner ? "settings" : "studentManage");
 
   // JSON Rollback/Restore states
@@ -407,7 +411,8 @@ export function AdminPanel({
             thresholds={thresholds}
           />
         )}
-        {activeTab === "studentManage" && isOwner && (
+        {/* 레벨(급수) 체계는 club 전용 축 — school은 학년/반/번호를 쓰므로 숨긴다 */}
+        {activeTab === "studentManage" && isOwner && !isSchool && (
           <div className="mt-6"><LevelManager /></div>
         )}
 
