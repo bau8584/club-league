@@ -36,6 +36,7 @@ drop function if exists public.stamp_match_season();
 drop function if exists public.start_new_season(uuid, text);
 drop function if exists public.list_class_seasons(uuid);
 drop function if exists public.get_season_standings_public(uuid, text);
+drop function if exists public.get_league_public(uuid);
 drop function if exists public.restore_season(uuid, text);
 drop function if exists public.rename_season(uuid, text, text);
 drop function if exists public.delete_season(uuid, text, boolean);
@@ -318,6 +319,17 @@ language sql stable security definer set search_path = public, extensions as $$
   select player_id, nickname, display_name, group_label, gender, rp, win_count, lose_count
   from public.season_standings where league_id = p_class_id and season = p_season
   order by rp desc;
+$$;
+
+-- 무인증 공개 순위표용: 리그명/유형/티어 기준선 등 렌더에 필요한 최소 정보만 노출
+create or replace function public.get_league_public(p_class_id uuid)
+returns table(id uuid, name text, league_type text, season text, tier_thresholds jsonb, placement jsonb)
+language sql stable security definer set search_path = public, extensions as $$
+  select l.id, l.name, l.league_type,
+         coalesce(nullif(btrim(l.settings->>'season'), ''), '시즌 1'),
+         l.settings->'tierThresholds', l.settings->'placement'
+  from public.leagues l
+  where l.id = p_class_id and coalesce(l.is_deleted, false) = false;
 $$;
 
 create or replace function public.rename_season(p_class_id uuid, p_old text, p_new text)
@@ -761,6 +773,7 @@ grant execute on function public.current_season_of(uuid)            to authentic
 grant execute on function public.start_new_season(uuid, text)       to authenticated;
 grant execute on function public.list_class_seasons(uuid)           to authenticated, anon;
 grant execute on function public.get_season_standings_public(uuid, text) to authenticated, anon;
+grant execute on function public.get_league_public(uuid)                 to authenticated, anon;
 grant execute on function public.rename_season(uuid, text, text)    to authenticated;
 grant execute on function public.delete_season(uuid, text, boolean) to authenticated;
 grant execute on function public.record_match_transaction(uuid, uuid, uuid, uuid, jsonb, uuid, uuid, int, int, int, int, int, int) to authenticated;

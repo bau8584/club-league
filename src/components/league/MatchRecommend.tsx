@@ -19,18 +19,24 @@ import {
   ChevronDown
 } from "lucide-react";
 import type { Student, Match } from "@/lib/league-types";
-import { getTier, isUnranked } from "@/lib/league-types";
+import { getTier, isUnranked, schoolLabel } from "@/lib/league-types";
 import { getTodayPlayerIds } from "@/lib/today-players";
 import { useLeagueStore } from "@/lib/league-store";
 import { toast } from "sonner";
-import { useLeagueTerms } from "@/lib/league-terms";
+import { useLeagueTerms, useIsSchoolLeague } from "@/lib/league-terms";
 
 type Selection = { grade: number | null; classNum: number | null; studentId: string | null };
 
 // 표시 이름 헬퍼: 별명 > 표시이름 > 본명
 const displayNameOf = (s: Student) => s.displayName || s.nickname || s.name;
+// 범위 칩 공통 스타일 (레벨/학년·반 칩이 공유)
+const CHIP_CLS = "h-11 rounded-xl border text-sm font-black transition-all active:scale-95 flex items-center justify-center cursor-pointer";
+const CHIP_ON = "border-neon-blue bg-neon-blue/20 text-neon-blue glow-primary";
+const CHIP_OFF = "border-surface-line bg-surface-deep text-soft hover:text-strong";
+
 // 레벨 라벨 헬퍼 (미지정 시 표기)
-const groupLabelOf = (s: Student) => s.group || "레벨 미지정";
+const groupLabelOf = (s: Student, isSchool = false) =>
+  isSchool ? (schoolLabel(s) || "학년·반 미지정") : (s.group || "레벨 미지정");
 
 // 예상 RP 미리보기 — 세련된 승/패 배지 (값은 예상 추정치)
 function RpPreview({ win, loss }: { win: number; loss: number }) {
@@ -130,6 +136,7 @@ export function MatchRecommend({
 }) {
   const { dynamicBonuses, dynamicPenalties, tiers, placementEnabled, placementGames } = useLeagueStore();
   const terms = useLeagueTerms();
+  const isSchool = useIsSchoolLeague();
   const unranked = (s: Student) => isUnranked(s, placementEnabled, placementGames);
 
   // Local states for MatchRecommend 2.0
@@ -219,6 +226,23 @@ export function MatchRecommend({
   // 선택 UI용 로컬 레벨 상태 (null = 전체)
   const [pickGroup, setPickGroup] = useState<string | null>(null);
   const [pickSearch, setPickSearch] = useState("");
+  // school 리그: 레벨 대신 학년/반으로 좁힌다 (null = 전체)
+  const [pickGrade, setPickGrade] = useState<number | null>(null);
+  const [pickClass, setPickClass] = useState<number | null>(null);
+  const availableGrades = useMemo(() => {
+    const set = new Set<number>();
+    students.forEach((s) => { if (s.grade != null) set.add(s.grade); });
+    return Array.from(set).sort((a, b) => a - b);
+  }, [students]);
+  const availableClasses = useMemo(() => {
+    const set = new Set<number>();
+    students.forEach((s) => {
+      if (s.classNum == null) return;
+      if (pickGrade != null && s.grade !== pickGrade) return;
+      set.add(s.classNum);
+    });
+    return Array.from(set).sort((a, b) => a - b);
+  }, [students, pickGrade]);
   // 복식 팀원 직접 검색
   const [teammateSearch, setTeammateSearch] = useState("");
 
@@ -233,15 +257,19 @@ export function MatchRecommend({
   const pickRoster = useMemo(() => {
     const q = pickSearch.trim().toLowerCase();
     return students
-      .filter((s) => (pickGroup == null ? true : (s.group || null) === pickGroup))
+      .filter((s) => (isSchool
+        ? ((pickGrade == null || s.grade === pickGrade) && (pickClass == null || s.classNum === pickClass))
+        : (pickGroup == null ? true : (s.group || null) === pickGroup)))
       .filter((s) => {
         if (!q) return true;
         const n = (s.name || "").toLowerCase();
         const nk = (s.nickname || "").toLowerCase();
         return n.includes(q) || nk.includes(q);
       })
-      .sort((a, b) => (a.nickname || a.name).localeCompare(b.nickname || b.name, "ko"));
-  }, [students, pickGroup, pickSearch]);
+      .sort((a, b) => (isSchool
+        ? ((a.grade ?? 0) - (b.grade ?? 0)) || ((a.classNum ?? 0) - (b.classNum ?? 0)) || ((a.studentNo ?? 0) - (b.studentNo ?? 0))
+        : 0) || (a.nickname || a.name).localeCompare(b.nickname || b.name, "ko"));
+  }, [students, pickGroup, pickSearch, isSchool, pickGrade, pickClass]);
 
   // 랜덤 레벨 선택 (다른 레벨 도전)
   const handleRandomGroup = () => {
@@ -821,36 +849,56 @@ export function MatchRecommend({
               type="text"
               value={pickSearch}
               onChange={(e) => setPickSearch(e.target.value)}
-              placeholder="닉네임 검색"
+              placeholder={`${terms.nameLabel} 검색`}
               className="w-full rounded-lg border border-border/60 bg-surface-deep px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-neon-blue/60 focus:outline-none"
             />
 
-            {/* 레벨 칩 (null = 전체) */}
-            <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
-              <button
-                type="button"
-                onClick={() => { setPickGroup(null); onSelChange({ ...sel, studentId: null }); setSelectedTeammateId(null); }}
-                className={cn(
-                  "h-11 rounded-xl border text-sm font-black transition-all active:scale-95 flex items-center justify-center cursor-pointer",
-                  pickGroup === null
-                    ? "border-neon-blue bg-neon-blue/20 text-neon-blue glow-primary"
-                    : "border-surface-line bg-surface-deep text-soft hover:text-strong"
+            {/* 범위 칩 — club: 레벨 / school: 학년·반 (null = 전체) */}
+            {isSchool ? (
+              <div className="space-y-2">
+                {availableGrades.length > 0 && (
+                  <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
+                    <button type="button"
+                      onClick={() => { setPickGrade(null); setPickClass(null); onSelChange({ ...sel, studentId: null }); setSelectedTeammateId(null); }}
+                      className={cn(CHIP_CLS, pickGrade === null ? CHIP_ON : CHIP_OFF)}
+                    >전체 학년</button>
+                    {availableGrades.map((g) => (
+                      <button key={g} type="button"
+                        onClick={() => { setPickGrade(g); setPickClass(null); onSelChange({ ...sel, studentId: null }); setSelectedTeammateId(null); }}
+                        className={cn(CHIP_CLS, pickGrade === g ? CHIP_ON : CHIP_OFF)}
+                      >{g}학년</button>
+                    ))}
+                  </div>
                 )}
-              >전체</button>
-              {groupsForSel.map((g) => (
-                <button
-                  key={g}
-                  type="button"
-                  onClick={() => { setPickGroup(g); onSelChange({ ...sel, studentId: null }); setSelectedTeammateId(null); }}
-                  className={cn(
-                    "h-11 rounded-xl border text-sm font-black transition-all active:scale-95 flex items-center justify-center cursor-pointer",
-                    pickGroup === g
-                      ? "border-neon-blue bg-neon-blue/20 text-neon-blue glow-primary"
-                      : "border-surface-line bg-surface-deep text-soft hover:text-strong"
-                  )}
-                >{g}</button>
-              ))}
-            </div>
+                {availableClasses.length > 0 && (
+                  <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
+                    <button type="button"
+                      onClick={() => { setPickClass(null); onSelChange({ ...sel, studentId: null }); setSelectedTeammateId(null); }}
+                      className={cn(CHIP_CLS, pickClass === null ? CHIP_ON : CHIP_OFF)}
+                    >전체 반</button>
+                    {availableClasses.map((c) => (
+                      <button key={c} type="button"
+                        onClick={() => { setPickClass(c); onSelChange({ ...sel, studentId: null }); setSelectedTeammateId(null); }}
+                        className={cn(CHIP_CLS, pickClass === c ? CHIP_ON : CHIP_OFF)}
+                      >{c}반</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
+                <button type="button"
+                  onClick={() => { setPickGroup(null); onSelChange({ ...sel, studentId: null }); setSelectedTeammateId(null); }}
+                  className={cn(CHIP_CLS, pickGroup === null ? CHIP_ON : CHIP_OFF)}
+                >전체</button>
+                {groupsForSel.map((g) => (
+                  <button key={g} type="button"
+                    onClick={() => { setPickGroup(g); onSelChange({ ...sel, studentId: null }); setSelectedTeammateId(null); }}
+                    className={cn(CHIP_CLS, pickGroup === g ? CHIP_ON : CHIP_OFF)}
+                  >{g}</button>
+                ))}
+              </div>
+            )}
 
             {/* 선수 타일 */}
             <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
@@ -866,8 +914,8 @@ export function MatchRecommend({
                       : "border-border/60 bg-surface-deep hover:border-neon-blue/60 hover:bg-accent/40"
                   )}
                 >
-                  {s.group && (
-                    <span className="absolute top-1 left-1.5 max-w-[60%] truncate text-left font-mono text-[10px] text-soft">{s.group}</span>
+                  {(isSchool ? schoolLabel(s) : s.group) && (
+                    <span className="absolute top-1 left-1.5 max-w-[60%] truncate text-left font-mono text-[10px] text-soft">{isSchool ? schoolLabel(s) : s.group}</span>
                   )}
                   <GenderMark gender={s.gender} className="absolute top-1 right-1.5 size-3.5 text-[9px] shrink-0" />
                   <div className="flex w-full min-w-0 flex-grow items-center justify-center">
@@ -889,7 +937,7 @@ export function MatchRecommend({
           <div className="rounded-xl border border-neon-blue/40 bg-surface-panel p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <div className="text-[10px] text-soft font-semibold tracking-wider uppercase">
-                {groupLabelOf(player)} · {terms.member}
+                {groupLabelOf(player, isSchool)} · {terms.member}
               </div>
               <div className="mt-1 flex items-center gap-2 text-xl font-black text-strong">
                 <GenderMark gender={player.gender} className="size-5 text-[10px]" />
@@ -1103,7 +1151,7 @@ export function MatchRecommend({
                       >
                         <div className="flex items-start justify-between gap-1">
                           <div className="min-w-0">
-                            <div className="truncate text-[9px] text-soft">{groupLabelOf(s)}</div>
+                            <div className="truncate text-[9px] text-soft">{groupLabelOf(s, isSchool)}</div>
                             <div className="mt-0.5 flex items-center gap-1 font-bold text-strong">
                               <GenderMark gender={s.gender} className="size-3.5 text-[8px] shrink-0" />
                               <span className="truncate">{displayNameOf(s)}</span>

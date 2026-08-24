@@ -294,6 +294,16 @@ export const TIER_STYLES: Record<TierName, { bg: string; text: string; ring: str
   Diamond:  { bg: "bg-tier-diamond/15",  text: "text-tier-diamond",  ring: "ring-tier-diamond/40",  label: "다이아몬드" },
 };
 
+/**
+ * school 리그의 학년/반/번호 표기. 값이 없는 축은 건너뛴다.
+ * 예) grade=3, classNum=2, studentNo=15 → "3-2 15번"
+ */
+export function schoolLabel(s: { grade?: number | null; classNum?: number | null; studentNo?: number | null }): string {
+  const gc = [s.grade, s.classNum].filter((v) => v != null).join("-");
+  const no = s.studentNo != null ? `${s.studentNo}번` : "";
+  return [gc, no].filter(Boolean).join(" ");
+}
+
 export function studentKey(s: { id?: string; name?: string; nickname?: string | null; group?: string | null }) {
   // 동호회: 안정적 식별은 id 우선, 없으면 이름/레벨 조합.
   if (s.id) return s.id;

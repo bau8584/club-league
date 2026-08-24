@@ -526,3 +526,9 @@ export async function apiRenameSeason(classId: string, oldName: string, newName:
 export async function apiDeleteSeason(classId: string, season: string, deleteMatches = false) {
   return supabase.rpc("delete_season", { p_class_id: classId, p_season: season, p_delete_matches: deleteMatches });
 }
+
+// --- 무인증 공개 순위표(B안) ---
+// 비로그인(anon) 사용자도 호출 가능. 리그명/유형/티어 기준선 등 렌더 최소 정보만 반환.
+export async function apiFetchLeaguePublic(classId: string) {
+  return supabase.rpc("get_league_public", { p_class_id: classId });
+}

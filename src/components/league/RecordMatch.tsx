@@ -7,10 +7,10 @@ import { GenderMark } from "./GenderMark";
 import { cn } from "@/lib/utils";
 import { Trophy, X, Sparkles, User, Users, Crown, Award, Zap, RotateCcw, UserPlus } from "lucide-react";
 import type { Student, Match, TierName } from "@/lib/league-types";
-import { getTier, getTierSubdivision, TIER_ORDER, getFullTierLabel, isUnranked } from "@/lib/league-types";
+import { getTier, getTierSubdivision, TIER_ORDER, getFullTierLabel, isUnranked, schoolLabel } from "@/lib/league-types";
 import { toast } from "sonner";
 import { useLeagueStore } from "@/lib/league-store";
-import { useLeagueTerms } from "@/lib/league-terms";
+import { useLeagueTerms, useIsSchoolLeague } from "@/lib/league-terms";
 
 type Selection = { group: string | null; studentId: string | null };
 // 레벨 "전체" 탭이 기본으로 열려 있도록 group을 ALL("__ALL__")로 초기화
@@ -1808,10 +1808,14 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
   placementEnabled: boolean; placementGames: number; canAddMember?: boolean;
 }) {
   const terms = useLeagueTerms();
+  const isSchool = useIsSchoolLeague();
   const a = ACCENT[accent];
   const [search, setSearch] = useState("");
   const [grp, setGrp] = useState<string>(group ?? ALL_GROUP);
   const [addOpen, setAddOpen] = useState(false);
+  // school 리그: 레벨(급수) 대신 학년/반으로 좁힌다.
+  const [gradeF, setGradeF] = useState<number | null>(null);
+  const [classF, setClassF] = useState<number | null>(null);
 
   const activeGroups = useMemo(() => {
     const set = new Set<string>();
@@ -1819,18 +1823,38 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
     return Array.from(set).sort((x, y) => x.localeCompare(y, "ko"));
   }, [students]);
 
+  // school: 명단에 실제로 존재하는 학년/반 목록 (반은 선택된 학년 기준으로 좁힘)
+  const activeGrades = useMemo(() => {
+    const set = new Set<number>();
+    students.forEach((s) => { if (s.grade != null) set.add(s.grade); });
+    return Array.from(set).sort((x, y) => x - y);
+  }, [students]);
+  const activeClasses = useMemo(() => {
+    const set = new Set<number>();
+    students.forEach((s) => {
+      if (s.classNum == null) return;
+      if (gradeF != null && s.grade !== gradeF) return;
+      set.add(s.classNum);
+    });
+    return Array.from(set).sort((x, y) => x - y);
+  }, [students, gradeF]);
+
   const roster = useMemo(() => {
     const q = search.trim().toLowerCase();
     return students
-      .filter((s) => (grp === ALL_GROUP ? true : (s.group ?? null) === grp))
+      .filter((s) => (isSchool
+        ? ((gradeF == null || s.grade === gradeF) && (classF == null || s.classNum === classF))
+        : (grp === ALL_GROUP ? true : (s.group ?? null) === grp)))
       .filter((s) => {
         if (!q) return true;
         const n = (s.name || "").toLowerCase();
         const nk = (s.nickname || "").toLowerCase();
         return n.includes(q) || nk.includes(q);
       })
-      .sort((x, y) => (x.nickname || x.name).localeCompare(y.nickname || y.name, "ko"));
-  }, [students, grp, search]);
+      .sort((x, y) => (isSchool
+        ? ((x.grade ?? 0) - (y.grade ?? 0)) || ((x.classNum ?? 0) - (y.classNum ?? 0)) || ((x.studentNo ?? 0) - (y.studentNo ?? 0))
+        : 0) || (x.nickname || x.name).localeCompare(y.nickname || y.name, "ko"));
+  }, [students, grp, search, isSchool, gradeF, classF]);
 
   return (
     <Card className={cn("border p-3 backdrop-blur", a.border)}>
@@ -1839,15 +1863,36 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
         type="text"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        placeholder="닉네임 검색"
+        placeholder={`${terms.nameLabel} 검색`}
         className="mb-3 w-full rounded-lg border border-border/60 bg-surface-deep px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-neon-blue/60 focus:outline-none"
       />
-      <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
-        <Chip active={grp === ALL_GROUP} accent={accent} onClick={() => setGrp(ALL_GROUP)}>전체</Chip>
-        {activeGroups.map((g) => (
-          <Chip key={g} active={grp === g} accent={accent} onClick={() => setGrp(g)}>{g}</Chip>
-        ))}
-      </div>
+      {isSchool ? (
+        <div className="space-y-2">
+          {activeGrades.length > 0 && (
+            <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
+              <Chip active={gradeF === null} accent={accent} onClick={() => { setGradeF(null); setClassF(null); }}>전체 학년</Chip>
+              {activeGrades.map((g) => (
+                <Chip key={g} active={gradeF === g} accent={accent} onClick={() => { setGradeF(g); setClassF(null); }}>{g}학년</Chip>
+              ))}
+            </div>
+          )}
+          {activeClasses.length > 0 && (
+            <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
+              <Chip active={classF === null} accent={accent} onClick={() => setClassF(null)}>전체 반</Chip>
+              {activeClasses.map((c) => (
+                <Chip key={c} active={classF === c} accent={accent} onClick={() => setClassF(c)}>{c}반</Chip>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
+          <Chip active={grp === ALL_GROUP} accent={accent} onClick={() => setGrp(ALL_GROUP)}>전체</Chip>
+          {activeGroups.map((g) => (
+            <Chip key={g} active={grp === g} accent={accent} onClick={() => setGrp(g)}>{g}</Chip>
+          ))}
+        </div>
+      )}
       <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
         {roster.map((s) => (
           <button
@@ -1856,8 +1901,8 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
             onClick={() => onPick(grp, s.id)}
             className="relative flex min-h-[4.75rem] w-full flex-col items-center justify-between overflow-hidden rounded-lg border border-border/60 bg-surface-deep px-2 pt-6 pb-2.5 text-center transition-all hover:border-neon-blue/60 hover:bg-accent/40 cursor-pointer"
           >
-            {s.group && (
-              <span className="absolute top-1 left-1.5 max-w-[60%] truncate text-left font-mono text-[10px] text-soft">{s.group}</span>
+            {(isSchool ? schoolLabel(s) : s.group) && (
+              <span className="absolute top-1 left-1.5 max-w-[60%] truncate text-left font-mono text-[10px] text-soft">{isSchool ? schoolLabel(s) : s.group}</span>
             )}
             <GenderMark gender={s.gender} className="absolute top-1 right-1.5 size-3.5 text-[9px] shrink-0" />
             <div className="flex w-full min-w-0 flex-grow items-center justify-center">

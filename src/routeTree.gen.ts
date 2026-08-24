@@ -13,6 +13,7 @@ import { Route as JoinRouteImport } from './routes/join'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SchoolIndexRouteImport } from './routes/school.index'
 import { Route as SchoolClassIdRouteImport } from './routes/school.$classId'
+import { Route as RankingClassIdRouteImport } from './routes/ranking.$classId'
 import { Route as ClassClassIdRouteImport } from './routes/class.$classId'
 
 const JoinRoute = JoinRouteImport.update({
@@ -35,6 +36,11 @@ const SchoolClassIdRoute = SchoolClassIdRouteImport.update({
   path: '/school/$classId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RankingClassIdRoute = RankingClassIdRouteImport.update({
+  id: '/ranking/$classId',
+  path: '/ranking/$classId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ClassClassIdRoute = ClassClassIdRouteImport.update({
   id: '/class/$classId',
   path: '/class/$classId',
@@ -45,6 +51,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/join': typeof JoinRoute
   '/class/$classId': typeof ClassClassIdRoute
+  '/ranking/$classId': typeof RankingClassIdRoute
   '/school/$classId': typeof SchoolClassIdRoute
   '/school/': typeof SchoolIndexRoute
 }
@@ -52,6 +59,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/join': typeof JoinRoute
   '/class/$classId': typeof ClassClassIdRoute
+  '/ranking/$classId': typeof RankingClassIdRoute
   '/school/$classId': typeof SchoolClassIdRoute
   '/school': typeof SchoolIndexRoute
 }
@@ -60,19 +68,33 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/join': typeof JoinRoute
   '/class/$classId': typeof ClassClassIdRoute
+  '/ranking/$classId': typeof RankingClassIdRoute
   '/school/$classId': typeof SchoolClassIdRoute
   '/school/': typeof SchoolIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/join' | '/class/$classId' | '/school/$classId' | '/school/'
+  fullPaths:
+    | '/'
+    | '/join'
+    | '/class/$classId'
+    | '/ranking/$classId'
+    | '/school/$classId'
+    | '/school/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/join' | '/class/$classId' | '/school/$classId' | '/school'
+  to:
+    | '/'
+    | '/join'
+    | '/class/$classId'
+    | '/ranking/$classId'
+    | '/school/$classId'
+    | '/school'
   id:
     | '__root__'
     | '/'
     | '/join'
     | '/class/$classId'
+    | '/ranking/$classId'
     | '/school/$classId'
     | '/school/'
   fileRoutesById: FileRoutesById
@@ -81,6 +103,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   JoinRoute: typeof JoinRoute
   ClassClassIdRoute: typeof ClassClassIdRoute
+  RankingClassIdRoute: typeof RankingClassIdRoute
   SchoolClassIdRoute: typeof SchoolClassIdRoute
   SchoolIndexRoute: typeof SchoolIndexRoute
 }
@@ -115,6 +138,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SchoolClassIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/ranking/$classId': {
+      id: '/ranking/$classId'
+      path: '/ranking/$classId'
+      fullPath: '/ranking/$classId'
+      preLoaderRoute: typeof RankingClassIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/class/$classId': {
       id: '/class/$classId'
       path: '/class/$classId'
@@ -129,6 +159,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   JoinRoute: JoinRoute,
   ClassClassIdRoute: ClassClassIdRoute,
+  RankingClassIdRoute: RankingClassIdRoute,
   SchoolClassIdRoute: SchoolClassIdRoute,
   SchoolIndexRoute: SchoolIndexRoute,
 }

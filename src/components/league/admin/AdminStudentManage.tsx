@@ -27,18 +27,35 @@ export interface AdminStudentManageProps {
   thresholds?: Record<TierName, number>;
 }
 
-type RowDraft = { name: string; nickname: string; group: string; gender: Gender; rp: number; birthYearInput: string };
+type RowDraft = { name: string; nickname: string; group: string; gender: Gender; rp: number; birthYearInput: string; gradeInput: string; classInput: string; noInput: string };
 
 type DeletedStudent = { id: string; name: string; nickname: string; group: string | null; rp: number };
 
-// 한 줄 = 한 명. 칸은 탭/콤마로 구분.
-//   1칸 → 닉네임 / 2칸 → 레벨, 닉네임
-type ParsedRow = { nickname: string; group: string | null };
-function parseRoster(text: string): ParsedRow[] {
+// 한 줄 = 한 명. 칸은 탭/콤마(그리고 school 모드에선 공백)로 구분.
+//   club  : 1칸 → 닉네임 / 2칸 → 레벨, 닉네임
+//   school: "3 2 15 홍길동" 또는 "3학년 2반 15번 홍길동" → 학년/반/번호/이름
+type ParsedRow = { nickname: string; group: string | null; grade: number | null; classNum: number | null; studentNo: number | null };
+function parseRoster(text: string, isSchool = false): ParsedRow[] {
   const out: ParsedRow[] = [];
   for (const rawLine of text.split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line) continue;
+    if (isSchool) {
+      // 학년/반/번호는 숫자만 뽑고(학년·반·번 같은 단위 문자는 무시), 나머지를 이름으로 본다.
+      const m = line.match(/^\D*(\d+)\D+(\d+)\D+(\d+)\D*[\t, ]+(.+)$/);
+      if (m) {
+        const name = m[4].trim();
+        if (!name) continue;
+        out.push({ nickname: name, group: null, grade: Number(m[1]), classNum: Number(m[2]), studentNo: Number(m[3]) });
+        continue;
+      }
+      // 형식이 안 맞으면 이름만 등록 (학년/반/번호는 표에서 채우도록)
+      const cells = line.split(/[\t,]/).map((c) => c.trim()).filter(Boolean);
+      const name = cells[cells.length - 1] || "";
+      if (!name) continue;
+      out.push({ nickname: name, group: null, grade: null, classNum: null, studentNo: null });
+      continue;
+    }
     const cells = line.split(/[\t,]/).map((c) => c.trim()).filter((c) => c.length > 0);
     if (cells.length === 0) continue;
     let nickname = "";
@@ -50,7 +67,7 @@ function parseRoster(text: string): ParsedRow[] {
       nickname = cells[1];
     }
     if (!nickname) continue;
-    out.push({ nickname, group: group || null });
+    out.push({ nickname, group: group || null, grade: null, classNum: null, studentNo: null });
   }
   return out;
 }
@@ -125,7 +142,7 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
   const [importing, setImporting] = useState(false);
-  const pastePreview = useMemo(() => parseRoster(pasteText), [pasteText]);
+  const pastePreview = useMemo(() => parseRoster(pasteText, isSchool), [pasteText, isSchool]);
 
   // 개인 추가
   const [addOpen, setAddOpen] = useState(false);
@@ -153,10 +170,21 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
   };
   useEffect(() => { setSelected(new Set()); }, [filterGroup]);
 
-  const rowOf = (s: Student): RowDraft => draft[s.id] ?? { name: s.name || "", nickname: s.nickname || "", group: s.group || "", gender: s.gender, rp: s.rp, birthYearInput: yy2(s.birthYear) };
+  const rowOf = (s: Student): RowDraft => draft[s.id] ?? {
+    name: s.name || "", nickname: s.nickname || "", group: s.group || "", gender: s.gender, rp: s.rp,
+    birthYearInput: yy2(s.birthYear),
+    gradeInput: s.grade != null ? String(s.grade) : "",
+    classInput: s.classNum != null ? String(s.classNum) : "",
+    noInput: s.studentNo != null ? String(s.studentNo) : "",
+  };
+  const numOrNull = (v: string) => { const n = parseInt(v.trim(), 10); return Number.isFinite(n) ? n : null; };
   const isDirty = (s: Student) => {
     const r = draft[s.id];
-    return !!r && (r.name !== (s.name || "") || r.nickname !== (s.nickname || "") || r.group !== (s.group || "") || r.gender !== s.gender || normalizeBirthYear(r.birthYearInput) !== (s.birthYear ?? null));
+    return !!r && (r.name !== (s.name || "") || r.nickname !== (s.nickname || "") || r.group !== (s.group || "") || r.gender !== s.gender
+      || normalizeBirthYear(r.birthYearInput) !== (s.birthYear ?? null)
+      || numOrNull(r.gradeInput) !== (s.grade ?? null)
+      || numOrNull(r.classInput) !== (s.classNum ?? null)
+      || numOrNull(r.noInput) !== (s.studentNo ?? null));
   };
   const dirtyRows = rows.filter(isDirty);
 
@@ -172,13 +200,16 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
   const handleSave = async () => {
     const updates = dirtyRows.map((s) => {
       const r = draft[s.id];
-      const u: { id: string; name?: string; nickname?: string | null; group?: string | null; gender?: Gender; rp?: number; birthYear?: number | null } = { id: s.id };
+      const u: { id: string; name?: string; nickname?: string | null; group?: string | null; gender?: Gender; rp?: number; birthYear?: number | null; grade?: number | null; classNum?: number | null; studentNo?: number | null } = { id: s.id };
       if (r.name !== (s.name || "")) u.name = r.name;
       if (r.nickname !== (s.nickname || "")) u.nickname = r.nickname || null;
       if (r.group !== (s.group || "")) u.group = r.group || null;
       if (r.gender !== s.gender) u.gender = r.gender;
       const by = normalizeBirthYear(r.birthYearInput);
       if (by !== (s.birthYear ?? null)) u.birthYear = by;
+      const g = numOrNull(r.gradeInput); if (g !== (s.grade ?? null)) u.grade = g;
+      const c = numOrNull(r.classInput); if (c !== (s.classNum ?? null)) u.classNum = c;
+      const no = numOrNull(r.noInput); if (no !== (s.studentNo ?? null)) u.studentNo = no;
       return u;
     });
     setSaving(true);
@@ -190,10 +221,13 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
 
   const handleImport = async () => {
     const parsed = pastePreview;
-    if (parsed.length === 0) { toast.error("붙여넣은 명단에서 닉네임을 찾지 못했습니다."); return; }
+    if (parsed.length === 0) { toast.error(`붙여넣은 명단에서 ${terms.nameLabel}을 찾지 못했습니다.`); return; }
     setImporting(true);
     try {
-      const res = await upsertStudents(parsed.map((p) => ({ name: p.nickname, group: p.group, nickname: p.nickname })));
+      const res = await upsertStudents(parsed.map((p) => ({
+        name: p.nickname, group: p.group, nickname: p.nickname,
+        grade: p.grade, classNum: p.classNum, studentNo: p.studentNo,
+      })));
       if (res) toast.success(`명단을 반영했습니다. (추가 ${res.added ?? 0}명, 유지 ${res.kept ?? 0}명)`);
       setPasteText("");
       setPasteOpen(false);
@@ -238,16 +272,26 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
           <p className="text-[11px] text-muted-foreground flex items-start gap-1.5">
             <HelpCircle className="size-3.5 mt-0.5 shrink-0 text-neon-blue" />
             <span>
-              한 줄에 한 명씩 입력하세요. 칸은 <b className="text-foreground">탭 또는 콤마(,)</b>로 구분합니다.<br />
-              · <b className="text-foreground">닉네임</b> (칸 1개)<br />
-              · <b className="text-foreground">레벨, 닉네임</b> (칸 2개)
+              {isSchool ? (
+                <>
+                  한 줄에 한 명씩 입력하세요.<br />
+                  · <b className="text-foreground">학년 반 번호 이름</b> (예: 3 2 15 홍길동 / 3학년 2반 15번 홍길동)<br />
+                  · 형식이 맞지 않으면 이름만 등록되고, 학년·반·번호는 아래 표에서 채울 수 있어요.
+                </>
+              ) : (
+                <>
+                  한 줄에 한 명씩 입력하세요. 칸은 <b className="text-foreground">탭 또는 콤마(,)</b>로 구분합니다.<br />
+                  · <b className="text-foreground">닉네임</b> (칸 1개)<br />
+                  · <b className="text-foreground">레벨, 닉네임</b> (칸 2개)
+                </>
+              )}
             </span>
           </p>
           <textarea
             value={pasteText}
             onChange={(e) => setPasteText(e.target.value)}
             rows={6}
-            placeholder={"예시)\nA조, 길동이\nA조, 철수\n영희"}
+            placeholder={isSchool ? "예시)\n3 2 15 홍길동\n3학년 2반 16번 김철수\n3 2 17 이영희" : "예시)\nA조, 길동이\nA조, 철수\n영희"}
             className="w-full rounded-lg bg-input border border-border/30 p-3 text-xs font-code leading-relaxed focus:outline-none focus:ring-1 focus:ring-neon-blue"
           />
           <div className="flex items-center justify-between gap-2">
@@ -312,9 +356,19 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
             <thead className="bg-muted/40 text-[10px] uppercase tracking-wider text-muted-foreground">
               <tr>
                 <th className="px-3 py-2.5 text-left"><input type="checkbox" checked={allSelected} onChange={toggleSelectAll} className="size-4 accent-neon-blue align-middle" /></th>
-                <th className="px-2 py-2.5 text-left font-bold">닉네임</th>
-                <th className="px-2 py-2.5 text-left font-bold">레벨</th>
-                <th className="px-2 py-2.5 text-center font-bold">나이</th>
+                <th className="px-2 py-2.5 text-left font-bold">{terms.nameLabel}</th>
+                {isSchool ? (
+                  <>
+                    <th className="px-2 py-2.5 text-center font-bold">학년</th>
+                    <th className="px-2 py-2.5 text-center font-bold">반</th>
+                    <th className="px-2 py-2.5 text-center font-bold">번호</th>
+                  </>
+                ) : (
+                  <>
+                    <th className="px-2 py-2.5 text-left font-bold">레벨</th>
+                    <th className="px-2 py-2.5 text-center font-bold">나이</th>
+                  </>
+                )}
                 <th className="px-2 py-2.5 text-center font-bold">성별</th>
                 <th className="px-2 py-2.5 text-center font-bold">티어</th>
                 <th className="px-2 py-2.5 text-center font-bold">RP</th>
@@ -344,6 +398,26 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
                           className="h-8 min-w-[80px] bg-input border-border/30 font-bold" />
                       </div>
                     </td>
+                    {isSchool ? (
+                      <>
+                        <td className="px-2 py-1.5 text-center">
+                          <Input value={r.gradeInput} inputMode="numeric"
+                            onChange={(e) => setField(s, { gradeInput: e.target.value.replace(/[^0-9]/g, "").slice(0, 2) })}
+                            placeholder="-" className="h-8 w-12 mx-auto text-center bg-input border-border/30 p-0" />
+                        </td>
+                        <td className="px-2 py-1.5 text-center">
+                          <Input value={r.classInput} inputMode="numeric"
+                            onChange={(e) => setField(s, { classInput: e.target.value.replace(/[^0-9]/g, "").slice(0, 3) })}
+                            placeholder="-" className="h-8 w-12 mx-auto text-center bg-input border-border/30 p-0" />
+                        </td>
+                        <td className="px-2 py-1.5 text-center">
+                          <Input value={r.noInput} inputMode="numeric"
+                            onChange={(e) => setField(s, { noInput: e.target.value.replace(/[^0-9]/g, "").slice(0, 3) })}
+                            placeholder="-" className="h-8 w-12 mx-auto text-center bg-input border-border/30 p-0" />
+                        </td>
+                      </>
+                    ) : (
+                      <>
                     <td className="px-2 py-1.5">
                       {usePresetLevels ? (
                         <select value={r.group}
@@ -376,6 +450,8 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
                         </span>
                       </div>
                     </td>
+                      </>
+                    )}
                     <td className="px-2 py-1.5">
                       <div className="flex items-center justify-center gap-1">
                         {(["M", "F"] as const).map((g) => (
@@ -400,6 +476,9 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
                             group: r.group || null,
                             gender: r.gender,
                             birthYear: normalizeBirthYear(r.birthYearInput),
+                            grade: numOrNull(r.gradeInput),
+                            classNum: numOrNull(r.classInput),
+                            studentNo: numOrNull(r.noInput),
                           });
                           setDraft((prev) => { const n = { ...prev }; delete n[s.id]; return n; });
                         }}
@@ -484,7 +563,7 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
                 );
               })}
               {rows.length === 0 && (
-                <tr><td colSpan={isClassOwner ? 9 : 8} className="py-8 text-center text-muted-foreground text-xs">등록된 {terms.member}이 없습니다.</td></tr>
+                <tr><td colSpan={(isClassOwner ? 9 : 8) + (isSchool ? 1 : 0)} className="py-8 text-center text-muted-foreground text-xs">등록된 {terms.member}이 없습니다.</td></tr>
               )}
             </tbody>
           </table>
