@@ -4,6 +4,7 @@ import {
   Link,
   createRootRouteWithContext,
   useRouter,
+  useRouterState,
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
@@ -167,11 +168,19 @@ function RootShell({ children }: { children: React.ReactNode }) {
   );
 }
 
+// 로그인 없이 열람 가능한 공개 경로 (무인증 공개 순위표 등).
+// 이 경로들은 세션이 없어도 Login 게이트를 거치지 않고 그대로 라우팅된다.
+const PUBLIC_PATH_PREFIXES = ["/ranking/"];
+const isPublicPath = (pathname: string) => PUBLIC_PATH_PREFIXES.some((p) => pathname.startsWith(p));
+
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   const [supabaseSession, setSupabaseSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  // /school 입구로 들어온 비로그인 사용자에게는 학교용 로그인 화면을 보여준다.
+  const schoolMode = pathname === "/school" || pathname.startsWith("/school/");
 
   useEffect(() => {
     // 1. Get initial session
@@ -205,7 +214,7 @@ function RootComponent() {
     <GlobalErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <LeagueStoreProvider>
-          {supabaseSession ? <Outlet /> : <Login />}
+          {(supabaseSession || isPublicPath(pathname)) ? <Outlet /> : <Login schoolMode={schoolMode} />}
         </LeagueStoreProvider>
       </QueryClientProvider>
     </GlobalErrorBoundary>
