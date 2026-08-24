@@ -508,7 +508,7 @@ begin
 end; $$;
 
 create or replace function public.join_league(p_class_id uuid)
-returns table(id uuid, class_name text, is_owner boolean) language plpgsql security definer set search_path = public, extensions as $$
+returns table(id uuid, class_name text, is_owner boolean, league_type text) language plpgsql security definer set search_path = public, extensions as $$
 declare v_owner uuid; v_members uuid[];
 begin
   select l.owner_uid, coalesce(l.member_uids,'{}'::uuid[]) into v_owner, v_members
@@ -517,7 +517,7 @@ begin
   if v_owner <> auth.uid() and not (auth.uid() = any(v_members)) then
     update public.leagues set member_uids = array_append(v_members, auth.uid()) where leagues.id = p_class_id;
   end if;
-  return query select l.id, l.name, (l.owner_uid = auth.uid()) from public.leagues l where l.id = p_class_id;
+  return query select l.id, l.name, (l.owner_uid = auth.uid()), l.league_type from public.leagues l where l.id = p_class_id;
 end; $$;
 
 -- 공동방장 지정/해제 (원조 방장 전용)

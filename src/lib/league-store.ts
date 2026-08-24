@@ -534,6 +534,11 @@ function useLeagueStoreInternal() {
   const [sport, setSport] = useState<string>("");
   // 리그 유형 (club: 동호인 / school: 학교). leagues.league_type, 기본값 'club'.
   const [leagueType, setLeagueType] = useState<LeagueType>("club");
+  const leagueTypeRef = useRef<LeagueType>("club");
+  useEffect(() => { leagueTypeRef.current = leagueType; }, [leagueType]);
+  // 웹푸시 딥링크용 리그 대시보드 경로 — school 리그는 /school/id, 그 외는 /class/id.
+  const classPath = useCallback((cid: string, suffix: string = "") =>
+    `${leagueTypeRef.current === "school" ? "/school" : "/class"}/${cid}${suffix}`, []);
   // 권한 판정용: 리그 소유자/공동관리자 UID (선수 명단의 userId 와 대조)
   const [ownerUid, setOwnerUid] = useState<string>("");
   const [adminUids, setAdminUids] = useState<string[]>([]);
@@ -2824,7 +2829,7 @@ function useLeagueStoreInternal() {
         : [m.player_a_id, m.player_b_id, m.player_a2_id, m.player_b2_id]).filter(Boolean) as string[];
       notifyPlayers(parts, {
         title: "🏸 경기 입장!", body: "운영진이 대진을 배정했어요. 코트로 입장하세요.",
-        url: cid ? `/class/${cid}` : "/", tag: `sched-${id}`,
+        url: cid ? classPath(cid) : "/", tag: `sched-${id}`,
       });
     }
     toast.success("입장 호출을 보냈습니다.");
@@ -2872,7 +2877,7 @@ function useLeagueStoreInternal() {
     await loadScheduled(cid);
     notifyPlayers(payload.playerIds, {
       title: "🏸 경기 예약!", body: "경기가 예약됐어요. 코트로 모이세요.",
-      url: `/class/${cid}`, tag: `resv-${Date.now()}`,
+      url: classPath(cid), tag: `resv-${Date.now()}`,
     });
     toast.success("경기를 예약했습니다.");
     return true;
@@ -2909,7 +2914,7 @@ function useLeagueStoreInternal() {
     notifyPlayers(participantIds, {
       title: "🏁 경기 결과 등록!", body: summary || "경기 결과가 등록됐어요. 확인해 보세요.",
       // 푸시를 누르면 그 경기의 결과 창이 바로 뜨도록 match id 전달
-      url: cid ? `/class/${cid}?tab=matches&match=${matchId}` : "/", tag: `resv-result-${reservationId}`,
+      url: cid ? classPath(cid, `?tab=matches&match=${matchId}`) : "/", tag: `resv-result-${reservationId}`,
     });
   }, [loadScheduled]);
 
@@ -2948,7 +2953,7 @@ function useLeagueStoreInternal() {
     if (pid !== myPlayerId) {
       notifyPlayers([pid], {
         title: "🏸 경기 예약에 추가됐어요!", body: "예약 경기에 당신이 추가됐어요. 코트로 모이세요.",
-        url: cid ? `/class/${cid}?tab=matches` : "/", tag: `resv-add-${id}-${pid}`,
+        url: cid ? classPath(cid, "?tab=matches") : "/", tag: `resv-add-${id}-${pid}`,
       });
     }
     toast.success(pid !== myPlayerId ? `${nameOf(pid)}님을 추가하고 알림을 보냈어요.` : "예약에 참가했어요.");
@@ -2968,7 +2973,7 @@ function useLeagueStoreInternal() {
     if (cid) await loadScheduled(cid);
     notifyPlayers(parts, {
       title: "🏸 지금 코트로!", body: `${myPlayerId ? nameOf(myPlayerId) : "누군가"}님이 경기 알림을 보냈어요.`,
-      url: cid ? `/class/${cid}?tab=matches` : "/", tag: `resv-call-${id}`,
+      url: cid ? classPath(cid, "?tab=matches") : "/", tag: `resv-call-${id}`,
     });
     toast.success("알림을 보냈어요.");
     return true;
@@ -2992,7 +2997,7 @@ function useLeagueStoreInternal() {
     await loadScheduled(cid);
     notifyPlayers([targetPlayerId], {
       title: "⚔️ 도전장 도착!", body: "당신에게 도전장이 왔습니다. 받아들이시겠어요?",
-      url: `/class/${cid}`, tag: `chal-${targetPlayerId}`,
+      url: classPath(cid), tag: `chal-${targetPlayerId}`,
     });
     toast.success("도전장을 보냈습니다! ⚔️");
     return true;
@@ -3007,7 +3012,7 @@ function useLeagueStoreInternal() {
     if (cid) await loadScheduled(cid);
     if (accept && m) notifyPlayers([m.player_a_id, m.player_a2_id], {
       title: "⚔️ 도전 수락!", body: "상대가 도전을 수락했어요. 코트로 입장하세요.",
-      url: cid ? `/class/${cid}` : "/", tag: `chal-accept-${id}`,
+      url: cid ? classPath(cid) : "/", tag: `chal-accept-${id}`,
     });
     toast.success(accept ? "도전을 수락했습니다. 입장하세요!" : "도전을 거절했습니다.");
     return true;

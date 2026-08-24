@@ -58,8 +58,8 @@ function JoinRouteComponent() {
       const row = Array.isArray(data) ? data[0] : data;
       toast.success(row?.is_owner ? "이 리그의 개설자입니다. 대시보드로 이동합니다." : "리그에 참여했습니다!");
 
-      // Navigate to the class dashboard
-      navigate({ to: `/class/${classId}` });
+      // Navigate to the class dashboard — school 리그는 /school/id, 그 외는 /class/id 로.
+      navigate({ to: row?.league_type === "school" ? `/school/${classId}` : `/class/${classId}` });
     } catch (err: any) {
       console.error("Error joining league:", err.message);
       toast.error("초대 수락 중 오류가 발생했습니다: " + err.message);
