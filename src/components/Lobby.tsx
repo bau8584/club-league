@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Link } from "@tanstack/react-router";
 import { supabase } from "../supabaseClient";
 import { Card } from "./ui/card";
@@ -49,8 +49,18 @@ import { ThemePicker } from "@/components/ThemePicker";
 export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
   const [userEmail, setUserEmail] = useState<string>("");
   const [userId, setUserId] = useState<string>("");
-  const [ownedLeagues, setOwnedLeagues] = useState<Class[]>([]);
-  const [joinedLeagues, setJoinedLeagues] = useState<Class[]>([]);
+  const [allOwnedLeagues, setOwnedLeagues] = useState<Class[]>([]);
+  const [allJoinedLeagues, setJoinedLeagues] = useState<Class[]>([]);
+
+  // 로비는 진입 경로에 맞는 유형의 리그만 보여준다.
+  // (/ = 동호인 리그, /school = 학교 리그). league_type이 없는 기존 리그는 club으로 취급.
+  const wantType: "club" | "school" = schoolMode ? "school" : "club";
+  const ofWantedType = (l: Class) => (l.league_type ?? "club") === wantType;
+  const ownedLeagues = useMemo(() => allOwnedLeagues.filter(ofWantedType), [allOwnedLeagues, wantType]);
+  const joinedLeagues = useMemo(() => allJoinedLeagues.filter(ofWantedType), [allJoinedLeagues, wantType]);
+  // 다른 쪽 로비에 숨겨진 리그 수 — 안내 링크 노출용
+  const hiddenCount =
+    (allOwnedLeagues.length - ownedLeagues.length) + (allJoinedLeagues.length - joinedLeagues.length);
   const [loading, setLoading] = useState(true);
   
   // Modal states
@@ -202,7 +212,7 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
   const handleCreateLeague = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newSchoolName.trim()) {
-      return toast.error("클럽 이름을 입력해 주세요.");
+      return toast.error(newLeagueType === "school" ? "학교 이름을 입력해 주세요." : "클럽 이름을 입력해 주세요.");
     }
     // 리그 이름 미입력 시 "클럽이름 리그"로 자동 생성, 시즌 미입력 시 "시즌 1"
     const finalName = newLeagueName.trim() || `${newSchoolName.trim()} 리그`;
@@ -430,6 +440,23 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
           </Button>
         </div>
 
+        {/* 다른 유형의 리그가 반대편 로비에 있으면 이동 안내 */}
+        {hiddenCount > 0 && (
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/40 bg-muted/10 px-4 py-3">
+            <span className="text-xs text-muted-foreground">
+              {schoolMode
+                ? `동호인 리그 ${hiddenCount}개는 클럽 로비에 있습니다.`
+                : `학교 리그 ${hiddenCount}개는 학교 로비에 있습니다.`}
+            </span>
+            <Link
+              to={schoolMode ? "/" : "/school"}
+              className="text-xs font-black text-neon-blue hover:underline"
+            >
+              {schoolMode ? "클럽 로비로 이동 →" : "학교 로비로 이동 →"}
+            </Link>
+          </div>
+        )}
+
         {/* Two Columns Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           
@@ -635,7 +662,7 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
                 새로운 리그 창설하기
               </h3>
               <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
-                클럽 이름만 입력하면 바로 시작할 수 있어요. 리그 이름·시즌은 비워두면 자동으로 채워집니다.
+                {newLeagueType === "school" ? "학교 이름" : "클럽 이름"}만 입력하면 바로 시작할 수 있어요. 리그 이름·시즌은 비워두면 자동으로 채워집니다.
               </p>
             </div>
 
@@ -678,12 +705,12 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
 
                   <div className="grid grid-cols-2 gap-3 animate-in fade-in slide-in-from-bottom-2 duration-200">
                     <div className="space-y-1.5">
-                      <Label className="text-xs font-bold text-foreground">클럽 이름</Label>
+                      <Label className="text-xs font-bold text-foreground">{newLeagueType === "school" ? "학교 이름" : "클럽 이름"}</Label>
                       <Input
                         required
                         value={newSchoolName}
                         onChange={(e) => setNewSchoolName(e.target.value)}
-                        placeholder="클럽 이름 입력"
+                        placeholder={newLeagueType === "school" ? "학교 이름 입력" : "클럽 이름 입력"}
                         className="h-10 border-border/60 bg-background/40 focus:border-neon-blue transition-all"
                       />
                     </div>
