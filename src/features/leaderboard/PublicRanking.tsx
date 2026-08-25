@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { supabase } from "@/supabaseClient";
 import { apiFetchLeaguePublic, apiFetchStudentsPublic } from "@/services/league-api";
 import { TierBadge } from "@/components/league/TierBadge";
 import { GenderMark } from "@/components/league/GenderMark";
@@ -42,8 +41,9 @@ export function PublicRanking({ classId }: { classId: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const load = async () => {
-    setLoading(true);
+  // quiet=true면 전체 로딩 화면을 띄우지 않고 조용히 값만 바꾼다(주기 갱신용).
+  const load = async ({ quiet = false }: { quiet?: boolean } = {}) => {
+    if (!quiet) setLoading(true);
     setError(null);
     try {
       const [{ data: lg, error: lgErr }, { data: ps, error: psErr }] = await Promise.all([
@@ -57,9 +57,10 @@ export function PublicRanking({ classId }: { classId: string }) {
       setLeague(row as PublicLeague);
       setPlayers((ps || []) as PublicPlayer[]);
     } catch (err: any) {
-      setError(err?.message || "순위표를 불러오지 못했습니다.");
+      // 조용한 갱신이 실패하면 이미 보고 있는 순위표를 지우지 않고 그대로 둔다.
+      if (!quiet) setError(err?.message || "순위표를 불러오지 못했습니다.");
     } finally {
-      setLoading(false);
+      if (!quiet) setLoading(false);
     }
   };
 
@@ -68,13 +69,35 @@ export function PublicRanking({ classId }: { classId: string }) {
     // 공개 화면이라 세션이 없어도 동작해야 한다. 리그가 바뀌면 다시 조회.
   }, [classId]);
 
-  // 실시간 갱신: 경기 결과가 반영되면 순위도 따라 바뀐다.
+  // 갱신 방식: 실시간(Realtime) 구독 대신 30초 폴링.
+  //   공개 링크는 한 리그에 수백 명이 동시에 열 수 있는데, 실시간 구독은 열어둔 사람
+  //   1명당 연결 1개를 계속 점유해 동시 연결 한도를 가장 먼저 소진시킨다.
+  //   순위표는 초 단위 최신성이 필요 없으므로 주기 조회로 충분하다.
+  //   탭이 가려져 있으면 쉬고, 다시 보일 때 한 번 당겨온다.
   useEffect(() => {
-    const ch = supabase
-      .channel(`public-ranking-${classId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "matches", filter: `league_id=eq.${classId}` }, () => load())
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
+    const REFRESH_MS = 30_000;
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    const start = () => {
+      if (timer) return;
+      timer = setInterval(() => { void load({ quiet: true }); }, REFRESH_MS);
+    };
+    const stop = () => {
+      if (!timer) return;
+      clearInterval(timer);
+      timer = null;
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") { void load({ quiet: true }); start(); }
+      else stop();
+    };
+
+    if (typeof document !== "undefined" && document.visibilityState === "visible") start();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [classId]);
 
   const terms = termsFor(league?.league_type ?? "club");
@@ -132,7 +155,7 @@ export function PublicRanking({ classId }: { classId: string }) {
             </p>
           </div>
           <button
-            onClick={load}
+            onClick={() => void load()}
             title="새로고침"
             className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-card/60 text-muted-foreground transition-all hover:border-neon-blue/40 hover:text-neon-blue active:scale-95"
           >
