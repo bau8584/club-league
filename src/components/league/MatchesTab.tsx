@@ -10,7 +10,7 @@ import { RecordMatch, type MatchResultData, type PlayerResult } from "./RecordMa
 import { MatchRecommend } from "./MatchRecommend";
 import { getTier, type Match, type Student } from "@/lib/league-types";
 import { getTodayPlayerIds } from "@/lib/today-players";
-import { useLeagueTerms } from "@/lib/league-terms";
+import { useLeagueTerms, useIsSchoolLeague } from "@/lib/league-terms";
 
 const dn = (s?: Student | null) => (s ? (s.nickname || s.name) : "?");
 
@@ -35,6 +35,18 @@ export function MatchesTab({ incomingInitials, onConsumeInitials, openMatchId, o
     leaveReservation, joinReservation, notifyReservation,
   } = useLeagueStore();
   const terms = useLeagueTerms();
+  const isSchool = useIsSchoolLeague();
+  // school 은 학생 계정이 없어 예약이 "참가자를 모으는" 기능으로 동작하지 않는다.
+  // (푸시 구독은 auth.users 기반이라 학생에게 보낼 수 없고, 참가/나가기도 불가)
+  // 대신 교사가 다음 경기를 미리 담아두는 "대기 목록"으로는 그대로 쓸 수 있으므로
+  // 죽은 기능만 걷어내고 문구를 교사 어휘로 바꾼다.
+  const q = isSchool
+    ? { section: "다음 경기 담기", sectionDesc: "코트가 비면 하나씩 불러 진행하세요. 결과를 입력하면 목록에서 사라집니다.",
+        submit: "담기", listTitle: "대기 중인 경기", empty: "대기 중인 경기가 없습니다.",
+        cancelTitle: "대기 목록에서 뺄까요?", cancelDesc: "이 경기를 빼면 목록에서 사라져요.", cancelBtn: "대기 목록에서 빼기" }
+    : { section: "경기 예약", sectionDesc: "참가자를 모으면 그들에게 알림이 갑니다. 팀은 코트에서 자유롭게.",
+        submit: "예약하기", listTitle: "예약된 경기", empty: "예약된 경기가 없습니다.",
+        cancelTitle: "예약을 정리할까요?", cancelDesc: "이 예약을 취소하면 목록에서 사라져요.", cancelBtn: "예약 통째로 취소" };
 
   const readOnly = currentViewSeason !== "현재 시즌";
   const canReserve = (isClassManager || (matchInputMode !== "admin-only" && !!myPlayerId)) && !readOnly;
@@ -330,8 +342,8 @@ export function MatchesTab({ incomingInitials, onConsumeInitials, openMatchId, o
                 <CalendarPlus className="size-5" />
               </div>
               <div>
-                <h2 className="text-base font-black tracking-tight text-foreground">경기 예약</h2>
-                <p className="text-[11px] text-muted-foreground">참가자를 모으면 그들에게 알림이 갑니다. 팀은 코트에서 자유롭게.</p>
+                <h2 className="text-base font-black tracking-tight text-foreground">{q.section}</h2>
+                <p className="text-[11px] text-muted-foreground">{q.sectionDesc}</p>
               </div>
             </div>
             <ChevronDown className={cn("size-5 shrink-0 text-muted-foreground transition-transform", reserveOpen && "rotate-180")} />
@@ -371,7 +383,7 @@ export function MatchesTab({ incomingInitials, onConsumeInitials, openMatchId, o
             <span className="text-xs font-bold text-muted-foreground">선택 {picked.length}명</span>
             <Button onClick={submitReservation} disabled={submitting || picked.length < 2}
               className="h-9 rounded-xl bg-neon-blue px-4 text-xs font-black text-primary-foreground hover:bg-neon-blue/90">
-              <Plus className="mr-1 size-4" /> 예약하기
+              <Plus className="mr-1 size-4" /> {q.submit}
             </Button>
           </div>
           </div>
@@ -383,11 +395,11 @@ export function MatchesTab({ incomingInitials, onConsumeInitials, openMatchId, o
       <Card className="border border-border/40 bg-card/50 p-5 shadow-lg backdrop-blur">
         <div className="mb-3 flex items-center gap-2">
           <Megaphone className="size-4 text-amber-500" />
-          <span className="text-sm font-black text-foreground">예약된 경기 ({reservations.length})</span>
+          <span className="text-sm font-black text-foreground">{q.listTitle} ({reservations.length})</span>
         </div>
         {reservations.length === 0 ? (
           <p className="rounded-xl border border-dashed border-border/30 py-6 text-center text-[11px] text-muted-foreground">
-            예약된 경기가 없습니다.
+            {q.empty}
           </p>
         ) : (
           <div className="space-y-2">
@@ -399,7 +411,8 @@ export function MatchesTab({ incomingInitials, onConsumeInitials, openMatchId, o
               const notifier = r.notified_by ? dn(byId.get(r.notified_by)) : null;
               const cooling = !!r.notified_at && (Date.now() - new Date(r.notified_at).getTime() < 60_000);
               // 알림 버튼: 참가자 또는 관리자
-              const canNotify = (mine || isClassManager) && !readOnly;
+              // school 은 학생 푸시 구독이 존재할 수 없어 알림이 아무에게도 가지 않는다.
+              const canNotify = (mine || isClassManager) && !readOnly && !isSchool;
               const addable = students.filter((s) => !ids.includes(s.id) &&
                 (!addSearch.trim() || dn(s).toLowerCase().includes(addSearch.trim().toLowerCase())));
               return (
@@ -599,12 +612,12 @@ export function MatchesTab({ incomingInitials, onConsumeInitials, openMatchId, o
             onClick={() => setConfirmCancel(null)}>
             <div className="w-full max-w-sm rounded-2xl border border-border/50 bg-background p-5 shadow-2xl animate-in zoom-in-95 duration-150"
               onClick={(e) => e.stopPropagation()}>
-              <h3 className="text-base font-black text-foreground">예약을 정리할까요?</h3>
+              <h3 className="text-base font-black text-foreground">{q.cancelTitle}</h3>
               <p className="mt-1.5 truncate text-xs font-bold text-muted-foreground">{ids.map((id) => dn(byId.get(id))).join(" · ")}</p>
               <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
                 {iAmIn
                   ? "예약을 통째로 접거나, 나만 살짝 빠질 수 있어요. 내가 빠져서 혼자만 남으면 예약은 저절로 사라져요."
-                  : "이 예약을 취소하면 목록에서 사라져요."}
+                  : q.cancelDesc}
               </p>
               <div className="mt-4 flex flex-col gap-2">
                 {iAmIn && (
@@ -615,7 +628,7 @@ export function MatchesTab({ incomingInitials, onConsumeInitials, openMatchId, o
                 )}
                 <Button onClick={async () => { await cancelReservation(r.id); setConfirmCancel(null); }}
                   className="h-10 rounded-xl bg-destructive text-sm font-black text-white hover:bg-destructive/90">
-                  예약 통째로 취소
+                  {q.cancelBtn}
                 </Button>
                 <button type="button" onClick={() => setConfirmCancel(null)}
                   className="mt-0.5 rounded-lg py-2 text-xs font-bold text-muted-foreground hover:text-foreground">
