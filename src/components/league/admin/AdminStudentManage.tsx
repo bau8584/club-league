@@ -41,19 +41,28 @@ function parseRoster(text: string, isSchool = false): ParsedRow[] {
     const line = rawLine.trim();
     if (!line) continue;
     if (isSchool) {
-      // 학년/반/번호는 숫자만 뽑고(학년·반·번 같은 단위 문자는 무시), 나머지를 이름으로 본다.
-      const m = line.match(/^\D*(\d+)\D+(\d+)\D+(\d+)\D*[\t, ]+(.+)$/);
-      if (m) {
-        const name = m[4].trim();
-        if (!name) continue;
-        out.push({ nickname: name, group: null, grade: Number(m[1]), classNum: Number(m[2]), studentNo: Number(m[3]) });
-        continue;
+      // 앞쪽 숫자 칸 수로 형식을 자동 판별한다. 리그 단위(학급/학년/전교)가 제각각이라
+      // 선생님이 가진 명단 그대로 붙여넣을 수 있게 한다. 빠진 축은 null로 두고 표에서 채운다.
+      //   3 2 15 홍길동 → 학년·반·번호·이름
+      //   2 15 홍길동   → 반·번호·이름
+      //   15 홍길동     → 번호·이름
+      //   홍길동        → 이름만
+      // "3학년 2반 15번 홍길동"처럼 단위 문자가 붙어도 숫자만 읽는다.
+      const cells = line.split(/[\t,\s]+/).map((c) => c.trim()).filter(Boolean);
+      const nums: number[] = [];
+      let i = 0;
+      for (; i < cells.length; i++) {
+        const m = cells[i].match(/^(\d+)(?:학년|반|번)?$/);
+        if (!m) break;
+        nums.push(Number(m[1]));
       }
-      // 형식이 안 맞으면 이름만 등록 (학년/반/번호는 표에서 채우도록)
-      const cells = line.split(/[\t,]/).map((c) => c.trim()).filter(Boolean);
-      const name = cells[cells.length - 1] || "";
+      const name = cells.slice(i).join(" ").trim();
       if (!name) continue;
-      out.push({ nickname: name, group: null, grade: null, classNum: null, studentNo: null });
+      let grade: number | null = null, classNum: number | null = null, studentNo: number | null = null;
+      if (nums.length >= 3) { grade = nums[0]; classNum = nums[1]; studentNo = nums[2]; }
+      else if (nums.length === 2) { classNum = nums[0]; studentNo = nums[1]; }
+      else if (nums.length === 1) { studentNo = nums[0]; }
+      out.push({ nickname: name, group: null, grade, classNum, studentNo });
       continue;
     }
     const cells = line.split(/[\t,]/).map((c) => c.trim()).filter((c) => c.length > 0);
@@ -274,9 +283,12 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
             <span>
               {isSchool ? (
                 <>
-                  한 줄에 한 명씩 입력하세요.<br />
-                  · <b className="text-foreground">학년 반 번호 이름</b> (예: 3 2 15 홍길동 / 3학년 2반 15번 홍길동)<br />
-                  · 형식이 맞지 않으면 이름만 등록되고, 학년·반·번호는 아래 표에서 채울 수 있어요.
+                  한 줄에 한 명씩, 앞의 숫자 개수에 맞춰 알아서 인식합니다.<br />
+                  · <b className="text-foreground">3 2 15 홍길동</b> → 학년·반·번호·이름<br />
+                  · <b className="text-foreground">2 15 홍길동</b> → 반·번호·이름<br />
+                  · <b className="text-foreground">15 홍길동</b> → 번호·이름<br />
+                  · <b className="text-foreground">홍길동</b> → 이름만<br />
+                  “3학년 2반 15번”처럼 단위를 붙여도 됩니다. 비운 항목은 아래 표에서 채울 수 있어요.
                 </>
               ) : (
                 <>

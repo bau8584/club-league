@@ -229,8 +229,12 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
             season: finalSeason,
             schoolName: newSchoolName.trim(),
             sport: newSport.trim(),
-            // 레벨 체계: preset(종목 프리셋 복사) vs free(자유 입력)
+            // 레벨 체계: preset(종목 프리셋 복사) vs free(자유 입력).
+            // school 리그는 레벨 축을 쓰지 않으므로 항상 비워둔다.
             ...(() => {
+              if (newLeagueType === "school") {
+                return { levelMode: "free" as const, levels: [] };
+              }
               const preset = getSportPreset(newSport.trim());
               if (newLevelMode === "preset" && preset) {
                 return { levelMode: "preset" as const, levels: preset.levels };
@@ -746,7 +750,8 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
                     </div>
                   </div>
 
-                  {/* 레벨 체계 선택 */}
+                  {/* 레벨 체계 선택 — club 전용 축. school은 학년/반/번호를 쓰므로 노출하지 않는다. */}
+                  {newLeagueType !== "school" && (
                   <div className="space-y-1.5 animate-in fade-in slide-in-from-bottom-2 duration-200">
                     <div className="flex items-center justify-between">
                       <Label className="text-xs font-bold text-foreground">레벨 체계</Label>
@@ -792,6 +797,7 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
                       );
                     })()}
                   </div>
+                  )}
 
                   <div className="space-y-1.5 animate-in fade-in slide-in-from-bottom-2 duration-200">
                     <Label className="text-xs font-bold text-foreground">리그 이름 <span className="font-normal text-muted-foreground">(선택)</span></Label>

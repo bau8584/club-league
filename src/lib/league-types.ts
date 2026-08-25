@@ -304,6 +304,42 @@ export function schoolLabel(s: { grade?: number | null; classNum?: number | null
   return [gc, no].filter(Boolean).join(" ");
 }
 
+/**
+ * 명단 전체에서 학년/반이 각각 몇 종류인지 센다.
+ * 한 종류뿐이면(학급 리그처럼) 그 축은 필터로도 라벨로도 의미가 없으므로 숨기는 데 쓴다.
+ */
+export type SchoolAxes = { grades: number[]; classes: number[]; varyGrade: boolean; varyClass: boolean };
+export function schoolAxesOf(students: { grade?: number | null; classNum?: number | null }[]): SchoolAxes {
+  const g = new Set<number>();
+  const c = new Set<number>();
+  for (const s of students) {
+    if (s.grade != null) g.add(s.grade);
+    if (s.classNum != null) c.add(s.classNum);
+  }
+  const grades = Array.from(g).sort((x, y) => x - y);
+  const classes = Array.from(c).sort((x, y) => x - y);
+  return { grades, classes, varyGrade: grades.length > 1, varyClass: classes.length > 1 };
+}
+
+/**
+ * 명단 구성에 맞춰 축약한 학년/반/번호 표기.
+ * 전원이 같은 학년이면 학년을, 같은 반이면 반을 생략한다.
+ *   학급 리그(3-2 전원) → "15번"
+ *   학년 리그(3학년, 반 여러 개) → "2반 15번"
+ *   전교 리그 → "3-2 15번"
+ */
+export function schoolLabelCompact(
+  s: { grade?: number | null; classNum?: number | null; studentNo?: number | null },
+  axes: SchoolAxes,
+): string {
+  const parts: string[] = [];
+  if (axes.varyGrade && s.grade != null) parts.push(`${s.grade}학년`);
+  if (axes.varyClass && s.classNum != null) parts.push(`${s.classNum}반`);
+  if (s.studentNo != null) parts.push(`${s.studentNo}번`);
+  // 학년·반이 모두 균일하고 번호도 없으면 표기할 게 없다.
+  return parts.join(" ");
+}
+
 export function studentKey(s: { id?: string; name?: string; nickname?: string | null; group?: string | null }) {
   // 동호회: 안정적 식별은 id 우선, 없으면 이름/레벨 조합.
   if (s.id) return s.id;

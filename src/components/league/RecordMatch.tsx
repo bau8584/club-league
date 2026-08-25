@@ -7,7 +7,7 @@ import { GenderMark } from "./GenderMark";
 import { cn } from "@/lib/utils";
 import { Trophy, X, Sparkles, User, Users, Crown, Award, Zap, RotateCcw, UserPlus } from "lucide-react";
 import type { Student, Match, TierName } from "@/lib/league-types";
-import { getTier, getTierSubdivision, TIER_ORDER, getFullTierLabel, isUnranked, schoolLabel } from "@/lib/league-types";
+import { getTier, getTierSubdivision, TIER_ORDER, getFullTierLabel, isUnranked, schoolLabelCompact, schoolAxesOf } from "@/lib/league-types";
 import { toast } from "sonner";
 import { useLeagueStore } from "@/lib/league-store";
 import { useLeagueTerms, useIsSchoolLeague } from "@/lib/league-terms";
@@ -1823,13 +1823,13 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
     return Array.from(set).sort((x, y) => x.localeCompare(y, "ko"));
   }, [students]);
 
-  // school: 명단에 실제로 존재하는 학년/반 목록 (반은 선택된 학년 기준으로 좁힘)
-  const activeGrades = useMemo(() => {
-    const set = new Set<number>();
-    students.forEach((s) => { if (s.grade != null) set.add(s.grade); });
-    return Array.from(set).sort((x, y) => x - y);
-  }, [students]);
+  // school: 명단 구성에 맞춘 학년/반 축.
+  // 값이 한 종류뿐이면(학급 리그처럼) 그 축은 필터로도 라벨로도 의미가 없어 숨긴다.
+  const axes = useMemo(() => schoolAxesOf(students), [students]);
+  const activeGrades = axes.varyGrade ? axes.grades : [];
+  // 반 칩은 선택된 학년 안에서만 추린다.
   const activeClasses = useMemo(() => {
+    if (!axes.varyClass) return [];
     const set = new Set<number>();
     students.forEach((s) => {
       if (s.classNum == null) return;
@@ -1837,7 +1837,7 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
       set.add(s.classNum);
     });
     return Array.from(set).sort((x, y) => x - y);
-  }, [students, gradeF]);
+  }, [students, gradeF, axes.varyClass]);
 
   const roster = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -1901,8 +1901,8 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
             onClick={() => onPick(grp, s.id)}
             className="relative flex min-h-[4.75rem] w-full flex-col items-center justify-between overflow-hidden rounded-lg border border-border/60 bg-surface-deep px-2 pt-6 pb-2.5 text-center transition-all hover:border-neon-blue/60 hover:bg-accent/40 cursor-pointer"
           >
-            {(isSchool ? schoolLabel(s) : s.group) && (
-              <span className="absolute top-1 left-1.5 max-w-[60%] truncate text-left font-mono text-[10px] text-soft">{isSchool ? schoolLabel(s) : s.group}</span>
+            {(isSchool ? schoolLabelCompact(s, axes) : s.group) && (
+              <span className="absolute top-1 left-1.5 max-w-[60%] truncate text-left font-mono text-[10px] text-soft">{isSchool ? schoolLabelCompact(s, axes) : s.group}</span>
             )}
             <GenderMark gender={s.gender} className="absolute top-1 right-1.5 size-3.5 text-[9px] shrink-0" />
             <div className="flex w-full min-w-0 flex-grow items-center justify-center">

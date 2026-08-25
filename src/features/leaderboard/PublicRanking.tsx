@@ -4,7 +4,7 @@ import { apiFetchLeaguePublic, apiFetchStudentsPublic } from "@/services/league-
 import { TierBadge } from "@/components/league/TierBadge";
 import { GenderMark } from "@/components/league/GenderMark";
 import { cn } from "@/lib/utils";
-import { isUnranked, schoolLabel, type Gender, type TierName } from "@/lib/league-types";
+import { isUnranked, schoolLabelCompact, schoolAxesOf, type Gender, type TierName } from "@/lib/league-types";
 import { termsFor } from "@/lib/league-terms";
 import { Trophy, RefreshCw } from "lucide-react";
 
@@ -82,6 +82,12 @@ export function PublicRanking({ classId }: { classId: string }) {
   const placementEnabled = !!league?.placement?.enabled;
   const placementGames = league?.placement?.games ?? 3;
 
+  // 명단 구성에 따라 학년/반 축을 숨긴다 (학급 리그면 번호만 의미 있음).
+  const axes = useMemo(
+    () => schoolAxesOf(players.map((p) => ({ grade: p.grade, classNum: p.class_num }))),
+    [players],
+  );
+
   const ranked = useMemo(() => {
     return [...players]
       .map((p) => ({ ...p, wins: p.win_count ?? 0, losses: p.lose_count ?? 0 }))
@@ -147,7 +153,7 @@ export function PublicRanking({ classId }: { classId: string }) {
                 <tr>
                   <th className="px-3 py-2.5 text-center font-bold">순위</th>
                   <th className="px-2 py-2.5 text-left font-bold">{terms.nameLabel}</th>
-                  <th className="px-2 py-2.5 text-left font-bold">{isSchool ? "학년·반" : "레벨"}</th>
+                  <th className="px-2 py-2.5 text-left font-bold">{isSchool ? "소속" : "레벨"}</th>
                   <th className="px-2 py-2.5 text-center font-bold">티어</th>
                   <th className="px-2 py-2.5 text-center font-bold">전적</th>
                 </tr>
@@ -171,7 +177,7 @@ export function PublicRanking({ classId }: { classId: string }) {
                       </td>
                       <td className="px-2 py-2 font-mono text-[11px] text-muted-foreground">
                         {isSchool
-                          ? (schoolLabel({ grade: p.grade, classNum: p.class_num, studentNo: p.student_no }) || "-")
+                          ? (schoolLabelCompact({ grade: p.grade, classNum: p.class_num, studentNo: p.student_no }, axes) || "-")
                           : (p.group_label || "-")}
                       </td>
                       <td className="px-2 py-2 text-center">

@@ -19,7 +19,7 @@ import {
   ChevronDown
 } from "lucide-react";
 import type { Student, Match } from "@/lib/league-types";
-import { getTier, isUnranked, schoolLabel } from "@/lib/league-types";
+import { getTier, isUnranked, schoolLabel, schoolLabelCompact, schoolAxesOf, type SchoolAxes } from "@/lib/league-types";
 import { getTodayPlayerIds } from "@/lib/today-players";
 import { useLeagueStore } from "@/lib/league-store";
 import { toast } from "sonner";
@@ -35,8 +35,10 @@ const CHIP_ON = "border-neon-blue bg-neon-blue/20 text-neon-blue glow-primary";
 const CHIP_OFF = "border-surface-line bg-surface-deep text-soft hover:text-strong";
 
 // 레벨 라벨 헬퍼 (미지정 시 표기)
-const groupLabelOf = (s: Student, isSchool = false) =>
-  isSchool ? (schoolLabel(s) || "학년·반 미지정") : (s.group || "레벨 미지정");
+const groupLabelOf = (s: Student, isSchool = false, axes?: SchoolAxes) =>
+  isSchool
+    ? ((axes ? schoolLabelCompact(s, axes) : schoolLabel(s)) || "번호 미지정")
+    : (s.group || "레벨 미지정");
 
 // 예상 RP 미리보기 — 세련된 승/패 배지 (값은 예상 추정치)
 function RpPreview({ win, loss }: { win: number; loss: number }) {
@@ -229,12 +231,11 @@ export function MatchRecommend({
   // school 리그: 레벨 대신 학년/반으로 좁힌다 (null = 전체)
   const [pickGrade, setPickGrade] = useState<number | null>(null);
   const [pickClass, setPickClass] = useState<number | null>(null);
-  const availableGrades = useMemo(() => {
-    const set = new Set<number>();
-    students.forEach((s) => { if (s.grade != null) set.add(s.grade); });
-    return Array.from(set).sort((a, b) => a - b);
-  }, [students]);
+  // 값이 한 종류뿐인 축(학급 리그의 학년·반 등)은 칩을 띄우지 않는다.
+  const axes = useMemo(() => schoolAxesOf(students), [students]);
+  const availableGrades = axes.varyGrade ? axes.grades : [];
   const availableClasses = useMemo(() => {
+    if (!axes.varyClass) return [];
     const set = new Set<number>();
     students.forEach((s) => {
       if (s.classNum == null) return;
@@ -242,7 +243,7 @@ export function MatchRecommend({
       set.add(s.classNum);
     });
     return Array.from(set).sort((a, b) => a - b);
-  }, [students, pickGrade]);
+  }, [students, pickGrade, axes.varyClass]);
   // 복식 팀원 직접 검색
   const [teammateSearch, setTeammateSearch] = useState("");
 
@@ -914,8 +915,8 @@ export function MatchRecommend({
                       : "border-border/60 bg-surface-deep hover:border-neon-blue/60 hover:bg-accent/40"
                   )}
                 >
-                  {(isSchool ? schoolLabel(s) : s.group) && (
-                    <span className="absolute top-1 left-1.5 max-w-[60%] truncate text-left font-mono text-[10px] text-soft">{isSchool ? schoolLabel(s) : s.group}</span>
+                  {(isSchool ? schoolLabelCompact(s, axes) : s.group) && (
+                    <span className="absolute top-1 left-1.5 max-w-[60%] truncate text-left font-mono text-[10px] text-soft">{isSchool ? schoolLabelCompact(s, axes) : s.group}</span>
                   )}
                   <GenderMark gender={s.gender} className="absolute top-1 right-1.5 size-3.5 text-[9px] shrink-0" />
                   <div className="flex w-full min-w-0 flex-grow items-center justify-center">
@@ -937,7 +938,7 @@ export function MatchRecommend({
           <div className="rounded-xl border border-neon-blue/40 bg-surface-panel p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <div className="text-[10px] text-soft font-semibold tracking-wider uppercase">
-                {groupLabelOf(player, isSchool)} · {terms.member}
+                {groupLabelOf(player, isSchool, axes)} · {terms.member}
               </div>
               <div className="mt-1 flex items-center gap-2 text-xl font-black text-strong">
                 <GenderMark gender={player.gender} className="size-5 text-[10px]" />
@@ -1151,7 +1152,7 @@ export function MatchRecommend({
                       >
                         <div className="flex items-start justify-between gap-1">
                           <div className="min-w-0">
-                            <div className="truncate text-[9px] text-soft">{groupLabelOf(s, isSchool)}</div>
+                            <div className="truncate text-[9px] text-soft">{groupLabelOf(s, isSchool, axes)}</div>
                             <div className="mt-0.5 flex items-center gap-1 font-bold text-strong">
                               <GenderMark gender={s.gender} className="size-3.5 text-[8px] shrink-0" />
                               <span className="truncate">{displayNameOf(s)}</span>
