@@ -24,6 +24,7 @@ import {
   Trash2,
   UserPlus,
   UserX,
+  ShieldCheck,
   ChevronDown,
   Palette
 } from "lucide-react";
@@ -334,6 +335,30 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
       toast.error(err.message || "멤버를 불러오지 못했습니다.");
     } finally {
       setLoadingMembers(false);
+    }
+  };
+
+  // 멤버 ↔ 공동 관리자 전환.
+  //   초대로 들어온 사람은 선수(players) 행이 없어 '학생 관리' 표에 나타나지 않는다.
+  //   그래서 승격 창구가 여기뿐인데 버튼이 없어, 초대받은 교사가 아무것도 못 하는
+  //   상태로 갇혔다. school 은 admin-only 라 관리자가 아니면 기록조차 못 한다.
+  const handleSetAdmin = async (uid: string, email: string | null, makeAdmin: boolean) => {
+    if (!membersLeague) return;
+    const isSchoolLeague = membersLeague.league_type === "school";
+    const roleWord = isSchoolLeague ? "담당 선생님(공동 관리자)" : "공동 관리자";
+    const who = email || "이 멤버";
+    if (!window.confirm(makeAdmin
+      ? `${who}를 ${roleWord}로 올리시겠습니까?\n선수·경기를 관리하고 경기를 기록할 수 있게 됩니다.\n(리그 설정·시즌·삭제는 방장만 가능합니다)`
+      : `${who}의 ${roleWord} 권한을 해제하시겠습니까?`)) return;
+    try {
+      const { error } = await supabase.rpc("set_member_admin", {
+        p_class_id: membersLeague.id, p_uid: uid, p_make_admin: makeAdmin,
+      });
+      if (error) throw error;
+      toast.success(makeAdmin ? `${roleWord}로 올렸습니다.` : "권한을 해제했습니다.");
+      setMembers((prev) => prev.map((m) => (m.uid === uid ? { ...m, role: makeAdmin ? "admin" : "member" } : m)));
+    } catch (err: any) {
+      toast.error(err.message || "권한 변경에 실패했습니다.");
     }
   };
 
@@ -1069,14 +1094,29 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
                     <div className="min-w-0">
                       <div className="font-bold text-sm truncate">{m.email || m.uid.slice(0, 8) + "…"}</div>
                       <div className="text-[10px] text-muted-foreground">
-                        {m.role === "owner" ? "방장" : m.role === "admin" ? "공동 관리자" : "일반 멤버"}
+                        {m.role === "owner"
+                          ? (membersLeague.league_type === "school" ? "개설 선생님" : "방장")
+                          : m.role === "admin"
+                            ? (membersLeague.league_type === "school" ? "담당 선생님" : "공동 관리자")
+                            : (membersLeague.league_type === "school" ? "권한 없음 — 승격 필요" : "일반 멤버")}
                       </div>
                     </div>
                     {m.role !== "owner" && (
-                      <Button type="button" variant="ghost" onClick={() => handleRemoveMember(m.uid, m.email)}
-                        className="h-8 px-3 rounded-lg text-[11px] font-bold text-destructive hover:bg-destructive/10 shrink-0">
-                        <UserX className="size-3.5 mr-1" /> 내보내기
-                      </Button>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <Button type="button" variant="ghost"
+                          onClick={() => handleSetAdmin(m.uid, m.email, m.role !== "admin")}
+                          className={cn("h-8 px-3 rounded-lg text-[11px] font-bold",
+                            m.role === "admin"
+                              ? "text-muted-foreground hover:bg-muted/40"
+                              : "text-neon-green hover:bg-neon-green/10")}>
+                          <ShieldCheck className="size-3.5 mr-1" />
+                          {m.role === "admin" ? "권한 해제" : "관리자로"}
+                        </Button>
+                        <Button type="button" variant="ghost" onClick={() => handleRemoveMember(m.uid, m.email)}
+                          className="h-8 px-3 rounded-lg text-[11px] font-bold text-destructive hover:bg-destructive/10">
+                          <UserX className="size-3.5 mr-1" /> 내보내기
+                        </Button>
+                      </div>
                     )}
                   </div>
                 ))}

@@ -581,6 +581,20 @@ begin
 end; $$;
 
 -- 공동방장 지정/해제 (원조 방장 전용)
+-- 멤버 ↔ 공동 관리자 전환 (방장 전용)
+create or replace function public.set_member_admin(p_class_id uuid, p_uid uuid, p_make_admin boolean)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if not public.is_class_owner(p_class_id) then raise exception '권한이 없습니다.'; end if;
+  if p_make_admin then
+    update public.leagues
+      set admin_uids = (select array(select distinct e from unnest(coalesce(admin_uids,'{}'::uuid[]) || array[p_uid]) e))
+      where id = p_class_id;
+  else
+    update public.leagues set admin_uids = array_remove(coalesce(admin_uids,'{}'::uuid[]), p_uid) where id = p_class_id;
+  end if;
+end; $$;
+
 create or replace function public.set_co_owner(p_class_id uuid, p_uid uuid, p_make boolean)
 returns void language plpgsql security definer set search_path = public, extensions as $$
 begin
@@ -833,6 +847,7 @@ grant execute on function public.join_league_by_code(text)          to authentic
 grant execute on function public.leave_league(uuid)                 to authenticated;
 grant execute on function public.transfer_ownership(uuid, uuid)     to authenticated;
 grant execute on function public.set_co_owner(uuid, uuid, boolean)  to authenticated;
+grant execute on function public.set_member_admin(uuid, uuid, boolean) to authenticated;
 grant execute on function public.set_player_level(uuid, text, text) to authenticated;
 grant execute on function public.get_league_members(uuid)           to authenticated;
 grant execute on function public.remove_league_member(uuid, uuid)   to authenticated;
