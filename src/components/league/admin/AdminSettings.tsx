@@ -7,7 +7,7 @@ import { Save, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { TierName, TierSettings, DynamicBonuses, DynamicPenalties, MatchInputMode } from "@/lib/league-types";
 import { useLeagueStore, type ActiveBonuses } from "@/lib/league-store";
-import { useLeagueTerms } from "@/lib/league-terms";
+import { useLeagueTerms, useIsSchoolLeague } from "@/lib/league-terms";
 import {
   THRESHOLD_PRESETS, WINLOSS_PRESETS, BONUS_PRESETS, PENALTY_PRESETS,
   detectThresholdPreset, detectWinlossPreset, detectBonusPreset, detectPenaltyPreset,
@@ -356,6 +356,7 @@ export function AdminSettings({
   // 배치고사(언랭크) — store에서 직접 읽고 저장
   const { placementEnabled, placementGames, savePlacement } = useLeagueStore();
   const terms = useLeagueTerms();
+  const isSchool = useIsSchoolLeague();
   const [localPlacementEnabled, setLocalPlacementEnabled] = useState(placementEnabled);
   const [localPlacementGames, setLocalPlacementGames] = useState(String(placementGames));
   useEffect(() => { setLocalPlacementEnabled(placementEnabled); }, [placementEnabled]);
@@ -577,8 +578,9 @@ export function AdminSettings({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200 max-w-4xl">
-      {/* 0-A. 경기 입력 방식 카드 — 소유자 전용 */}
-      {isOwner && (
+      {/* 0-A. 경기 입력 방식 카드 — 소유자 전용.
+           school 은 교사만 기록하는 admin-only 로 고정이라 고를 것이 없어 숨긴다. */}
+      {isOwner && !isSchool && (
         <Card className="border border-neon-blue/40 bg-neon-blue/[0.06] p-6 backdrop-blur shadow-xl">
           <div className="space-y-3">
             <span className="text-xs font-bold text-neon-blue uppercase tracking-wider block">🏸 경기 입력 방식</span>
