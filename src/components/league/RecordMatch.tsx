@@ -816,7 +816,6 @@ export function RecordMatch({
       onUpdateGender?.(genderTargetId, gender);
       setGenderModalOpen(false);
       setGenderTargetId(null);
-      toast.success("선수의 성별이 정상 등록되었습니다!");
     }
   };
 

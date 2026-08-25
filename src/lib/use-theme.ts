@@ -28,6 +28,11 @@ function readTheme(): ThemeName {
 }
 
 // 테마 읽기/변경 훅. data-theme 속성 + localStorage 동기화.
+/** 앱 테마가 어두운 계열인지 — 토스트 등 외부 UI의 밝기를 맞출 때 쓴다. */
+export function isDarkTheme(t: ThemeName): boolean {
+  return t === "game" || t === "black";
+}
+
 export function useTheme() {
   const [theme, setThemeState] = useState<ThemeName>("modern");
 

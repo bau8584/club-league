@@ -753,7 +753,6 @@ function useLeagueStoreInternal() {
             rpDeltaWinner2: deltaOf(winner2Id),
             rpDeltaLoser2: deltaOf(loser2Id)
           });
-          toast.success("경기가 등록되었습니다!");
         } catch (err: any) {
           console.error("Failed to record match in Supabase:", err.message);
           toast.error("경기 등록에 실패하여 데이터가 원래대로 롤백되었습니다: " + err.message);
@@ -1251,7 +1250,6 @@ function useLeagueStoreInternal() {
           }
           // Re-update local state with actual database UUIDs
           setStudents([...next]);
-          toast.success("선수 명단이 업데이트되었습니다!");
         } catch (err: any) {
           console.error("Failed to upsert students in Supabase:", err.message);
           toast.error("명단 등록에 실패했습니다: " + err.message);
@@ -1374,7 +1372,6 @@ function useLeagueStoreInternal() {
     if (currentClassId) {
       try {
         await apiUpdateStudentFields(studentId, { gender });
-        toast.success("성별이 변경되었습니다.");
       } catch (err: any) {
         console.error("Failed to update student gender in Supabase:", err.message);
         toast.error("성별 변경에 실패했습니다: " + err.message);
@@ -1495,7 +1492,6 @@ function useLeagueStoreInternal() {
         }
         const { error } = await apiUpdateStudentInfo(studentId, updatePayload);
         if (error) throw error;
-        toast.success("선수 정보가 수정되었습니다.");
       } catch (err: any) {
         console.error("Failed to update student info in Supabase:", err.message);
         toast.error("선수 정보 수정에 실패했습니다: " + err.message);
@@ -3316,7 +3312,6 @@ function useLeagueStoreInternal() {
       user_id: user.id,
     });
     if (error) { toast.error("프로필 생성에 실패했습니다: " + error.message); return false; }
-    toast.success("프로필이 만들어졌습니다!");
     await loadClassDataRef.current?.(cid);
     return true;
   }, []);

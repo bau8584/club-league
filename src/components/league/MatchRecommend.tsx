@@ -189,7 +189,6 @@ export function MatchRecommend({
       onUpdateGender?.(genderTargetId, gender);
       setGenderModalOpen(false);
       setGenderTargetId(null);
-      toast.success("선수의 성별이 정상 등록되었습니다!");
     }
   };
 
@@ -282,7 +281,6 @@ export function MatchRecommend({
     }
     const rand = otherGroups[Math.floor(Math.random() * otherGroups.length)];
     setTargetGroup(rand);
-    toast.success(`🎲 주사위를 굴려 [${rand}] 레벨를 매칭 범위로 선택했습니다!`);
   };
 
   // Compile player matches histories

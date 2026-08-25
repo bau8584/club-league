@@ -271,7 +271,6 @@ export function MatchesTab({ incomingInitials, onConsumeInitials, openMatchId, o
     setPicked(ids);
     setReserveOpen(true);
     setRecommendOpen(false);
-    toast.success("추천 대진을 예약 폼에 담았어요. 코트를 정하고 예약하세요.");
     requestAnimationFrame(() => reserveFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
   };
 

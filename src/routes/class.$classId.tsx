@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { Crown, Swords, Trophy, Users, User, Pencil, LogOut, School, ShieldAlert, BarChart3, ArrowLeft, Lock, MoreVertical, Palette, CalendarDays, RefreshCw, IdCard, QrCode } from "lucide-react";
 import { InviteDialog } from "@/components/league/InviteDialog";
 import { ThemePicker } from "@/components/ThemePicker";
+import { useTheme, isDarkTheme } from "@/lib/use-theme";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 
 export const Route = createFileRoute("/class/$classId")({
@@ -41,6 +42,7 @@ type Tab = "leaderboard" | "matches" | "daily" | "admin" | "myRecord" | "seasonS
 export function LeagueApp({ classId }: { classId: string }) {
   const terms = useLeagueTerms();
   const isSchool = useIsSchoolLeague();
+  const { theme } = useTheme();
   const {
     hydrated,
     students,
@@ -168,7 +170,7 @@ export function LeagueApp({ classId }: { classId: string }) {
 
   return (
     <div className="min-h-screen animate-in fade-in duration-300">
-      <Toaster theme="dark" position="top-center" richColors />
+      <Toaster theme={isDarkTheme(theme) ? "dark" : "light"} position="bottom-center" richColors duration={2500} />
 
       {/* Header */}
       <header className="border-b border-border/60 bg-card/40 backdrop-blur-xl">

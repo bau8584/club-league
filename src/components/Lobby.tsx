@@ -41,12 +41,14 @@ import type { LeagueInsert } from "@/lib/database.types";
 import { LEAGUE_BUNDLES, buildBundleSettings, type BundleKey } from "@/lib/league-presets";
 import { SPORT_OPTIONS, getSportPreset } from "@/domain/sport-levels";
 import { ThemePicker } from "@/components/ThemePicker";
+import { useTheme, isDarkTheme } from "@/lib/use-theme";
 
 /**
  * 리그 로비. schoolMode=true(/school 진입)면 학교 대상 문구로 바뀌고
  * 새 리그 개설 시 '학교 리그'가 기본 선택된다. 리그 데이터 자체는 동일하게 다룬다.
  */
 export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
+  const { theme } = useTheme();
   const [userEmail, setUserEmail] = useState<string>("");
   const [userId, setUserId] = useState<string>("");
   const [allOwnedLeagues, setOwnedLeagues] = useState<Class[]>([]);
@@ -176,7 +178,6 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
 
       if (error) throw error;
 
-      toast.success("리그 이름이 수정되었습니다!");
       setEditingLeague(null);
       setEditLeagueName("");
       await loadLeagues(userId);
@@ -253,7 +254,6 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
 
       if (classErr) throw classErr;
 
-      toast.success("새로운 리그가 개설되었습니다!");
       setIsModalOpen(false);
       setNewLeagueType("club");
       setNewSchoolName("");
@@ -370,7 +370,7 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
 
   return (
     <div className="min-h-screen flex flex-col relative overflow-hidden bg-background">
-      <Toaster theme="dark" position="top-center" richColors />
+      <Toaster theme={isDarkTheme(theme) ? "dark" : "light"} position="bottom-center" richColors duration={2500} />
       {/* Background neon elements */}
       <div className="absolute inset-0 bg-[linear-gradient(rgba(18,18,18,0.25)_1px,transparent_1px),linear-gradient(90deg,rgba(18,18,18,0.25)_1px,transparent_1px)] bg-[size:30px_30px] pointer-events-none opacity-30" />
       <div className="absolute -top-40 -left-40 size-96 rounded-full bg-neon-blue/10 blur-[130px] pointer-events-none" />
