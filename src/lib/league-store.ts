@@ -201,11 +201,26 @@ function useLeagueStoreInternal() {
   const channelRef = useRef<any>(null);
   const loadClassDataRef = useRef<any>(null);
 
+  // 실시간 재조회 디바운스.
+  //   경기 1건을 저장하면 matches 1행 + players 2~4행이 바뀌므로 postgres_changes
+  //   이벤트가 3~5개 연달아 온다. 각각이 전체 재조회를 부르면 같은 데이터를 3~5번
+  //   받게 되므로, 짧게 모았다가 한 번만 조회한다. (조회 내용·계산은 그대로)
+  const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const RELOAD_DEBOUNCE_MS = 400;
+  const scheduleReload = useCallback((classId: string) => {
+    if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
+    reloadTimerRef.current = setTimeout(() => {
+      reloadTimerRef.current = null;
+      loadClassDataRef.current?.(classId, true);
+    }, RELOAD_DEBOUNCE_MS);
+  }, []);
+
   useEffect(() => {
     return () => {
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
       }
+      if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
     };
   }, []);
 
@@ -448,14 +463,14 @@ function useLeagueStoreInternal() {
           "postgres_changes",
           { event: "*", schema: "public", table: "players", filter: `league_id=eq.${classId}` },
           () => {
-            loadClassDataRef.current?.(classId, true);
+            scheduleReload(classId);
           }
         )
         .on(
           "postgres_changes",
           { event: "*", schema: "public", table: "matches", filter: `league_id=eq.${classId}` },
           () => {
-            loadClassDataRef.current?.(classId, true);
+            scheduleReload(classId);
           }
         )
         .on(

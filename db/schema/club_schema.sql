@@ -370,16 +370,20 @@ begin
     (p_match_id, p_class_id, p_winner_id, p_loser_id, p_winner2_id, p_loser2_id, p_winner_score, p_loser_score,
      p_rp_delta_winner, p_rp_delta_loser, p_rp_delta_winner2, p_rp_delta_loser2, now());
   -- 동시 입력 안전: 절대값(p_player_updates) 대신 델타로 서버에서 원자적 증감.
-  update public.players set rp = greatest(0, rp + coalesce(p_rp_delta_winner, 0))
+  update public.players set rp = greatest(0, rp + coalesce(p_rp_delta_winner, 0)),
+                            win_count = win_count + 1
     where id = p_winner_id and league_id = p_class_id;
-  update public.players set rp = greatest(0, rp + coalesce(p_rp_delta_loser, 0))
+  update public.players set rp = greatest(0, rp + coalesce(p_rp_delta_loser, 0)),
+                            lose_count = lose_count + 1
     where id = p_loser_id and league_id = p_class_id;
   if p_winner2_id is not null then
-    update public.players set rp = greatest(0, rp + coalesce(p_rp_delta_winner2, 0))
+    update public.players set rp = greatest(0, rp + coalesce(p_rp_delta_winner2, 0)),
+                              win_count = win_count + 1
       where id = p_winner2_id and league_id = p_class_id;
   end if;
   if p_loser2_id is not null then
-    update public.players set rp = greatest(0, rp + coalesce(p_rp_delta_loser2, 0))
+    update public.players set rp = greatest(0, rp + coalesce(p_rp_delta_loser2, 0)),
+                              lose_count = lose_count + 1
       where id = p_loser2_id and league_id = p_class_id;
   end if;
 end; $$;
@@ -403,6 +407,15 @@ begin
   end if;
   if m.loser2_id is not null and m.rp_delta_loser2 is not null then
     update public.players set rp = greatest(0, rp - m.rp_delta_loser2) where id = m.loser2_id and league_id = p_class_id;
+  end if;
+  -- 승/패 집계 되돌리기 (rp 델타 유무와 무관하게 수행)
+  update public.players set win_count  = greatest(0, win_count  - 1) where id = m.winner_id  and league_id = p_class_id;
+  update public.players set lose_count = greatest(0, lose_count - 1) where id = m.loser_id   and league_id = p_class_id;
+  if m.winner2_id is not null then
+    update public.players set win_count  = greatest(0, win_count  - 1) where id = m.winner2_id and league_id = p_class_id;
+  end if;
+  if m.loser2_id is not null then
+    update public.players set lose_count = greatest(0, lose_count - 1) where id = m.loser2_id and league_id = p_class_id;
   end if;
   delete from public.matches where id = p_match_id and league_id = p_class_id;
 end; $$;
