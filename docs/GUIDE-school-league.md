@@ -134,6 +134,21 @@ src/routes/__root.tsx         → 로그인 게이트 + 공개 경로 예외
 
 ---
 
+### 하드코딩된 경로를 주의할 것
+
+`window.location.href = "/"` 처럼 **club 기준으로 굳어진 경로**가 곳곳에 있었다.
+school 라우트에서 그대로 실행되면 학교 사용자가 클럽 로비로 튕겨 나간다.
+실제로 이 문제가 세 번 나왔다.
+
+| 지점 | 처리 |
+|---|---|
+| 초대 참가 후 이동 (`routes/join.tsx`) | `join_league()`가 돌려주는 `league_type`으로 분기 |
+| 웹푸시 딥링크 7곳 (`league-store.ts`) | `classPath()` 헬퍼로 통일 |
+| 헤더 "리그 로비로" 버튼 2곳 (`class.$classId.tsx`) | `window.location.pathname.startsWith("/school")`로 분기 |
+
+**새 이동 경로를 추가할 때는 반드시 club/school 분기를 확인한다.**
+점검용: `grep -rn '"/class/\|href = "/"\|to="/"' src --include=*.tsx --include=*.ts`
+
 ## 4. 건드리면 안 되는 것
 
 1. **club의 기존 URL `/class/$classId`** — 운영 중인 동호인 링크다. 절대 바꾸지 않는다.
