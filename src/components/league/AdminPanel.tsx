@@ -105,6 +105,7 @@ export function AdminPanel({
   rpVariables,
   onUpdateSettings,
   onDeleteStudent,
+  onDeleteStudents,
   onUpdateGender,
   onUpdateStudentInfo,
   onRestoreFromCSV,
@@ -126,6 +127,7 @@ export function AdminPanel({
   rpVariables?: { winDelta: number; loseDelta: number };
   onUpdateSettings?: (thresholds: Record<TierName, number>, rpVars: { winDelta: number; loseDelta: number }) => void;
   onDeleteStudent?: (studentId: string) => void;
+  onDeleteStudents?: (studentIds: string[]) => void;
   onUpdateGender?: (studentId: string, gender: Gender) => void;
   onUpdateStudentInfo?: (
     studentId: string,
@@ -406,6 +408,7 @@ export function AdminPanel({
             onUpdateRP={onUpdateRP}
             onResetStudent={onResetStudent}
             onDeleteStudent={onDeleteStudent}
+            onDeleteStudents={onDeleteStudents}
             onUpdateGender={onUpdateGender}
             onUpdateStudentInfo={onUpdateStudentInfo}
             thresholds={thresholds}

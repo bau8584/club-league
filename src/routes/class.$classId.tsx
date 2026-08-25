@@ -49,6 +49,7 @@ export function LeagueApp({ classId }: { classId: string }) {
     matches,
     title,
     setTitle,
+    saveLeagueName,
     loadClassData,
     upsertStudents,
     deleteMatch,
@@ -72,6 +73,7 @@ export function LeagueApp({ classId }: { classId: string }) {
     updateLeagueSettings,
     updateStudentGender,
     deleteStudent,
+    deleteStudents,
     updateStudentInfo,
     restoreFromCSV,
     bulkDecayRP,
@@ -188,8 +190,14 @@ export function LeagueApp({ classId }: { classId: string }) {
                     autoFocus
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
-                    onBlur={() => setEditingTitle(false)}
-                    onKeyDown={(e) => e.key === "Enter" && setEditingTitle(false)}
+                    // 편집을 마치면 DB에 저장한다. 저장하지 않으면 실시간 갱신·새로고침 때
+                    // 서버 값으로 덮여 원래 이름으로 되돌아간다.
+                    onBlur={async () => { setEditingTitle(false); await saveLeagueName(title); }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") { e.currentTarget.blur(); }
+                      // 취소: 저장하지 않고 서버 값으로 되돌린다
+                      if (e.key === "Escape") { setEditingTitle(false); loadClassData(classId, true); }
+                    }}
                     className="h-8 border-neon-blue/60 bg-background/60 text-lg font-bold"
                   />
                 ) : (
@@ -535,6 +543,7 @@ export function LeagueApp({ classId }: { classId: string }) {
             rpVariables={rpVariables}
             onUpdateSettings={updateLeagueSettings}
             onDeleteStudent={deleteStudent}
+            onDeleteStudents={deleteStudents}
             onUpdateGender={updateStudentGender}
             onUpdateStudentInfo={updateStudentInfo}
             onRestoreFromCSV={restoreFromCSV}

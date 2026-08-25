@@ -532,3 +532,15 @@ export async function apiDeleteSeason(classId: string, season: string, deleteMat
 export async function apiFetchLeaguePublic(classId: string) {
   return supabase.rpc("get_league_public", { p_class_id: classId });
 }
+
+// 리그 이름만 변경 (헤더의 인라인 제목 편집용).
+// settings 는 건드리지 않는다 — 화면에 들고 있던 오래된 설정으로 덮어쓰는 사고를 막는다.
+export async function apiUpdateClassName(classId: string, className: string) {
+  return supabase.from("leagues").update({ name: className }).eq("id", classId);
+}
+
+// 여러 선수를 한 번에 소프트 삭제 (선택 삭제용).
+// 한 명씩 호출하면 스토어의 동기화 잠금에 막혀 첫 건만 반영된다.
+export async function apiSoftDeleteStudents(studentIds: string[]) {
+  return supabase.from("players").update({ is_deleted: true }).in("id", studentIds);
+}

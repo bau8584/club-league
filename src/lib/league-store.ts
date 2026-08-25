@@ -11,6 +11,7 @@ import {
   apiFetchClassSettings,
   apiUpdateClassSettings,
   apiUpdateClassSettingsAndName,
+  apiUpdateClassName,
   apiFetchMatches,
   apiInsertMatch,
   apiDeleteMatch,
@@ -26,6 +27,7 @@ import {
   apiUpdateStudentFields,
   apiInsertStudent,
   apiSoftDeleteStudent,
+  apiSoftDeleteStudents,
   apiFetchDeletedStudents,
   apiRestoreStudent,
   apiHardDeleteStudent,
@@ -1427,6 +1429,59 @@ function useLeagueStoreInternal() {
       setIsSyncing(false);
     }
   }, [students, currentClassId]);
+  const deleteStudentRef = useRef<any>(null);
+  useEffect(() => { deleteStudentRef.current = deleteStudent; }, [deleteStudent]);
+
+  // 여러 선수 한 번에 삭제 (관리자 화면의 '선택 삭제').
+  //   deleteStudent 를 반복 호출하면 첫 호출이 isSyncingRef 를 잠가버려
+  //   두 번째부터는 "동기화 중입니다" 경고만 뜨고 실제로는 삭제되지 않았다.
+  //   권한·잠금 검사를 한 번만 하고, DB 도 한 번에 처리한다.
+  const deleteStudents = useCallback(async (studentIds: string[]) => {
+    const ids = Array.from(new Set(studentIds)).filter(Boolean);
+    if (ids.length === 0) return;
+    if (ids.length === 1) return deleteStudentRef.current?.(ids[0]);
+    if (currentViewSeasonRef.current !== "현재 시즌") {
+      toast.error("과거 시즌 기록은 수정할 수 없습니다 (읽기 전용).");
+      return;
+    }
+    if (!isClassManagerRef.current) {
+      toast.error("권한이 없습니다. 선수·경기 관리 권한이 없습니다.");
+      return;
+    }
+    if (isSyncingRef.current) {
+      toast.warning("데이터가 동기화 중입니다. 잠시 후 다시 시도해 주세요.");
+      return;
+    }
+    isSyncingRef.current = true;
+    setIsSyncing(true);
+
+    const idSet = new Set(ids);
+    const removed = students.filter((s) => idSet.has(s.id));
+    const previousStudents = [...students];
+    setStudents(students.filter((s) => !idSet.has(s.id)));
+    setDeletedPlayers((prev) => {
+      const have = new Set(prev.map((p) => p.id));
+      return [...prev, ...removed.filter((r) => !have.has(r.id))];
+    });
+
+    if (currentClassIdRef.current) {
+      try {
+        const { error } = await apiSoftDeleteStudents(ids);
+        if (error) throw error;
+        toast.success(`${ids.length}명을 삭제했습니다. 경기 기록과 다른 선수 점수는 그대로 보존됩니다.`);
+      } catch (err: any) {
+        console.error("Failed to soft-delete students:", err.message);
+        toast.error("삭제에 실패했습니다: " + err.message);
+        setStudents(previousStudents);
+      } finally {
+        isSyncingRef.current = false;
+        setIsSyncing(false);
+      }
+    } else {
+      isSyncingRef.current = false;
+      setIsSyncing(false);
+    }
+  }, [students]);
 
   // 특정 선수 정보 전체 수정 및 동기화
   const updateStudentInfo = useCallback(async (
@@ -2365,6 +2420,25 @@ function useLeagueStoreInternal() {
   }, [matches, students, tierThresholds, rpVariables, currentClassId, isClassOwner]);
 
   // 리그 커스텀 설정 통합 저장 (마스터 DB 동기화 포함)
+  // 헤더의 인라인 제목 편집 저장.
+  //   기존에는 setTitle(화면 상태)만 바뀌고 DB에 쓰는 코드가 없어서, 실시간 갱신이나
+  //   새로고침이 돌면 원래 이름으로 되돌아갔다. 이름만 따로 저장한다.
+  const saveLeagueName = useCallback(async (nextName: string): Promise<boolean> => {
+    const name = nextName.trim();
+    const cid = currentClassIdRef.current;
+    if (!cid) return false;
+    if (!name) { toast.error("리그 이름을 입력해 주세요."); return false; }
+    if (!isClassOwnerRef.current) { toast.error("권한이 없습니다. 방장만 이름을 바꿀 수 있습니다."); return false; }
+    const { error } = await apiUpdateClassName(cid, name);
+    if (error) {
+      console.error("Failed to rename league:", error.message);
+      toast.error("리그 이름 저장에 실패했습니다: " + error.message);
+      return false;
+    }
+    setTitle(name);
+    return true;
+  }, []);
+
   const saveLeagueSettings = useCallback(async (
     newTitle: string, 
     newBonuses: ActiveBonuses, 
@@ -3324,7 +3398,8 @@ function useLeagueStoreInternal() {
     deletedById,
     matches,
     title,
-    setTitle, 
+    setTitle,
+    saveLeagueName, 
     matchInputMode,
     saveMatchInputMode,
     placementEnabled,
@@ -3367,6 +3442,7 @@ function useLeagueStoreInternal() {
     updateLeagueSettings,
     updateStudentGender,
     deleteStudent,
+    deleteStudents,
     updateStudentInfo,
     bulkUpdateStudents,
     fetchDeletedStudents,

@@ -22,6 +22,7 @@ export interface AdminStudentManageProps {
   onUpdateRP?: (studentId: string, nextRp: number) => void;
   onResetStudent?: (studentId: string) => void;
   onDeleteStudent?: (studentId: string) => void;
+  onDeleteStudents?: (studentIds: string[]) => void;
   onUpdateGender?: (studentId: string, gender: Gender) => void;
   onUpdateStudentInfo?: (...args: any[]) => any;
   thresholds?: Record<TierName, number>;
@@ -41,27 +42,40 @@ function parseRoster(text: string, isSchool = false): ParsedRow[] {
     const line = rawLine.trim();
     if (!line) continue;
     if (isSchool) {
-      // 앞쪽 숫자 칸 수로 형식을 자동 판별한다. 리그 단위(학급/학년/전교)가 제각각이라
-      // 선생님이 가진 명단 그대로 붙여넣을 수 있게 한다. 빠진 축은 null로 두고 표에서 채운다.
-      //   3 2 15 홍길동 → 학년·반·번호·이름
-      //   2 15 홍길동   → 반·번호·이름
-      //   15 홍길동     → 번호·이름
-      //   홍길동        → 이름만
-      // "3학년 2반 15번 홍길동"처럼 단위 문자가 붙어도 숫자만 읽는다.
+      // 앞쪽 숫자 칸으로 학년/반/번호를 읽는다.
+      //   단위(학년·반·번)가 붙어 있으면 그 뜻을 그대로 따르고,
+      //   단위가 전혀 없으면 "번호가 이름 바로 앞"이라는 관례로 오른쪽부터 채운다.
+      //   3 2 15 홍길동 → 학년·반·번호 / 2 15 홍길동 → 반·번호 / 15 홍길동 → 번호
+      //   단위가 없는 두 숫자는 "3학년 2반 홍길동"처럼 번호 없는 명단과 구별할 수
+      //   없으므로, 그런 명단은 단위를 붙여야 정확히 인식된다.
       const cells = line.split(/[\t,\s]+/).map((c) => c.trim()).filter(Boolean);
-      const nums: number[] = [];
+      let grade: number | null = null, classNum: number | null = null, studentNo: number | null = null;
+      const bare: number[] = [];
       let i = 0;
       for (; i < cells.length; i++) {
-        const m = cells[i].match(/^(\d+)(?:학년|반|번)?$/);
+        const m = cells[i].match(/^(\d+)(학년|반|번)?$/);
         if (!m) break;
-        nums.push(Number(m[1]));
+        const v = Number(m[1]);
+        if (m[2] === "학년") grade = v;
+        else if (m[2] === "반") classNum = v;
+        else if (m[2] === "번") studentNo = v;
+        else bare.push(v);
       }
       const name = cells.slice(i).join(" ").trim();
       if (!name) continue;
-      let grade: number | null = null, classNum: number | null = null, studentNo: number | null = null;
-      if (nums.length >= 3) { grade = nums[0]; classNum = nums[1]; studentNo = nums[2]; }
-      else if (nums.length === 2) { classNum = nums[0]; studentNo = nums[1]; }
-      else if (nums.length === 1) { studentNo = nums[0]; }
+      if (grade === null && classNum === null && studentNo === null) {
+        // 단위가 하나도 없을 때만 위치로 판단한다(오른쪽 = 번호).
+        if (bare.length >= 3) { grade = bare[0]; classNum = bare[1]; studentNo = bare[2]; }
+        else if (bare.length === 2) { classNum = bare[0]; studentNo = bare[1]; }
+        else if (bare.length === 1) { studentNo = bare[0]; }
+      } else {
+        // 단위가 섞여 있으면 남은 숫자를 비어 있는 축에 학년→반→번호 순으로 채운다.
+        for (const v of bare) {
+          if (grade === null) grade = v;
+          else if (classNum === null) classNum = v;
+          else if (studentNo === null) studentNo = v;
+        }
+      }
       out.push({ nickname: name, group: null, grade, classNum, studentNo });
       continue;
     }
@@ -81,7 +95,7 @@ function parseRoster(text: string, isSchool = false): ParsedRow[] {
   return out;
 }
 
-export function AdminStudentManage({ students, onDeleteStudent, thresholds }: AdminStudentManageProps) {
+export function AdminStudentManage({ students, onDeleteStudent, onDeleteStudents, thresholds }: AdminStudentManageProps) {
   const terms = useLeagueTerms();
   const isSchool = useIsSchoolLeague();
   const { upsertStudents, updateStudentInfo, bulkUpdateStudents, fetchDeletedStudents, restoreDeletedStudent, hardDeleteStudent, levelMode, levels, ownerUid, adminUids, setMemberAdmin, transferOwnership, setCoOwner, coOwnerUids, isClassPrimaryOwner, isClassOwner, fetchLeagueMembers, unlinkPlayer } = useLeagueStore();
@@ -246,7 +260,9 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
   const runConfirm = async () => {
     if (!confirm) return;
     if (confirm.type === "delete") {
-      confirm.ids.forEach((id) => onDeleteStudent?.(id));
+      // 한 명씩 호출하면 스토어의 동기화 잠금에 막혀 첫 건만 삭제된다. 일괄로 넘긴다.
+      if (onDeleteStudents) await onDeleteStudents(confirm.ids);
+      else for (const id of confirm.ids) await onDeleteStudent?.(id);
     }
     setSelected(new Set());
     setConfirm(null);
@@ -288,7 +304,10 @@ export function AdminStudentManage({ students, onDeleteStudent, thresholds }: Ad
                   · <b className="text-foreground">2 15 홍길동</b> → 반·번호·이름<br />
                   · <b className="text-foreground">15 홍길동</b> → 번호·이름<br />
                   · <b className="text-foreground">홍길동</b> → 이름만<br />
-                  “3학년 2반 15번”처럼 단위를 붙여도 됩니다. 비운 항목은 아래 표에서 채울 수 있어요.
+                  <b className="text-foreground">번호가 없는 명단</b>은 단위를 붙여 주세요 —
+                  <b className="text-foreground">3학년 2반 홍길동</b>처럼요.
+                  (단위가 없으면 맨 뒤 숫자를 번호로 읽습니다)<br />
+                  비운 항목은 아래 표에서 채울 수 있어요.
                 </>
               ) : (
                 <>
