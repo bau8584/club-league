@@ -265,8 +265,8 @@ export function LeagueApp({ classId }: { classId: string }) {
                 {/* 경기 알림(웹 푸시) */}
                 <PushToggle leagueId={classId} />
 
-                {/* 리그 로비 */}
-                <button onClick={() => { window.location.href = "/"; }} title="리그 로비로"
+                {/* 리그 로비 (school 라우트에서는 학교 로비로, club 라우트에서는 클럽 로비로) */}
+                <button onClick={() => { window.location.href = window.location.pathname.startsWith("/school") ? "/school" : "/"; }} title="리그 로비로"
                   className="flex size-9 items-center justify-center rounded-lg border border-border/60 bg-card/60 text-muted-foreground hover:text-neon-blue hover:border-neon-blue/40 active:scale-95 transition-all">
                   <ArrowLeft className="size-4" />
                 </button>
@@ -342,7 +342,7 @@ export function LeagueApp({ classId }: { classId: string }) {
                       <QrCode className="size-4 text-neon-blue" /> QR로 초대하기
                     </DropdownMenuItem>
                   )}
-                  <DropdownMenuItem onSelect={() => { window.location.href = "/"; }} className="gap-2 text-xs cursor-pointer">
+                  <DropdownMenuItem onSelect={() => { window.location.href = window.location.pathname.startsWith("/school") ? "/school" : "/"; }} className="gap-2 text-xs cursor-pointer">
                     <ArrowLeft className="size-4" /> 리그 로비로
                   </DropdownMenuItem>
                   <DropdownMenuItem onSelect={logoutUser} className="gap-2 text-xs cursor-pointer text-destructive focus:text-destructive">
