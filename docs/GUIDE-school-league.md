@@ -28,7 +28,8 @@
 | **입구 URL** | `/` | `/school` |
 | **리그 URL** | `/class/$classId` | `/school/$classId` |
 | **로그인** | 회원 각자 구글 로그인 | **교사(방장)만** 로그인. 학생 로그인 없음 |
-| **선수 계정** | `players.user_id` 연결 | `user_id` 영구히 null |
+| **선수 계정** | `players.user_id` 연결 | `user_id` 영구히 null. **선수 연동 UI 없음** |
+| **초대 참가 등급** | `member_uids` (멤버) | `admin_uids` (공동 관리자) |
 | **경기 입력** | `matchInputMode` 선택 가능 | 개설 시 `admin-only` 고정 |
 | **분류 축** | `group_label` (레벨: 초심~A급) | `grade` / `class_num` / `student_no` |
 | **레벨 체계 UI** | 개설 시 선택 + 관리자 탭에서 관리 | **숨김** (LevelManager 미노출) |
@@ -149,6 +150,32 @@ school 라우트에서 그대로 실행되면 학교 사용자가 클럽 로비�
 **새 이동 경로를 추가할 때는 반드시 club/school 분기를 확인한다.**
 점검용: `grep -rn '"/class/\|href = "/"\|to="/"' src --include=*.tsx --include=*.ts`
 
+### 권한 4단계
+
+| 등급 | 저장 위치 | DB 함수 | UI 플래그 | 할 수 있는 것 |
+|---|---|---|---|---|
+| 원조 방장 | `owner_uid` | `is_class_primary_owner` | `isClassPrimaryOwner` | 소유권 위임, 공동방장 지정/해제, 리그 삭제 |
+| 공동방장 | `co_owner_uids` | `is_class_owner` | `isClassOwner` | + 글로벌 설정, 시즌, 휴면 감점, 데이터 관리 |
+| 공동 관리자 | `admin_uids` | `is_class_teacher` | `isClassManager` | 선수 관리, 경기 기록·수정·삭제 |
+| 멤버 | `member_uids` | `is_class_recorder` | `isClassMember` | (club에서만) 경기 기록 |
+
+**school은 초대로 참가하면 공동 관리자**가 된다. `admin-only` 고정이라
+`canRecord = isClassManager || matchInputMode !== "admin-only"` 를 통과하려면 관리자여야 하기 때문.
+멤버로 들어가면 경기를 기록할 수 없어 초대 기능이 무의미해진다.
+⚠️ 링크를 가진 사람은 누구나 공동 관리자가 된다(방장 권한은 아님).
+
+### school에 선수 연동이 없는 이유
+
+학생은 로그인이 없어 연동 자체가 불가능하고, 교사는 선수가 아니다.
+`admin-only` 고정이라 자율 기록도 없고, 도전장·예약 참가도 회원 기능이다.
+남는 실익은 "내 카드"뿐인데 교사는 관리자 화면에서 다 본다.
+
+그래서 school에서는:
+- `needsOnboarding` 면제 — 안 그러면 초대받은 동료 교사가
+  "학생 명단에서 본인을 고르세요" 화면에 **갇힌다**
+- 탭바의 "선수 연동" 버튼 숨김
+- "내 카드" 탭은 `myLinked` 조건 그대로 둠(school에선 자연히 false)
+
 ## 4. 건드리면 안 되는 것
 
 1. **club의 기존 URL `/class/$classId`** — 운영 중인 동호인 링크다. 절대 바꾸지 않는다.
@@ -176,6 +203,7 @@ school 라우트에서 그대로 실행되면 학교 사용자가 클럽 로비�
 | `2026-08-24_join_league_type.sql` | `join_league()`가 `league_type` 반환 |
 | `2026-08-24_public_ranking.sql` | `get_league_public()` — 무인증 순위표용 |
 | `2026-08-25_win_count_maintain.sql` | `win_count`/`lose_count` 서버 유지 + 백필 |
+| `2026-08-25_school_invite_admin.sql` | school 초대 참가 시 `admin_uids` 부여 (`join_league`, `join_league_by_code`) |
 
 ---
 

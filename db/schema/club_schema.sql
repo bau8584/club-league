@@ -44,6 +44,7 @@ drop function if exists public.record_match_transaction(uuid, uuid, uuid, uuid, 
 drop function if exists public.record_match_transaction(uuid, uuid, uuid, uuid, jsonb, uuid, uuid, int, int);
 drop function if exists public.restore_class_data(uuid, jsonb, jsonb);
 drop function if exists public.join_league(uuid);
+drop function if exists public.join_league_by_code(text);
 drop function if exists public.leave_league(uuid);
 drop function if exists public.get_league_members(uuid);
 drop function if exists public.remove_league_member(uuid, uuid);
@@ -516,33 +517,67 @@ create trigger trg_set_join_code before insert on public.leagues
   for each row execute function public.set_join_code();
 
 create or replace function public.join_league_by_code(p_code text)
-returns table(id uuid, class_name text, is_owner boolean)
+returns table(id uuid, class_name text, is_owner boolean, league_type text)
 language plpgsql security definer set search_path = public, extensions as $$
-declare v_id uuid; v_owner uuid; v_members uuid[];
+declare v_id uuid; v_owner uuid; v_members uuid[]; v_admins uuid[]; v_co uuid[]; v_type text;
 begin
-  select l.id, l.owner_uid, coalesce(l.member_uids,'{}'::uuid[])
-    into v_id, v_owner, v_members
+  select l.id, l.owner_uid,
+         coalesce(l.member_uids,'{}'::uuid[]),
+         coalesce(l.admin_uids,'{}'::uuid[]),
+         coalesce(l.co_owner_uids,'{}'::uuid[]),
+         l.league_type
+    into v_id, v_owner, v_members, v_admins, v_co, v_type
   from public.leagues l
   where upper(btrim(l.join_code)) = upper(btrim(p_code))
     and coalesce(l.is_deleted, false) = false;
   if v_id is null then raise exception '리그를 찾을 수 없습니다. 코드를 다시 확인해 주세요.'; end if;
-  if v_owner <> auth.uid() and not (auth.uid() = any(v_members)) then
-    update public.leagues set member_uids = array_append(v_members, auth.uid()) where leagues.id = v_id;
+
+  if v_owner <> auth.uid()
+     and not (auth.uid() = any(v_co))
+     and not (auth.uid() = any(v_admins))
+     and not (auth.uid() = any(v_members)) then
+    if v_type = 'school' then
+      update public.leagues set admin_uids = array_append(v_admins, auth.uid()) where leagues.id = v_id;
+    else
+      update public.leagues set member_uids = array_append(v_members, auth.uid()) where leagues.id = v_id;
+    end if;
   end if;
-  return query select l.id, l.name, (l.owner_uid = auth.uid()) from public.leagues l where l.id = v_id;
+
+  return query select l.id, l.name, (l.owner_uid = auth.uid()), l.league_type
+    from public.leagues l where l.id = v_id;
 end; $$;
 
 create or replace function public.join_league(p_class_id uuid)
-returns table(id uuid, class_name text, is_owner boolean, league_type text) language plpgsql security definer set search_path = public, extensions as $$
-declare v_owner uuid; v_members uuid[];
+returns table(id uuid, class_name text, is_owner boolean, league_type text)
+language plpgsql security definer set search_path = public, extensions as $$
+declare v_owner uuid; v_members uuid[]; v_admins uuid[]; v_co uuid[]; v_type text;
 begin
-  select l.owner_uid, coalesce(l.member_uids,'{}'::uuid[]) into v_owner, v_members
+  select l.owner_uid,
+         coalesce(l.member_uids,'{}'::uuid[]),
+         coalesce(l.admin_uids,'{}'::uuid[]),
+         coalesce(l.co_owner_uids,'{}'::uuid[]),
+         l.league_type
+    into v_owner, v_members, v_admins, v_co, v_type
   from public.leagues l where l.id = p_class_id and coalesce(l.is_deleted,false) = false;
   if v_owner is null then raise exception '리그를 찾을 수 없습니다. 코드를 다시 확인해 주세요.'; end if;
-  if v_owner <> auth.uid() and not (auth.uid() = any(v_members)) then
-    update public.leagues set member_uids = array_append(v_members, auth.uid()) where leagues.id = p_class_id;
+
+  -- 이미 어떤 등급이든 갖고 있으면 건드리지 않는다(등급 강등 방지).
+  if v_owner <> auth.uid()
+     and not (auth.uid() = any(v_co))
+     and not (auth.uid() = any(v_admins))
+     and not (auth.uid() = any(v_members)) then
+    if v_type = 'school' then
+      -- 학교: 초대받는 사람은 교사다. 기록할 수 있어야 하므로 공동 관리자.
+      update public.leagues set admin_uids = array_append(v_admins, auth.uid())
+        where leagues.id = p_class_id;
+    else
+      update public.leagues set member_uids = array_append(v_members, auth.uid())
+        where leagues.id = p_class_id;
+    end if;
   end if;
-  return query select l.id, l.name, (l.owner_uid = auth.uid()), l.league_type from public.leagues l where l.id = p_class_id;
+
+  return query select l.id, l.name, (l.owner_uid = auth.uid()), l.league_type
+    from public.leagues l where l.id = p_class_id;
 end; $$;
 
 -- 공동방장 지정/해제 (원조 방장 전용)

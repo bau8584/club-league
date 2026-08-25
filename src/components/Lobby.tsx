@@ -290,7 +290,15 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
         : await supabase.rpc("join_league_by_code", { p_code: code.toUpperCase() });
       if (error) throw error;
       const row = Array.isArray(data) ? data[0] : data;
-      toast.success(row?.is_owner ? "내가 개설한 리그입니다." : `'${row?.name ?? "리그"}'에 참여했습니다!`);
+      const joinedName = row?.class_name ?? "리그";
+      toast.success(
+        row?.is_owner
+          ? "내가 개설한 리그입니다."
+          : row?.league_type === "school"
+            // school 은 초대받는 사람이 교사다. 기록할 수 있도록 공동 관리자로 들어간다.
+            ? `'${joinedName}'에 담당 선생님(공동 관리자)으로 참여했습니다!`
+            : `'${joinedName}'에 참여했습니다!`
+      );
       setJoinModalOpen(false);
       setJoinCode("");
       await loadLeagues(userId);
@@ -507,9 +515,9 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
                         <button
                           onClick={(e) => { e.preventDefault(); e.stopPropagation(); setInviteLeague(league); }}
                           className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-neon-green/40 bg-neon-green/10 text-neon-green hover:bg-neon-green/20 active:scale-95 transition-all cursor-pointer text-[11px] font-bold"
-                          title="기록원 초대"
+                          title={league.league_type === "school" ? "담당 선생님 초대" : "기록원 초대"}
                         >
-                          <UserPlus className="size-4" /><span className="hidden lg:inline">기록원 추가</span>
+                          <UserPlus className="size-4" /><span className="hidden lg:inline">{league.league_type === "school" ? "선생님 추가" : "기록원 추가"}</span>
                         </button>
 
                         {/* Settings Dropdown Button */}

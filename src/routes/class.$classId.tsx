@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { useLeagueStore } from "@/lib/league-store";
-import { useLeagueTerms } from "@/lib/league-terms";
+import { useLeagueTerms, useIsSchoolLeague } from "@/lib/league-terms";
 import { toast } from "sonner";
 import { Leaderboard } from "@/features/leaderboard/Leaderboard";
 import { DailyResults } from "@/components/league/DailyResults";
@@ -40,6 +40,7 @@ type Tab = "leaderboard" | "matches" | "daily" | "admin" | "myRecord" | "seasonS
 // useLeagueStore가 불러오는 leagues.league_type / settings 값(예: matchInputMode)로 처리된다.
 export function LeagueApp({ classId }: { classId: string }) {
   const terms = useLeagueTerms();
+  const isSchool = useIsSchoolLeague();
   const {
     hydrated,
     students,
@@ -90,8 +91,10 @@ export function LeagueApp({ classId }: { classId: string }) {
   }, [classId, loadClassData]);
 
   const [tab, setTab] = useState<Tab>("leaderboard");
-  // 일반회원(가입했지만 관리자 아님)인데 아직 내 선수 미연동 → 프로필 설정 온보딩
-  const needsOnboarding = isClassMember && !isClassManager && !myPlayerId;
+  // 일반회원(가입했지만 관리자 아님)인데 아직 내 선수 미연동 → 프로필 설정 온보딩.
+  // school은 학생 로그인이 없어 '내 선수' 개념이 없다. 초대받은 동료 교사가
+  // "학생 명단에서 본인을 고르세요" 화면에 갇히지 않도록 면제한다.
+  const needsOnboarding = !isSchool && isClassMember && !isClassManager && !myPlayerId;
   // 관리자도 선수와 연동돼 있으면 '나의 기록'을 볼 수 있고, 미연동이면 직접 연동할 수 있다.
   const myLinked = !!myPlayerId;
   const [linkOpen, setLinkOpen] = useState(false);
@@ -409,8 +412,8 @@ export function LeagueApp({ classId }: { classId: string }) {
                   </TabButton>
                 )}
 
-                {/* 8. 미연동 관리자: 선수로 참가(연동) */}
-                {!myLinked && currentViewSeason === "현재 시즌" && (
+                {/* 8. 미연동 관리자: 선수로 참가(연동) — school은 교사가 선수가 아니므로 숨김 */}
+                {!isSchool && !myLinked && currentViewSeason === "현재 시즌" && (
                   <button
                     type="button"
                     onClick={() => setLinkOpen(true)}
