@@ -276,16 +276,36 @@ export function MatchesTab({ incomingInitials, onConsumeInitials, openMatchId, o
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
-      {/* ── 경기 결과 입력 (최상단 주 액션) ── */}
-      {canRecord && (
+      {/* ── 경기 결과 입력 ── school: 버튼→팝업 대신 경기장 탭에 폼을 바로 노출 */}
+      {canRecord && isSchool && (
+        <Card className="border border-border/40 bg-card/50 p-5 shadow-lg backdrop-blur">
+          <div className="mb-3 flex items-center gap-2.5">
+            <div className="flex size-9 items-center justify-center rounded-xl bg-neon-blue/15 text-neon-blue">
+              <Trophy className="size-5" />
+            </div>
+            <h2 className="text-base font-black tracking-tight text-foreground">경기 결과 입력하기</h2>
+          </div>
+          <RecordMatch
+            students={students}
+            onRecord={handleRecord}
+            initials={initials}
+            onClearInitials={noop}
+            thresholds={tierThresholds}
+            rpVariables={rpVariables}
+            onUpdateGender={updateStudentGender}
+            lockedPlayerId={lockedPlayerId}
+          />
+        </Card>
+      )}
+      {canRecord && !isSchool && (
         <Button onClick={() => openResultInput(null)}
           className="h-14 w-full rounded-2xl bg-gradient-to-r from-neon-blue to-tier-diamond text-base font-black text-primary-foreground glow-primary transition-all hover:opacity-90 active:scale-[0.99]">
           <Trophy className="mr-2 size-5" /> 경기 결과 입력하기
         </Button>
       )}
 
-      {/* ── 매치 추천 (접힌 섹션) ── */}
-      {!readOnly && (
+      {/* ── 매치 추천 (접힌 섹션) ── 학교 리그는 잠시 숨김 */}
+      {!readOnly && !isSchool && (
         <Card className="border border-border/40 bg-card/50 p-5 shadow-lg backdrop-blur">
           <button
             type="button"
@@ -328,8 +348,8 @@ export function MatchesTab({ incomingInitials, onConsumeInitials, openMatchId, o
         </Card>
       )}
 
-      {/* ── 경기 예약 (접힌 섹션) ── */}
-      {canReserve && (
+      {/* ── 경기 예약 / 다음 경기 담기 (접힌 섹션) ── 학교 리그는 사용성이 낮아 잠시 숨김 */}
+      {canReserve && !isSchool && (
         <Card ref={reserveFormRef} className="border border-border/40 bg-card/50 p-5 shadow-lg backdrop-blur">
           <button
             type="button"
@@ -390,7 +410,8 @@ export function MatchesTab({ incomingInitials, onConsumeInitials, openMatchId, o
         </Card>
       )}
 
-      {/* ── 예약 목록 (전원 열람) ── */}
+      {/* ── 예약 목록 / 대기 중인 경기 (전원 열람) ── 학교 리그는 사용성이 낮아 잠시 숨김 */}
+      {!isSchool && (
       <Card className="border border-border/40 bg-card/50 p-5 shadow-lg backdrop-blur">
         <div className="mb-3 flex items-center gap-2">
           <Megaphone className="size-4 text-amber-500" />
@@ -493,13 +514,16 @@ export function MatchesTab({ incomingInitials, onConsumeInitials, openMatchId, o
           </div>
         )}
       </Card>
+      )}
 
 
-      {/* ── 경기 결과 보기 (맨 아래 · 입력 버튼과 수미상관) ── 클릭 시 팝업 */}
+      {/* ── 경기 결과 보기 (맨 아래 · 입력 버튼과 수미상관) ── 클릭 시 팝업. 학교 리그는 잠시 숨김 */}
+      {!isSchool && (
       <Button onClick={() => setResultsOpen(true)}
         className="h-14 w-full rounded-2xl bg-gradient-to-r from-tier-diamond to-neon-blue text-base font-black text-primary-foreground glow-primary transition-all hover:opacity-90 active:scale-[0.99]">
         <ClipboardList className="mr-2 size-5" /> 경기 결과 보기
       </Button>
+      )}
 
       {/* 경기 결과 보기 모달 */}
       {resultsOpen && (
