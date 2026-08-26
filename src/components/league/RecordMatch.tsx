@@ -109,7 +109,9 @@ export function RecordMatch({
 }) {
   const { isSyncing, placementEnabled, placementGames, isClassOwner, saveMatchBreakdown } = useLeagueStore();
   const terms = useLeagueTerms();
-  const [matchType, setMatchType] = useState<"single" | "double">("double");
+  const isSchool = useIsSchoolLeague();
+  // 학교 리그는 대부분 1:1 매치 위주라 단식을 기본값으로 시작한다.
+  const [matchType, setMatchType] = useState<"single" | "double">(isSchool ? "single" : "double");
   const [a, setA] = useState<Selection>(empty);
   const [a2, setA2] = useState<Selection>(empty);
   const [b, setB] = useState<Selection>(empty);
