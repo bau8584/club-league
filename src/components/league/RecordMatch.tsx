@@ -1160,8 +1160,11 @@ export function RecordMatch({
           // 좁은 화면: 한 번에 하나 — 슬롯을 누르면 대진 자리에 선수 목록이 들어온다.
           // 선수 목록을 별도 팝업으로 띄우지 않는 이유는, 동호회에서는 이 폼 자체가
           // 이미 팝업 안에 들어 있어 팝업이 겹치기 때문이다.
-          <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:items-start lg:gap-4">
-            <div className={cn("space-y-3", act && "hidden lg:block")}>
+          // 넓은 화면에서는 두 칸의 높이를 같게 묶고, 넘치는 내용은 각 칸 안에서만
+          // 스크롤한다. 오른쪽 목록 때문에 페이지 전체가 길어져 왼쪽 대진이 화면 밖으로
+          // 밀려나던 문제를 없앤다.
+          <div className="lg:grid lg:h-[clamp(26rem,calc(100vh-15rem),46rem)] lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:items-stretch lg:gap-4">
+            <div className={cn("space-y-3 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:pr-1", act && "hidden lg:block")}>
               <TeamBlock title="팀 A" accent="amber" cols={matchType === "double" ? 2 : 1}>
                 {renderSlot("A", matchType === "double" ? "선수 1" : "선수 A")}
                 {matchType === "double" && renderSlot("A2", "선수 2")}
@@ -1173,10 +1176,10 @@ export function RecordMatch({
               </TeamBlock>
             </div>
 
-            <div className="mt-3 space-y-3 lg:mt-0">
+            <div className="mt-3 flex flex-col gap-3 lg:mt-0 lg:h-full lg:min-h-0">
               {act && activeSlot ? (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between gap-2">
+                <div className="flex min-h-0 flex-1 flex-col gap-2">
+                  <div className="flex shrink-0 items-center justify-between gap-2">
                     <span className="text-xs font-black text-foreground">
                       {slotTitle(activeSlot)} <span className="text-muted-foreground">고르는 중</span>
                     </span>
@@ -1206,7 +1209,7 @@ export function RecordMatch({
                   />
                 </div>
               ) : !allPicked ? (
-                <div className="flex min-h-[8rem] flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-border/50 bg-card/30 p-6 text-center">
+                <div className="flex min-h-[8rem] flex-1 flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-border/50 bg-card/30 p-6 text-center">
                   <Users className="size-5 text-muted-foreground/70" />
                   <p className="text-xs font-bold text-muted-foreground">
                     {matchType === "double" ? "네 자리" : "두 자리"}를 모두 채우면 점수를 입력할 수 있어요.
@@ -2048,19 +2051,19 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
   }, [students, grp, search, isSchool, gradeF, classF]);
 
   return (
-    <Card className={cn("border p-3 backdrop-blur", a.border)}>
+    <Card className={cn("flex h-full min-h-0 flex-col border p-3 backdrop-blur", a.border)}>
       {/* 검색을 레벨 위에 */}
       <input
         type="text"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         placeholder={`${terms.nameLabel} 검색`}
-        className="mb-3 w-full rounded-lg border border-border/60 bg-surface-deep px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-neon-blue/60 focus:outline-none"
+        className="mb-3 w-full shrink-0 rounded-lg border border-border/60 bg-surface-deep px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-neon-blue/60 focus:outline-none"
       />
       {isSchool ? (
         // 학년을 고른 다음에 그 학년의 반이 열린다. 학년과 반을 같은 크기로 나란히 두면
         // 같은 위계로 읽히고, 반이 10개만 돼도 줄이 넘쳐 화면을 잡아먹는다.
-        <div className="space-y-2">
+        <div className="shrink-0 space-y-2">
           {activeGrades.length > 0 && (
             <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
               <Chip active={gradeF === null} accent={accent} onClick={() => onFilterChange({ grade: null, classNum: null })}>전체 학년</Chip>
@@ -2082,14 +2085,15 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
+        <div className="grid shrink-0 grid-cols-4 gap-2 sm:grid-cols-7">
           <Chip active={grp === ALL_GROUP} accent={accent} onClick={() => setGrp(ALL_GROUP)}>전체</Chip>
           {activeGroups.map((g) => (
             <Chip key={g} active={grp === g} accent={accent} onClick={() => setGrp(g)}>{g}</Chip>
           ))}
         </div>
       )}
-      <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-3 xl:grid-cols-4">
+      {/* 명단이 길어도 이 칸 안에서만 스크롤한다(페이지가 따라 내려가지 않도록). */}
+      <div className="mt-3 grid max-h-[55vh] min-h-0 flex-1 grid-cols-3 gap-2 overflow-y-auto pr-1 sm:grid-cols-4 md:grid-cols-5 lg:max-h-none lg:grid-cols-3 xl:grid-cols-4">
         {roster.map((s) => (
           <button
             key={s.id}
