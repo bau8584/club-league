@@ -17,7 +17,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { Crown, Swords, Trophy, Users, User, Pencil, LogOut, School, ShieldAlert, BarChart3, ArrowLeft, Lock, MoreVertical, Palette, CalendarDays, RefreshCw, IdCard, QrCode } from "lucide-react";
-import { InviteDialog } from "@/components/league/InviteDialog";
+import { InviteDialog, type ShareMode } from "@/components/league/InviteDialog";
 import { ThemePicker } from "@/components/ThemePicker";
 import { useTheme, isDarkTheme } from "@/lib/use-theme";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
@@ -104,6 +104,9 @@ export function LeagueApp({ classId }: { classId: string }) {
   const [linkOpen, setLinkOpen] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  // 초대 QR / 공개 순위표 공유는 같은 다이얼로그를 탭만 바꿔 쓴다.
+  const [shareMode, setShareMode] = useState<ShareMode>("invite");
+  const openShare = (mode: ShareMode) => { setShareMode(mode); setInviteOpen(true); };
   // 결과 푸시(?match=<id>)로 진입하면 경기 탭에서 그 경기 결과 창을 연다
   const [openMatchId, setOpenMatchId] = useState<string | null>(
     () => (typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("match") : null)
@@ -351,10 +354,14 @@ export function LeagueApp({ classId }: { classId: string }) {
 
                   {/* 액션 */}
                   {isClassManager && (
-                    <DropdownMenuItem onSelect={() => setInviteOpen(true)} className="gap-2 text-xs cursor-pointer">
+                    <DropdownMenuItem onSelect={() => openShare("invite")} className="gap-2 text-xs cursor-pointer">
                       <QrCode className="size-4 text-neon-blue" /> QR로 초대하기
                     </DropdownMenuItem>
                   )}
+                  {/* 로그인 없이 보는 공개 순위표 — 링크를 아는 사람 누구나 볼 수 있으므로 모든 참가자에게 연다. */}
+                  <DropdownMenuItem onSelect={() => openShare("ranking")} className="gap-2 text-xs cursor-pointer">
+                    <Trophy className="size-4 text-neon-blue" /> 공개 순위표 보기·공유
+                  </DropdownMenuItem>
                   <DropdownMenuItem onSelect={() => { window.location.href = window.location.pathname.startsWith("/school") ? "/school" : "/"; }} className="gap-2 text-xs cursor-pointer">
                     <ArrowLeft className="size-4" /> 리그 로비로
                   </DropdownMenuItem>
@@ -490,7 +497,7 @@ export function LeagueApp({ classId }: { classId: string }) {
         <PushPrompt leagueId={classId} />
 
         {/* 관리자 QR 초대 다이얼로그 */}
-        <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} classId={classId} leagueName={title} />
+        <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} classId={classId} leagueName={title} defaultMode={shareMode} />
 
         {/* Tenant Panels */}
         {tab === "seasonSummary" && currentViewSeason !== "현재 시즌" && (
