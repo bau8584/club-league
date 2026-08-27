@@ -272,6 +272,20 @@ export function LeagueApp({ classId }: { classId: string }) {
                   <DropdownMenuContent align="end" className="w-60 p-3"><ThemePicker /></DropdownMenuContent>
                 </DropdownMenu>
 
+                {/* 공유 — 학교는 공개 순위표, 동호회는 QR 초대. 케밥 메뉴가 모바일 전용이라
+                    데스크톱에서는 이 버튼이 유일한 통로다. */}
+                {isSchool ? (
+                  <button onClick={() => openShare("ranking")} title="공개 순위표 보기·공유"
+                    className="flex size-9 items-center justify-center rounded-lg border border-border/60 bg-card/60 text-muted-foreground hover:text-neon-blue hover:border-neon-blue/40 active:scale-95 transition-all">
+                    <Trophy className="size-4" />
+                  </button>
+                ) : isClassManager && (
+                  <button onClick={() => openShare("invite")} title="QR로 초대하기"
+                    className="flex size-9 items-center justify-center rounded-lg border border-border/60 bg-card/60 text-muted-foreground hover:text-neon-blue hover:border-neon-blue/40 active:scale-95 transition-all">
+                    <QrCode className="size-4" />
+                  </button>
+                )}
+
                 {/* 새로고침 (홈 화면 PWA엔 브라우저 새로고침이 없어 최신 배포·데이터를 강제로 불러옴) */}
                 <button onClick={() => window.location.reload()} title="새로고침 (최신 버전·데이터 불러오기)"
                   className="flex size-9 items-center justify-center rounded-lg border border-border/60 bg-card/60 text-muted-foreground hover:text-neon-blue hover:border-neon-blue/40 active:scale-95 transition-all">
@@ -353,15 +367,19 @@ export function LeagueApp({ classId }: { classId: string }) {
                   </div>
 
                   {/* 액션 */}
-                  {isClassManager && (
+                  {/* 학교 리그의 초대는 '선생님을 공동 관리자로' 넣는 동작이라, 학생을 초대할
+                      물건으로 오해하기 쉽다. 그래서 리그 화면에서는 빼고 로비에서만 다룬다. */}
+                  {!isSchool && isClassManager && (
                     <DropdownMenuItem onSelect={() => openShare("invite")} className="gap-2 text-xs cursor-pointer">
                       <QrCode className="size-4 text-neon-blue" /> QR로 초대하기
                     </DropdownMenuItem>
                   )}
-                  {/* 로그인 없이 보는 공개 순위표 — 링크를 아는 사람 누구나 볼 수 있으므로 모든 참가자에게 연다. */}
-                  <DropdownMenuItem onSelect={() => openShare("ranking")} className="gap-2 text-xs cursor-pointer">
-                    <Trophy className="size-4 text-neon-blue" /> 공개 순위표 보기·공유
-                  </DropdownMenuItem>
+                  {/* 공개 순위표는 학교 리그 기능 — 동호회에서는 노출하지 않는다. */}
+                  {isSchool && (
+                    <DropdownMenuItem onSelect={() => openShare("ranking")} className="gap-2 text-xs cursor-pointer">
+                      <Trophy className="size-4 text-neon-blue" /> 공개 순위표 보기·공유
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuItem onSelect={() => { window.location.href = window.location.pathname.startsWith("/school") ? "/school" : "/"; }} className="gap-2 text-xs cursor-pointer">
                     <ArrowLeft className="size-4" /> 리그 로비로
                   </DropdownMenuItem>
@@ -497,7 +515,7 @@ export function LeagueApp({ classId }: { classId: string }) {
         <PushPrompt leagueId={classId} />
 
         {/* 관리자 QR 초대 다이얼로그 */}
-        <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} classId={classId} leagueName={title} defaultMode={shareMode} />
+        <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} classId={classId} leagueName={title} defaultMode={shareMode} allowRanking={isSchool} />
 
         {/* Tenant Panels */}
         {tab === "seasonSummary" && currentViewSeason !== "현재 시즌" && (

@@ -41,6 +41,7 @@ import { type Class } from "@/lib/league-types";
 import type { LeagueInsert } from "@/lib/database.types";
 import { LEAGUE_BUNDLES, buildBundleSettings, type BundleKey } from "@/lib/league-presets";
 import { SPORT_OPTIONS, getSportPreset } from "@/domain/sport-levels";
+import { QRCodeSVG } from "qrcode.react";
 import { ThemePicker } from "@/components/ThemePicker";
 import { useTheme, isDarkTheme } from "@/lib/use-theme";
 
@@ -536,13 +537,13 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
                       </div>
                       
                       <div className="flex items-center gap-2 relative z-20">
-                        {/* 기록원 초대 (독립 버튼) */}
+                        {/* 초대 (독립 버튼) — 학교는 선생님(공동 관리자), 동호회는 일반 참여자 */}
                         <button
                           onClick={(e) => { e.preventDefault(); e.stopPropagation(); setInviteLeague(league); }}
                           className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-neon-green/40 bg-neon-green/10 text-neon-green hover:bg-neon-green/20 active:scale-95 transition-all cursor-pointer text-[11px] font-bold"
-                          title={league.league_type === "school" ? "담당 선생님 초대" : "기록원 초대"}
+                          title={league.league_type === "school" ? "담당 선생님 초대" : "리그에 초대하기"}
                         >
-                          <UserPlus className="size-4" /><span className="hidden lg:inline">{league.league_type === "school" ? "선생님 추가" : "기록원 추가"}</span>
+                          <UserPlus className="size-4" /><span className="hidden lg:inline">{league.league_type === "school" ? "선생님 초대" : "초대하기"}</span>
                         </button>
 
                         {/* Settings Dropdown Button */}
@@ -633,7 +634,7 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
             {joinedLeagues.length === 0 ? (
               <div className="rounded-xl border border-border/40 bg-card/20 p-8 text-center text-muted-foreground text-xs leading-relaxed flex flex-col items-center justify-center gap-2">
                 <Users className="size-8 text-muted-foreground/45" />
-                공동 관리 또는 기록원(Scorekeeper)으로 참여 중인 리그가 존재하지 않습니다.
+                초대를 받아 참여 중인 리그가 없습니다.
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-3.5">
@@ -1020,7 +1021,7 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
         </div>
       )}
 
-      {/* 기록원 초대 모달 */}
+      {/* 초대 모달 — 학교는 담당 선생님(공동 관리자), 동호회는 일반 참여자 */}
       {inviteLeague && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-300">
           <Card className="w-full max-w-md border-border/60 bg-card/95 p-6 rounded-2xl shadow-2xl relative animate-in zoom-in-95 duration-300">
@@ -1029,13 +1030,21 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
             </div>
             <div className="text-center mb-5">
               <h3 className="text-lg font-black text-foreground flex items-center justify-center gap-2">
-                <UserPlus className="size-5 text-neon-green" /> 기록원 초대
+                <UserPlus className="size-5 text-neon-green" /> {inviteLeague.league_type === "school" ? "담당 선생님 초대" : "리그에 초대하기"}
               </h3>
               <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
-                아래 <b className="text-foreground">리그 코드</b>를 함께 관리할 관리자에게 전달하세요. 받은 사람은 로비 → [+ 리그 참여하기]에 붙여넣으면 됩니다.
+                {inviteLeague.league_type === "school" ? (
+                  <>아래 QR·코드를 <b className="text-foreground">함께 지도할 선생님</b>에게 전달하세요. 받은 분은 <b className="text-foreground">공동 관리자</b>로 등록되어 경기를 기록할 수 있습니다. 학생에게는 주지 마세요.</>
+                ) : (
+                  <>아래 QR·코드를 함께할 사람에게 전달하세요. 받은 사람은 <b className="text-foreground">참여자</b>로 등록됩니다(리그 관리 권한은 없습니다).</>
+                )}
               </p>
             </div>
             <div className="space-y-3">
+              {/* QR — 어떤 테마에서도 스캔되도록 흰 배경 고정 */}
+              <div className="mx-auto w-fit rounded-2xl bg-white p-3 shadow-inner">
+                <QRCodeSVG value={`${window.location.origin}/join?classId=${inviteLeague.id}`} size={168} level="M" marginSize={2} />
+              </div>
               <div className="space-y-1.5">
                 <Label className="text-xs font-bold text-foreground">리그 코드 (6자리)</Label>
                 <div className="flex gap-2">
@@ -1086,7 +1095,7 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
             {loadingMembers ? (
               <p className="text-xs text-muted-foreground py-6 text-center">불러오는 중...</p>
             ) : members.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-6 text-center border border-dashed border-border/30 rounded-xl">참여 중인 멤버가 없습니다. 기록원을 초대해 보세요.</p>
+              <p className="text-xs text-muted-foreground py-6 text-center border border-dashed border-border/30 rounded-xl">참여 중인 멤버가 없습니다. 초대해 보세요.</p>
             ) : (
               <div className="space-y-2 max-h-[320px] overflow-y-auto">
                 {members.map((m) => (
