@@ -176,19 +176,18 @@ export function PublicRanking({ classId }: { classId: string }) {
       .sort((a, b) => b.rp - a.rp)
       .map((p, i) => ({ p, rank: i + 1 as number | null }));
 
-    // 티어 필터가 걸려 있으면(특정 티어만 보기) 언랭크는 뺀다.
-    const unrankedPart = tier.length > 0
-      ? []
-      : withStats
-        .filter((p) => isUnranked(p, placementEnabled, placementGames))
-        .sort((a, b) => (a.display_name ?? "").localeCompare(b.display_name ?? "", "ko"))
-        .map((p) => ({ p, rank: null as number | null }));
-
-    return [...rankedPart, ...unrankedPart];
+    // 공개 화면에는 언랭크를 싣지 않는다. 경기를 뛰지 않은 사람까지 명단으로 나갈
+    // 이유가 없고, '?? 줄'만 길어져 읽기도 나빠진다. 본인 확인은 '내 순위' 카드가 맡는다.
+    return rankedPart;
   }, [players, league, group, grade, classNum, tier, gender, showGroup, showGrade, showClass, placementEnabled, placementGames]);
 
   const shown = useMemo(() => ranked.slice(0, limit), [ranked, limit]);
   const restCount = ranked.length - shown.length;
+  // 표에서 빠진 인원(경기 기록 없음) — 숫자만 알린다.
+  const hiddenCount = useMemo(
+    () => players.filter((p) => isUnranked({ wins: p.win_count ?? 0, losses: p.lose_count ?? 0 }, placementEnabled, placementGames)).length,
+    [players, placementEnabled, placementGames],
+  );
 
   // "내 순위" — 브라우저에만 저장하는 본인 식별값(서버로 보내지 않는다).
   const meStorageKey = `ranking-me-${classId}`;
@@ -219,10 +218,16 @@ export function PublicRanking({ classId }: { classId: string }) {
           p.student_no === me.studentNo
         : (p.display_name ?? "").trim() === me.name;
     const found = ranked.find((e) => hit(e.p));
-    if (found) return { p: found.p, rank: found.rank, filteredOut: false };
+    if (found) return { p: found.p, rank: found.rank, filteredOut: false, noGames: false };
     const outside = players.find(hit);
-    return outside ? { p: outside, rank: null, filteredOut: true } : null;
-  }, [me, ranked, players]);
+    if (!outside) return null;
+    const noGames = isUnranked(
+      { wins: outside.win_count ?? 0, losses: outside.lose_count ?? 0 },
+      placementEnabled,
+      placementGames,
+    );
+    return { p: outside, rank: null, filteredOut: !noGames, noGames };
+  }, [me, ranked, players, placementEnabled, placementGames]);
 
   const nameOf = (p: PublicPlayer) => p.display_name || "이름 미등록";
 
@@ -284,7 +289,12 @@ export function PublicRanking({ classId }: { classId: string }) {
                 <button type="button" onClick={() => saveMe(null)} title="해제" className="text-muted-foreground hover:text-foreground"><X className="size-3.5" /></button>
               </div>
             </div>
-            {myRank.filteredOut ? (
+            {myRank.noGames ? (
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                {nameOf(myRank.p)} 님은 아직 {placementEnabled ? "배치 경기를 마치지 않아" : "경기 기록이 없어"} 순위가 없습니다.
+                경기를 치르면 순위표에 올라갑니다.
+              </p>
+            ) : myRank.filteredOut ? (
               <p className="mt-1.5 text-xs text-muted-foreground">
                 {nameOf(myRank.p)} 님은 지금 걸어둔 필터 조건에 포함되지 않습니다.{" "}
                 <button type="button" onClick={resetFilters} className="font-bold text-neon-blue underline">필터 초기화</button>
@@ -408,7 +418,11 @@ export function PublicRanking({ classId }: { classId: string }) {
 
         {ranked.length === 0 ? (
           <p className="rounded-xl border border-dashed border-border/40 bg-muted/5 py-10 text-center text-xs text-muted-foreground">
-            {activeCount > 0 ? "조건에 맞는 " + terms.member + "이 없습니다." : "아직 등록된 " + terms.member + "이 없습니다."}
+            {activeCount > 0
+              ? `조건에 맞는 ${terms.member}이 없습니다.`
+              : players.length === 0
+                ? `아직 등록된 ${terms.member}이 없습니다.`
+                : "아직 경기 기록이 없습니다. 첫 경기가 끝나면 순위가 올라갑니다."}
           </p>
         ) : (
           <div className="overflow-x-auto rounded-xl border border-border/40">
@@ -459,6 +473,11 @@ export function PublicRanking({ classId }: { classId: string }) {
                 })}
               </tbody>
             </table>
+            {restCount === 0 && hiddenCount > 0 && (
+              <p className="border-t border-border/40 py-2.5 text-center text-[11px] text-muted-foreground">
+                아직 경기 기록이 없는 {hiddenCount}명은 표시되지 않았습니다.
+              </p>
+            )}
             {restCount > 0 && (
               <button
                 type="button"
