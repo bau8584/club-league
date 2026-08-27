@@ -1140,77 +1140,113 @@ export function RecordMatch({
             />
           );
         };
+        // 선수를 고르면 다음 빈 자리로 넘어간다. 네 자리가 다 차면 목록을 닫고
+        // 오른쪽 칸이 점수 입력으로 바뀐다(단계 전환).
+        const order: ("A" | "A2" | "B" | "B2")[] = matchType === "double" ? ["A", "A2", "B", "B2"] : ["A", "B"];
+        const nextEmpty = (just: "A" | "A2" | "B" | "B2") =>
+          order.find((k) => k !== just && !slots[k].value.studentId && !(k === "A" && !!lockedPlayerId)) ?? null;
+        const slotTitle = (k: "A" | "A2" | "B" | "B2") => {
+          const team = k.startsWith("A") ? "팀 A" : "팀 B";
+          const who = matchType === "double"
+            ? (k.endsWith("2") ? "선수 2" : "선수 1")
+            : (k === "A" ? "선수 A" : "선수 B");
+          return `${team} · ${who}`;
+        };
+
         return (
-          <div className="space-y-3">
-            <TeamBlock title="팀 A" accent="amber" cols={matchType === "double" ? 2 : 1}>
-              {renderSlot("A", matchType === "double" ? "선수 1" : "선수 A")}
-              {matchType === "double" && renderSlot("A2", "선수 2")}
-            </TeamBlock>
-            <div className="text-center text-xl font-black text-muted-foreground">VS</div>
-            <TeamBlock title="팀 B" accent="violet" cols={matchType === "double" ? 2 : 1}>
-              {renderSlot("B", matchType === "double" ? "선수 1" : "선수 B")}
-              {matchType === "double" && renderSlot("B2", "선수 2")}
-            </TeamBlock>
-            {act && (
-              <PlayerPicker
-                students={students}
-                accent={act.accent}
-                group={act.value.group}
-                onPick={(group, studentId) => { act.set({ group, studentId }); setActiveSlot(null); }}
-                thresholds={thresholds}
-                placementEnabled={placementEnabled}
-                placementGames={placementGames}
-                canAddMember={isClassOwner}
-                filter={pickerFilter}
-                onFilterChange={setPickerFilter}
-              />
-            )}
+          // 넓은 화면(태블릿 가로·데스크톱): 왼쪽 대진 / 오른쪽 단계 패널.
+          // 좁은 화면: 한 번에 하나 — 슬롯을 누르면 대진 자리에 선수 목록이 들어온다.
+          // 선수 목록을 별도 팝업으로 띄우지 않는 이유는, 동호회에서는 이 폼 자체가
+          // 이미 팝업 안에 들어 있어 팝업이 겹치기 때문이다.
+          <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:items-start lg:gap-4">
+            <div className={cn("space-y-3", act && "hidden lg:block")}>
+              <TeamBlock title="팀 A" accent="amber" cols={matchType === "double" ? 2 : 1}>
+                {renderSlot("A", matchType === "double" ? "선수 1" : "선수 A")}
+                {matchType === "double" && renderSlot("A2", "선수 2")}
+              </TeamBlock>
+              <div className="text-center text-xl font-black text-muted-foreground">VS</div>
+              <TeamBlock title="팀 B" accent="violet" cols={matchType === "double" ? 2 : 1}>
+                {renderSlot("B", matchType === "double" ? "선수 1" : "선수 B")}
+                {matchType === "double" && renderSlot("B2", "선수 2")}
+              </TeamBlock>
+            </div>
+
+            <div className="mt-3 space-y-3 lg:mt-0">
+              {act && activeSlot ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-black text-foreground">
+                      {slotTitle(activeSlot)} <span className="text-muted-foreground">고르는 중</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setActiveSlot(null)}
+                      className="rounded-lg border border-border/60 bg-card/60 px-2.5 py-1 text-[11px] font-bold text-muted-foreground transition-all hover:text-foreground active:scale-95 cursor-pointer"
+                    >
+                      대진으로
+                    </button>
+                  </div>
+                  <PlayerPicker
+                    students={students}
+                    accent={act.accent}
+                    group={act.value.group}
+                    onPick={(group, studentId) => {
+                      const just = activeSlot;
+                      act.set({ group, studentId });
+                      setActiveSlot(nextEmpty(just));
+                    }}
+                    thresholds={thresholds}
+                    placementEnabled={placementEnabled}
+                    placementGames={placementGames}
+                    canAddMember={isClassOwner}
+                    filter={pickerFilter}
+                    onFilterChange={setPickerFilter}
+                  />
+                </div>
+              ) : (
+                <>
+                  <Card className="border-border/60 bg-card/60 p-3 sm:p-6 backdrop-blur">
+                    <div className="mb-4 text-center text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground">스코어보드</div>
+                    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:gap-4">
+                      <ScorePad
+                        name={matchType === "double" ? "팀 A" : (playerA ? playerLabel(playerA) : "선수 A")}
+                        value={scoreA}
+                        onChange={setScoreA}
+                        accent="amber"
+                      />
+                      <div className="px-0.5 text-base sm:text-2xl font-black text-muted-foreground">VS</div>
+                      <ScorePad
+                        name={matchType === "double" ? "팀 B" : (playerB ? playerLabel(playerB) : "선수 B")}
+                        value={scoreB}
+                        onChange={setScoreB}
+                        accent="violet"
+                      />
+                    </div>
+                  </Card>
+
+                  <Button
+                    size="lg"
+                    onClick={submit}
+                    disabled={isSyncing}
+                    className="h-14 w-full bg-gradient-to-r from-neon-blue to-tier-diamond text-base font-bold text-primary-foreground glow-primary hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isSyncing ? (
+                      <>
+                        <span className="mr-2 size-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                        경기 결과 등록 중...
+                      </>
+                    ) : (
+                      <>
+                        <Trophy className="mr-2 size-5" /> 경기 결과 등록
+                      </>
+                    )}
+                  </Button>
+                </>
+              )}
+            </div>
           </div>
         );
       })()}
-
-      <Card className="border-border/60 bg-card/60 p-3 sm:p-6 backdrop-blur">
-        <div className="mb-4 text-center text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground">스코어보드</div>
-        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:gap-4">
-          <ScorePad
-            name={matchType === "double"
-              ? "팀 A"
-              : (playerA ? playerLabel(playerA) : "선수 A")
-            }
-            value={scoreA}
-            onChange={setScoreA}
-            accent="amber"
-          />
-          <div className="px-0.5 text-base sm:text-2xl font-black text-muted-foreground">VS</div>
-          <ScorePad
-            name={matchType === "double"
-              ? "팀 B"
-              : (playerB ? playerLabel(playerB) : "선수 B")
-            }
-            value={scoreB}
-            onChange={setScoreB}
-            accent="violet"
-          />
-        </div>
-      </Card>
-
-      <Button
-        size="lg"
-        onClick={submit}
-        disabled={isSyncing}
-        className="h-14 w-full bg-gradient-to-r from-neon-blue to-tier-diamond text-base font-bold text-primary-foreground glow-primary hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {isSyncing ? (
-          <>
-            <span className="mr-2 size-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-            경기 결과 등록 중...
-          </>
-        ) : (
-          <>
-            <Trophy className="mr-2 size-5" /> 경기 결과 등록
-          </>
-        )}
-      </Button>
       </>)}
 
       {/* Match Result Modal Popup */}
@@ -2009,7 +2045,7 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
         // 같은 위계로 읽히고, 반이 10개만 돼도 줄이 넘쳐 화면을 잡아먹는다.
         <div className="space-y-2">
           {activeGrades.length > 0 && (
-            <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
+            <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
               <Chip active={gradeF === null} accent={accent} onClick={() => onFilterChange({ grade: null, classNum: null })}>전체 학년</Chip>
               {activeGrades.map((g) => (
                 <Chip key={g} active={gradeF === g} accent={accent} onClick={() => onFilterChange({ grade: g, classNum: null })}>{g}학년</Chip>
@@ -2019,7 +2055,7 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
           {/* 학년 축이 없는 리그(한 학년만 있는 경우)에는 반을 바로 연다. */}
           {(gradeF !== null || activeGrades.length === 0) && activeClasses.length > 0 && (
             <div className="ml-2 border-l-2 border-border/50 pl-2">
-              <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-11">
+              <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-8 xl:grid-cols-11">
                 <Chip size="sm" active={classF === null} accent={accent} onClick={() => onFilterChange({ grade: gradeF, classNum: null })}>전체</Chip>
                 {activeClasses.map((c) => (
                   <Chip key={c} size="sm" active={classF === c} accent={accent} onClick={() => onFilterChange({ grade: gradeF, classNum: c })}>{c}반</Chip>
@@ -2036,7 +2072,7 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
           ))}
         </div>
       )}
-      <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
+      <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-3 xl:grid-cols-4">
         {roster.map((s) => (
           <button
             key={s.id}
