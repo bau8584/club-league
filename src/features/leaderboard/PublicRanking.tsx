@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiFetchLeaguePublic, apiFetchRankingPublic } from "@/services/league-api";
+import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer";
 import { TierBadge } from "@/components/league/TierBadge";
 import { GenderMark } from "@/components/league/GenderMark";
 import { cn } from "@/lib/utils";
@@ -131,6 +132,8 @@ export function PublicRanking({ classId }: { classId: string }) {
   const [tier, setTier] = useState<TierName[]>([]);
   const [gender, setGender] = useState<GenderFilter>("all");
   const [limit, setLimit] = useState(PAGE_SIZE);
+  // 눌린 선수 — 이미 받아온 값만 보여준다(추가 조회 없음).
+  const [picked, setPicked] = useState<{ p: PublicPlayer; rank: number | null } | null>(null);
 
   const showGrade = isSchool && axes.varyGrade;
   const showClass = isSchool && axes.varyClass;
@@ -323,10 +326,14 @@ export function PublicRanking({ classId }: { classId: string }) {
                         {unranked ? "-" : i + 1}
                       </td>
                       <td className="px-2 py-2">
-                        <span className="flex items-center gap-1.5 font-bold">
+                        <button
+                          type="button"
+                          onClick={() => setPicked({ p, rank: unranked ? null : i + 1 })}
+                          className="flex w-full items-center gap-1.5 text-left font-bold transition-colors hover:text-neon-blue active:scale-[0.98]"
+                        >
                           <GenderMark gender={p.gender} className="size-3.5 shrink-0 text-[9px]" />
                           <span className="truncate">{nameOf(p)}</span>
-                        </span>
+                        </button>
                       </td>
                       <td className="px-2 py-2 font-mono text-[11px] text-muted-foreground">
                         {isSchool
@@ -356,6 +363,51 @@ export function PublicRanking({ classId }: { classId: string }) {
           </div>
         )}
       </main>
+
+      {/* 간단 정보 — 순위표를 그릴 때 이미 받은 값만 쓴다. 경기 기록(누가 누구와)은
+          추가 조회가 필요하고 마스킹한 이름을 되짚는 단서가 되므로 공개 화면에서는 다루지 않는다. */}
+      <Drawer open={!!picked} onOpenChange={(v) => { if (!v) setPicked(null); }}>
+        <DrawerContent className="mx-auto max-w-md">
+          {picked && (() => {
+            const { p, rank } = picked;
+            const wins = p.win_count ?? 0;
+            const losses = p.lose_count ?? 0;
+            const total = wins + losses;
+            const belong = isSchool
+              ? schoolLabelCompact({ grade: p.grade, classNum: p.class_num, studentNo: p.student_no }, axes)
+              : p.group_label;
+            return (
+              <div className="space-y-4 px-5 pb-8 pt-2">
+                <div className="flex items-center gap-2">
+                  <GenderMark gender={p.gender} className="size-4 shrink-0 text-[10px]" />
+                  <DrawerTitle className="truncate text-lg font-black">{nameOf(p)}</DrawerTitle>
+                  <TierBadge rp={p.rp} thresholds={league.tier_thresholds ?? undefined} unranked={rank === null} />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Stat label="순위" value={rank === null ? "배치 중" : `#${rank}`} />
+                  <Stat label="RP" value={String(p.rp)} />
+                  <Stat label={isSchool ? "소속" : "레벨"} value={belong || "-"} />
+                  <Stat label="전적" value={`${wins}승 ${losses}패`} />
+                  <Stat label="승률" value={total === 0 ? "-" : `${Math.round((wins / total) * 100)}%`} />
+                  <Stat label="경기 수" value={`${total}경기`} />
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  공개 순위표에서는 경기별 상세 기록을 제공하지 않습니다.
+                </p>
+              </div>
+            );
+          })()}
+        </DrawerContent>
+      </Drawer>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-border/40 bg-card/40 px-3 py-2">
+      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="mt-0.5 truncate text-sm font-black tabular-nums">{value}</p>
     </div>
   );
 }
