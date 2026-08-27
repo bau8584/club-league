@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { TierBadge } from "./TierBadge";
@@ -107,7 +107,7 @@ export function RecordMatch({
   rpVariables?: { winDelta: number; loseDelta: number };
   onUpdateGender?: (studentId: string, gender: "M" | "F" | "U") => void;
 }) {
-  const { isSyncing, placementEnabled, placementGames, isClassOwner, saveMatchBreakdown } = useLeagueStore();
+  const { isSyncing, placementEnabled, placementGames, isClassOwner, saveMatchBreakdown, currentClassId } = useLeagueStore();
   const terms = useLeagueTerms();
   const isSchool = useIsSchoolLeague();
   // 학교 리그는 대부분 1:1 매치 위주라 단식을 기본값으로 시작한다.
@@ -118,6 +118,9 @@ export function RecordMatch({
   const [b2, setB2] = useState<Selection>(empty);
   // 동시에 1개의 선수 선택 picker만 펼친다(모바일 가독성). null이면 모두 닫힘.
   const [activeSlot, setActiveSlot] = useState<"A" | "A2" | "B" | "B2" | null>(null);
+  // 학교 리그 선수 선택 필터(학년/반). picker는 슬롯을 고를 때마다 새로 열리므로
+  // 필터를 picker 안에 두면 복식에서 4번 모두 학년·반을 다시 골라야 했다. → 부모가 들고 유지한다.
+  const [pickerFilter, setPickerFilter] = useSchoolPickerFilter(students, currentClassId, lockedPlayerId, isSchool);
   const [scoreA, setScoreA] = useState(0);
   const [scoreB, setScoreB] = useState(0);
 
@@ -1131,6 +1134,8 @@ export function RecordMatch({
                 placementEnabled={placementEnabled}
                 placementGames={placementGames}
                 canAddMember={isClassOwner}
+                filter={pickerFilter}
+                onFilterChange={setPickerFilter}
               />
             )}
           </div>
@@ -1707,6 +1712,71 @@ const ACCENT = {
 type Accent = keyof typeof ACCENT;
 const ALL_GROUP = "__ALL__";
 
+/** 학교 리그 선수 선택 picker의 학년/반 필터. null = 전체. */
+export type PickerFilter = { grade: number | null; classNum: number | null };
+const EMPTY_FILTER: PickerFilter = { grade: null, classNum: null };
+const PICKER_FILTER_KEY = "clg:pickerFilter:";
+
+function readStoredFilter(classId: string | null): PickerFilter | null {
+  if (!classId || typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(PICKER_FILTER_KEY + classId);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<PickerFilter>;
+    return {
+      grade: typeof parsed.grade === "number" ? parsed.grade : null,
+      classNum: typeof parsed.classNum === "number" ? parsed.classNum : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** 명단에 없는 학년/반이 남아 있으면(명단 변경·시즌 교체) 그 축만 전체로 되돌린다. */
+function sanitizeFilter(f: PickerFilter, students: Student[]): PickerFilter {
+  const grade = f.grade != null && students.some((s) => s.grade === f.grade) ? f.grade : null;
+  const classNum =
+    f.classNum != null && students.some((s) => s.classNum === f.classNum && (grade == null || s.grade === grade))
+      ? f.classNum
+      : null;
+  return { grade, classNum };
+}
+
+/**
+ * 학년/반 필터를 슬롯 전환·재입력·새로고침 넘어서 기억한다.
+ * 최초값은 (1) 이 리그에서 마지막으로 쓴 필터 (2) 본인(고정 슬롯) 학년·반 순으로 정한다.
+ */
+function useSchoolPickerFilter(
+  students: Student[],
+  classId: string | null,
+  meId: string | null | undefined,
+  enabled: boolean,
+): [PickerFilter, (next: PickerFilter) => void] {
+  const [filter, setFilter] = useState<PickerFilter>(EMPTY_FILTER);
+  const seededFor = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!enabled || !classId || students.length === 0) return;
+    if (seededFor.current === classId) return;
+    seededFor.current = classId;
+    const me = meId ? students.find((s) => s.id === meId) : null;
+    const seed = readStoredFilter(classId) ?? (me ? { grade: me.grade ?? null, classNum: me.classNum ?? null } : null);
+    setFilter(seed ? sanitizeFilter(seed, students) : EMPTY_FILTER);
+  }, [enabled, classId, students, meId]);
+
+  const update = useCallback((next: PickerFilter) => {
+    setFilter(next);
+    if (!classId || typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(PICKER_FILTER_KEY + classId, JSON.stringify(next));
+    } catch {
+      // 저장 실패(사생활 보호 모드 등)해도 화면 동작에는 지장이 없다.
+    }
+  }, [classId]);
+
+  return [filter, update];
+}
+
 function TeamBlock({ title, accent, cols, children }: { title: string; accent: Accent; cols: number; children: React.ReactNode }) {
   const a = ACCENT[accent];
   return (
@@ -1803,10 +1873,12 @@ function Slot({ accent, label, player, active, locked, onOpen, onClear, threshol
 }
 
 // 선수 선택 picker: 검색 → 레벨 칩 → 선수 목록 (한 번에 1개만 펼쳐짐)
-function PlayerPicker({ students, accent, group, onPick, thresholds, placementEnabled, placementGames, canAddMember }: {
+function PlayerPicker({ students, accent, group, onPick, thresholds, placementEnabled, placementGames, canAddMember, filter, onFilterChange }: {
   students: Student[]; accent: Accent; group: string | null;
   onPick: (group: string, studentId: string) => void; thresholds?: Record<string, number>;
   placementEnabled: boolean; placementGames: number; canAddMember?: boolean;
+  // 학년/반 필터는 부모가 소유한다(슬롯을 옮겨도 유지되도록).
+  filter: PickerFilter; onFilterChange: (next: PickerFilter) => void;
 }) {
   const terms = useLeagueTerms();
   const isSchool = useIsSchoolLeague();
@@ -1814,9 +1886,9 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
   const [search, setSearch] = useState("");
   const [grp, setGrp] = useState<string>(group ?? ALL_GROUP);
   const [addOpen, setAddOpen] = useState(false);
-  // school 리그: 레벨(급수) 대신 학년/반으로 좁힌다.
-  const [gradeF, setGradeF] = useState<number | null>(null);
-  const [classF, setClassF] = useState<number | null>(null);
+  // school 리그: 레벨(급수) 대신 학년/반으로 좁힌다. 상태는 부모(RecordMatch)가 유지한다.
+  const gradeF = filter.grade;
+  const classF = filter.classNum;
 
   const activeGroups = useMemo(() => {
     const set = new Set<string>();
@@ -1871,17 +1943,17 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
         <div className="space-y-2">
           {activeGrades.length > 0 && (
             <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
-              <Chip active={gradeF === null} accent={accent} onClick={() => { setGradeF(null); setClassF(null); }}>전체 학년</Chip>
+              <Chip active={gradeF === null} accent={accent} onClick={() => onFilterChange({ grade: null, classNum: null })}>전체 학년</Chip>
               {activeGrades.map((g) => (
-                <Chip key={g} active={gradeF === g} accent={accent} onClick={() => { setGradeF(g); setClassF(null); }}>{g}학년</Chip>
+                <Chip key={g} active={gradeF === g} accent={accent} onClick={() => onFilterChange({ grade: g, classNum: null })}>{g}학년</Chip>
               ))}
             </div>
           )}
           {activeClasses.length > 0 && (
             <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
-              <Chip active={classF === null} accent={accent} onClick={() => setClassF(null)}>전체 반</Chip>
+              <Chip active={classF === null} accent={accent} onClick={() => onFilterChange({ grade: gradeF, classNum: null })}>전체 반</Chip>
               {activeClasses.map((c) => (
-                <Chip key={c} active={classF === c} accent={accent} onClick={() => setClassF(c)}>{c}반</Chip>
+                <Chip key={c} active={classF === c} accent={accent} onClick={() => onFilterChange({ grade: gradeF, classNum: c })}>{c}반</Chip>
               ))}
             </div>
           )}
