@@ -2041,6 +2041,16 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
     ? [gradeF != null ? `${gradeF}학년` : null, classF != null ? `${classF}반` : null].filter(Boolean).join(" ") || "전체"
     : (grp === ALL_GROUP ? "전체" : grp);
 
+  // 필터로 이미 고정된 축은 카드에 다시 적을 필요가 없다. 4반만 보는 중이면 번호만 있으면 된다.
+  const labelAxes = useMemo(
+    () => ({
+      ...axes,
+      varyGrade: axes.varyGrade && gradeF == null,
+      varyClass: axes.varyClass && classF == null,
+    }),
+    [axes, gradeF, classF],
+  );
+
   const roster = useMemo(() => {
     const q = search.trim().toLowerCase();
     return students
@@ -2123,7 +2133,7 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
         </div>
       )}
       {/* 명단이 길어도 이 칸 안에서만 스크롤한다(페이지가 따라 내려가지 않도록). */}
-      <div className="mt-1 grid max-h-[55vh] min-h-0 flex-1 grid-cols-[repeat(auto-fill,minmax(5.5rem,1fr))] gap-2 overflow-y-auto pr-1 lg:max-h-none">
+      <div className="mt-1 grid max-h-[55vh] min-h-0 flex-1 grid-cols-[repeat(auto-fill,minmax(max(5.5rem,calc((100%_-_2rem)/5)),1fr))] gap-2 overflow-y-auto pr-1 lg:max-h-none">
         {roster.map((s) => (
           <button
             key={s.id}
@@ -2131,8 +2141,8 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
             onClick={() => onPick(grp, s.id)}
             className="relative flex min-h-[4.75rem] w-full min-w-0 flex-col items-center justify-between overflow-hidden rounded-lg border border-border/60 bg-surface-deep px-1.5 pt-6 pb-2.5 text-center transition-all hover:border-neon-blue/60 hover:bg-accent/40 cursor-pointer"
           >
-            {(isSchool ? schoolLabelCompact(s, axes) : s.group) && (
-              <span className="absolute top-1 left-1.5 max-w-[60%] truncate text-left font-mono text-[10px] text-soft">{isSchool ? schoolLabelCompact(s, axes) : s.group}</span>
+            {(isSchool ? schoolLabelCompact(s, labelAxes) : s.group) && (
+              <span className="absolute top-1 left-1.5 max-w-[70%] truncate text-left font-mono text-[10px] text-soft">{isSchool ? schoolLabelCompact(s, labelAxes) : s.group}</span>
             )}
             <GenderMark gender={s.gender} className="absolute top-1 right-1.5 size-3.5 text-[9px] shrink-0" />
             <div className="flex w-full min-w-0 flex-grow items-center justify-center">
