@@ -31,6 +31,7 @@ type Selection = { grade: number | null; classNum: number | null; studentId: str
 const displayNameOf = (s: Student) => s.displayName || s.nickname || s.name;
 // 범위 칩 공통 스타일 (레벨/학년·반 칩이 공유)
 const CHIP_CLS = "h-11 rounded-xl border text-sm font-black transition-all active:scale-95 flex items-center justify-center cursor-pointer";
+const CHIP_SM_CLS = "h-8 rounded-lg border text-xs font-black transition-all active:scale-95 flex items-center justify-center cursor-pointer";
 const CHIP_ON = "border-neon-blue bg-neon-blue/20 text-neon-blue glow-primary";
 const CHIP_OFF = "border-surface-line bg-surface-deep text-soft hover:text-strong";
 
@@ -869,18 +870,21 @@ export function MatchRecommend({
                     ))}
                   </div>
                 )}
-                {availableClasses.length > 0 && (
-                  <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
-                    <button type="button"
-                      onClick={() => { setPickClass(null); onSelChange({ ...sel, studentId: null }); setSelectedTeammateId(null); }}
-                      className={cn(CHIP_CLS, pickClass === null ? CHIP_ON : CHIP_OFF)}
-                    >전체 반</button>
-                    {availableClasses.map((c) => (
-                      <button key={c} type="button"
-                        onClick={() => { setPickClass(c); onSelChange({ ...sel, studentId: null }); setSelectedTeammateId(null); }}
-                        className={cn(CHIP_CLS, pickClass === c ? CHIP_ON : CHIP_OFF)}
-                      >{c}반</button>
-                    ))}
+                {/* 반은 학년을 고른 뒤에 열린다 — 학년의 하위 선택임이 드러나도록 작게. */}
+                {(pickGrade !== null || availableGrades.length === 0) && availableClasses.length > 0 && (
+                  <div className="ml-2 border-l-2 border-surface-line pl-2">
+                    <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-11">
+                      <button type="button"
+                        onClick={() => { setPickClass(null); onSelChange({ ...sel, studentId: null }); setSelectedTeammateId(null); }}
+                        className={cn(CHIP_SM_CLS, pickClass === null ? CHIP_ON : CHIP_OFF)}
+                      >전체</button>
+                      {availableClasses.map((c) => (
+                        <button key={c} type="button"
+                          onClick={() => { setPickClass(c); onSelChange({ ...sel, studentId: null }); setSelectedTeammateId(null); }}
+                          className={cn(CHIP_SM_CLS, pickClass === c ? CHIP_ON : CHIP_OFF)}
+                        >{c}반</button>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>

@@ -2005,6 +2005,8 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
         className="mb-3 w-full rounded-lg border border-border/60 bg-surface-deep px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-neon-blue/60 focus:outline-none"
       />
       {isSchool ? (
+        // 학년을 고른 다음에 그 학년의 반이 열린다. 학년과 반을 같은 크기로 나란히 두면
+        // 같은 위계로 읽히고, 반이 10개만 돼도 줄이 넘쳐 화면을 잡아먹는다.
         <div className="space-y-2">
           {activeGrades.length > 0 && (
             <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
@@ -2014,12 +2016,15 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
               ))}
             </div>
           )}
-          {activeClasses.length > 0 && (
-            <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
-              <Chip active={classF === null} accent={accent} onClick={() => onFilterChange({ grade: gradeF, classNum: null })}>전체 반</Chip>
-              {activeClasses.map((c) => (
-                <Chip key={c} active={classF === c} accent={accent} onClick={() => onFilterChange({ grade: gradeF, classNum: c })}>{c}반</Chip>
-              ))}
+          {/* 학년 축이 없는 리그(한 학년만 있는 경우)에는 반을 바로 연다. */}
+          {(gradeF !== null || activeGrades.length === 0) && activeClasses.length > 0 && (
+            <div className="ml-2 border-l-2 border-border/50 pl-2">
+              <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-11">
+                <Chip size="sm" active={classF === null} accent={accent} onClick={() => onFilterChange({ grade: gradeF, classNum: null })}>전체</Chip>
+                {activeClasses.map((c) => (
+                  <Chip key={c} size="sm" active={classF === c} accent={accent} onClick={() => onFilterChange({ grade: gradeF, classNum: c })}>{c}반</Chip>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -2093,7 +2098,7 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
   );
 }
 
-function Chip({ active, accent, onClick, children }: { active: boolean; accent: "amber" | "violet"; onClick: () => void; children: React.ReactNode }) {
+function Chip({ active, accent, onClick, children, size = "md" }: { active: boolean; accent: "amber" | "violet"; onClick: () => void; children: React.ReactNode; size?: "md" | "sm" }) {
   const activeCls = accent === "amber"
     ? "border-amber-500 bg-amber-500/20 text-amber-400 shadow-[0_0_18px_rgba(245,158,11,0.35)]"
     : "border-violet-500 bg-violet-500/20 text-violet-400 shadow-[0_0_18px_rgba(139,92,246,0.35)]";
@@ -2102,7 +2107,8 @@ function Chip({ active, accent, onClick, children }: { active: boolean; accent: 
       type="button"
       onClick={onClick}
       className={cn(
-        "w-full h-12 rounded-xl border text-sm font-black transition-all active:scale-95 flex items-center justify-center shadow-md cursor-pointer",
+        "w-full rounded-xl border font-black transition-all active:scale-95 flex items-center justify-center shadow-md cursor-pointer",
+        size === "sm" ? "h-8 text-xs rounded-lg" : "h-12 text-sm",
         active ? activeCls : "border-border/60 bg-card/40 text-muted-foreground hover:text-foreground hover:bg-muted/30",
       )}
     >
