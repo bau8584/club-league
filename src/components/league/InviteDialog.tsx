@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 export type ShareMode = "invite" | "ranking";
 
 export function InviteDialog({
-  open, onOpenChange, classId, leagueName, defaultMode = "invite", allowRanking = true,
+  open, onOpenChange, classId, leagueName, defaultMode = "invite", allowRanking = true, allowInvite = true,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -16,6 +16,8 @@ export function InviteDialog({
   leagueName?: string;
   /** 공개 순위표 탭 노출 여부 — 동호회 리그에서는 쓰지 않는 기능이라 감춘다. */
   allowRanking?: boolean;
+  /** 참가 초대 탭 노출 여부 — 학교 리그의 초대는 공동 관리자 권한을 주므로 이 창에서는 막는다. */
+  allowInvite?: boolean;
   /** 어느 탭으로 열지 — 메뉴에서 '공개 순위표'로 바로 들어올 수 있게 한다. */
   defaultMode?: ShareMode;
 }) {
@@ -23,10 +25,12 @@ export function InviteDialog({
   // invite = 로그인해서 참가하는 초대 링크 / ranking = 로그인 없이 보는 공개 순위표 링크
   const [mode, setMode] = useState<ShareMode>(defaultMode);
 
-  // 열릴 때마다 호출한 쪽이 지정한 탭에서 시작한다.
+  // 열릴 때마다 호출한 쪽이 지정한 탭에서 시작한다. 막아둔 탭으로는 들어가지 않는다.
   useEffect(() => {
-    if (open) { setMode(defaultMode); setCopied(false); }
-  }, [open, defaultMode]);
+    if (!open) return;
+    setMode(defaultMode === "ranking" ? (allowRanking ? "ranking" : "invite") : (allowInvite ? "invite" : "ranking"));
+    setCopied(false);
+  }, [open, defaultMode, allowRanking, allowInvite]);
 
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const inviteUrl = useMemo(() => `${origin}/join?classId=${classId}`, [origin, classId]);
@@ -60,8 +64,8 @@ export function InviteDialog({
           </button>
         </div>
 
-        {/* 링크 종류 선택 — 고를 게 하나뿐이면 탭 자체를 감춘다. */}
-        <div className={cn("mb-3 grid-cols-2 gap-1.5 rounded-xl border border-border/50 bg-input/40 p-1", allowRanking ? "grid" : "hidden")}>
+        {/* 링크 종류 선택 — 고를 게 하나뿐이면 탭 자체를 감춘다(잘못 눌러 엉뚱한 링크를 뿌리지 않도록). */}
+        <div className={cn("mb-3 grid-cols-2 gap-1.5 rounded-xl border border-border/50 bg-input/40 p-1", allowRanking && allowInvite ? "grid" : "hidden")}>
           {([["invite", "참가 초대"], ["ranking", "공개 순위표"]] as const).map(([m, label]) => (
             <button key={m} type="button" onClick={() => { setMode(m); setCopied(false); }}
               className={cn("h-8 rounded-lg text-xs font-black transition-all active:scale-95",
