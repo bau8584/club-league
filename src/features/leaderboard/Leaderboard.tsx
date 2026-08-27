@@ -9,7 +9,8 @@ import { TitleBadge } from "@/components/league/TitleBadge";
 import { PlayerDetailSheet } from "@/components/league/PlayerDetailSheet";
 import { cn } from "@/lib/utils";
 import { Search, SlidersHorizontal, ChevronDown, X } from "lucide-react";
-import { getTier, isUnranked, TIER_ORDER, TIER_STYLES, type TierName, type Student } from "@/lib/league-types";
+import { getTier, isUnranked, schoolAxesOf, TIER_ORDER, TIER_STYLES, type TierName, type Student } from "@/lib/league-types";
+import { useIsSchoolLeague } from "@/lib/league-terms";
 
 type GenderFilter = "all" | "M" | "F";
 
@@ -30,6 +31,8 @@ export function Leaderboard({
   thresholds?: Record<TierName, number>;
 }) {
   const [group, setGroup] = useState<string[]>([]);   // 다중 선택 (빈 배열 = 전체)
+  const [grade, setGrade] = useState<number[]>([]);    // school 전용 학년 (빈 배열 = 전체)
+  const [classNum, setClassNum] = useState<number[]>([]); // school 전용 반 (빈 배열 = 전체)
   const [tier, setTier] = useState<TierName[]>([]);    // 다중 선택 (빈 배열 = 전체)
   const [gender, setGender] = useState<GenderFilter>("all");
   const [query, setQuery] = useState("");
@@ -37,10 +40,24 @@ export function Leaderboard({
   const [detailStudent, setDetailStudent] = useState<Student | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
 
-  const activeCount = (group.length > 0 ? 1 : 0) + (tier.length > 0 ? 1 : 0) + (gender !== "all" ? 1 : 0);
-  const resetFilters = () => { setGroup([]); setTier([]); setGender("all"); };
+  const isSchool = useIsSchoolLeague();
+
+  // school 리그의 학년/반 축. 한 종류뿐인 축(학급 리그의 학년 등)은 필터로 의미가 없어 숨긴다.
+  const axes = useMemo(() => schoolAxesOf(students), [students]);
+  const showGrade = isSchool && axes.varyGrade;
+  const showClass = isSchool && axes.varyClass;
+
+  const activeCount =
+    (group.length > 0 ? 1 : 0) +
+    (showGrade && grade.length > 0 ? 1 : 0) +
+    (showClass && classNum.length > 0 ? 1 : 0) +
+    (tier.length > 0 ? 1 : 0) +
+    (gender !== "all" ? 1 : 0);
+  const resetFilters = () => { setGroup([]); setGrade([]); setClassNum([]); setTier([]); setGender("all"); };
   const genderLabel = gender === "M" ? "남자" : gender === "F" ? "여자" : null;
   const toggleGroup = (g: string) => setGroup((p) => (p.includes(g) ? p.filter((x) => x !== g) : [...p, g]));
+  const toggleGrade = (g: number) => setGrade((p) => (p.includes(g) ? p.filter((x) => x !== g) : [...p, g]));
+  const toggleClass = (c: number) => setClassNum((p) => (p.includes(c) ? p.filter((x) => x !== c) : [...p, c]));
   const toggleTier = (t: TierName) => setTier((p) => (p.includes(t) ? p.filter((x) => x !== t) : [...p, t]));
 
   // 이중 보안 상태 및 자동 잠금 훅
@@ -70,6 +87,8 @@ export function Leaderboard({
   const ranked = useMemo(() => {
     const passesFilters = (s: Student) =>
       (group.length === 0 ? true : !!s.group && group.includes(s.group)) &&
+      (!showGrade || grade.length === 0 ? true : s.grade != null && grade.includes(s.grade)) &&
+      (!showClass || classNum.length === 0 ? true : s.classNum != null && classNum.includes(s.classNum)) &&
       (gender === "all" ? true : s.gender === gender);
 
     const rankedPart: { student: Student; rank: number | null; unranked: boolean }[] = students
@@ -89,7 +108,7 @@ export function Leaderboard({
         .map((s) => ({ student: s, rank: null, unranked: true }));
 
     return [...rankedPart, ...unrankedPart];
-  }, [students, group, tier, gender, thresholds, placementEnabled, placementGames]);
+  }, [students, group, grade, classNum, showGrade, showClass, tier, gender, thresholds, placementEnabled, placementGames]);
 
   // 이름 검색은 표시만 거른다(각자의 순위는 그대로 유지).
   const visible = useMemo(() => {
@@ -134,6 +153,16 @@ export function Leaderboard({
                 {g}<button type="button" onClick={() => toggleGroup(g)} className="text-muted-foreground hover:text-foreground"><X className="size-3" /></button>
               </span>
             ))}
+            {showGrade && grade.map((g) => (
+              <span key={`grade-${g}`} className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-card/60 px-2 py-0.5 text-[11px] font-bold">
+                {g}학년<button type="button" onClick={() => toggleGrade(g)} className="text-muted-foreground hover:text-foreground"><X className="size-3" /></button>
+              </span>
+            ))}
+            {showClass && classNum.map((c) => (
+              <span key={`class-${c}`} className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-card/60 px-2 py-0.5 text-[11px] font-bold">
+                {c}반<button type="button" onClick={() => toggleClass(c)} className="text-muted-foreground hover:text-foreground"><X className="size-3" /></button>
+              </span>
+            ))}
             {tier.map((t) => (
               <span key={t} className={cn("inline-flex items-center gap-1 rounded-full border border-border/60 bg-card/60 px-2 py-0.5 text-[11px] font-bold", TIER_STYLES[t].text)}>
                 {TIER_STYLES[t].label}<button type="button" onClick={() => toggleTier(t)} className="text-muted-foreground hover:text-foreground"><X className="size-3" /></button>
@@ -159,6 +188,32 @@ export function Leaderboard({
                   {availableGroups.map((g) => (
                     <FilterChip key={g} active={group.includes(g)} onClick={() => toggleGroup(g)}>
                       {g}
+                    </FilterChip>
+                  ))}
+                </div>
+              </div>
+            )}
+            {showGrade && (
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">학년</p>
+                <div className="flex flex-wrap gap-2">
+                  <FilterChip active={grade.length === 0} onClick={() => setGrade([])}>전체 학년</FilterChip>
+                  {axes.grades.map((g) => (
+                    <FilterChip key={g} active={grade.includes(g)} onClick={() => toggleGrade(g)}>
+                      {g}학년
+                    </FilterChip>
+                  ))}
+                </div>
+              </div>
+            )}
+            {showClass && (
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">반</p>
+                <div className="flex flex-wrap gap-2">
+                  <FilterChip active={classNum.length === 0} onClick={() => setClassNum([])}>전체 반</FilterChip>
+                  {axes.classes.map((c) => (
+                    <FilterChip key={c} active={classNum.includes(c)} onClick={() => toggleClass(c)}>
+                      {c}반
                     </FilterChip>
                   ))}
                 </div>
