@@ -8,12 +8,14 @@ import { cn } from "@/lib/utils";
 export type ShareMode = "invite" | "ranking";
 
 export function InviteDialog({
-  open, onOpenChange, classId, leagueName, defaultMode = "invite",
+  open, onOpenChange, classId, leagueName, defaultMode = "invite", allowRanking = true,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   classId: string;
   leagueName?: string;
+  /** 공개 순위표 탭 노출 여부 — 동호회 리그에서는 쓰지 않는 기능이라 감춘다. */
+  allowRanking?: boolean;
   /** 어느 탭으로 열지 — 메뉴에서 '공개 순위표'로 바로 들어올 수 있게 한다. */
   defaultMode?: ShareMode;
 }) {
@@ -58,8 +60,8 @@ export function InviteDialog({
           </button>
         </div>
 
-        {/* 링크 종류 선택 */}
-        <div className="mb-3 grid grid-cols-2 gap-1.5 rounded-xl border border-border/50 bg-input/40 p-1">
+        {/* 링크 종류 선택 — 고를 게 하나뿐이면 탭 자체를 감춘다. */}
+        <div className={cn("mb-3 grid-cols-2 gap-1.5 rounded-xl border border-border/50 bg-input/40 p-1", allowRanking ? "grid" : "hidden")}>
           {([["invite", "참가 초대"], ["ranking", "공개 순위표"]] as const).map(([m, label]) => (
             <button key={m} type="button" onClick={() => { setMode(m); setCopied(false); }}
               className={cn("h-8 rounded-lg text-xs font-black transition-all active:scale-95",
