@@ -582,7 +582,8 @@ export function MatchesTab({ incomingInitials, onConsumeInitials, openMatchId, o
       {/* 결과 입력 모달 */}
       {recordOpen && (
         <div className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-black/70 p-4 backdrop-blur-sm">
-          <div className="relative my-8 w-full max-w-2xl rounded-2xl border border-border/50 bg-background p-4 shadow-2xl sm:p-6">
+          {/* 넓은 화면에서는 대진/선수목록을 좌우로 펴야 하므로 팝업도 함께 넓힌다. */}
+          <div className="relative my-8 w-full max-w-2xl lg:max-w-5xl rounded-2xl border border-border/50 bg-background p-4 shadow-2xl sm:p-6">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-base font-black text-foreground">
                 {activeReservation ? "예약 경기 결과 입력" : "경기 결과 입력"}

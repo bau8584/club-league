@@ -512,7 +512,9 @@ export function LeagueApp({ classId }: { classId: string }) {
         <ScheduledMatchBanner />
 
         {/* 첫 방문 알림 켜기 안내(웹 푸시는 사용자가 직접 켜야만 가능) */}
-        <PushPrompt leagueId={classId} />
+        {/* 학교 리그는 교사만 로그인하고 예약·도전장을 쓰지 않는다. 첫 진입부터
+            알림 배너가 뜨면 안내만 가로막으므로 띄우지 않는다(헤더 종 버튼으로는 켤 수 있다). */}
+        {!isSchool && <PushPrompt leagueId={classId} />}
 
         {/* 관리자 QR 초대 다이얼로그 */}
         <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} classId={classId} leagueName={title} defaultMode={shareMode} allowRanking={isSchool} allowInvite={!isSchool} />
