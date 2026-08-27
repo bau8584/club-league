@@ -5,7 +5,7 @@ import { TierBadge } from "./TierBadge";
 import { AddMemberForm } from "./AddMemberForm";
 import { GenderMark } from "./GenderMark";
 import { cn } from "@/lib/utils";
-import { Trophy, X, Sparkles, User, Users, Crown, Award, Zap, RotateCcw, UserPlus } from "lucide-react";
+import { Trophy, X, Sparkles, User, Users, Crown, Award, Zap, RotateCcw, UserPlus, Lock, LockOpen } from "lucide-react";
 import type { Student, Match, TierName } from "@/lib/league-types";
 import { getTier, getTierSubdivision, TIER_ORDER, getFullTierLabel, isUnranked, schoolLabelCompact, schoolAxesOf } from "@/lib/league-types";
 import { toast } from "sonner";
@@ -121,6 +121,14 @@ export function RecordMatch({
   // 학교 리그 선수 선택 필터(학년/반). picker는 슬롯을 고를 때마다 새로 열리므로
   // 필터를 picker 안에 두면 복식에서 4번 모두 학년·반을 다시 골라야 했다. → 부모가 들고 유지한다.
   const [pickerFilter, setPickerFilter] = useSchoolPickerFilter(students, currentClassId, lockedPlayerId, isSchool);
+  // 경기 방식 고정(개인 설정). 잠겨 있으면 그 방식으로 시작하고 토글이 잠긴다.
+  const [lockedMatchType, setLockedMatchType] = useMatchTypeLock(currentClassId);
+  useEffect(() => {
+    if (lockedMatchType) setMatchType(lockedMatchType);
+  }, [lockedMatchType]);
+  // initials 처리(아래)는 잠금 값 변화로 재실행되면 안 되므로 ref로 읽는다.
+  const lockedMatchTypeRef = useRef(lockedMatchType);
+  lockedMatchTypeRef.current = lockedMatchType;
   const [scoreA, setScoreA] = useState(0);
   const [scoreB, setScoreB] = useState(0);
 
@@ -501,6 +509,9 @@ export function RecordMatch({
       if (studentA && studentB) {
         const type = initials.matchType || "single";
         setMatchType(type);
+        // 매치 추천·예약에서 넘어온 방식은 명시적 의도이므로 개인 고정보다 우선한다.
+        // 고정된 방식과 다르면 토글이 잠긴 채 다른 방식이 떠 있는 모순을 피하려고 고정을 푼다.
+        if (lockedMatchTypeRef.current && lockedMatchTypeRef.current !== type) setLockedMatchType(null);
         setA({ group: studentA.group ?? null, studentId: studentA.id });
         setB({ group: studentB.group ?? null, studentId: studentB.id });
 
@@ -526,7 +537,7 @@ export function RecordMatch({
       }
       onClearInitials?.();
     }
-  }, [initials, students, onClearInitials]);
+  }, [initials, students, onClearInitials, setLockedMatchType]);
 
   // 일반회원 본인 경기: 슬롯 A를 항상 본인으로 고정
   useEffect(() => {
@@ -1055,34 +1066,50 @@ export function RecordMatch({
     <div className="space-y-6">
       {/* 뷰 전용(presetResult) 모드에서는 입력 폼을 숨기고 결과 모달만 띄운다 */}
       {!presetResult && (<>
-      {/* 단식 / 복식 경기 방식 선택 토글 */}
+      {/* 단식 / 복식 경기 방식 선택 토글 — 자물쇠로 현재 방식을 고정할 수 있다(개인 설정) */}
       <div className="flex justify-center mb-6">
-        <div className="inline-flex rounded-xl bg-muted/40 p-1 border border-border/30 backdrop-blur">
+        <div className="inline-flex items-center rounded-xl bg-muted/40 p-1 border border-border/30 backdrop-blur">
+          {([
+            { type: "double" as const, icon: Users, label: "복식 (2:2)" },
+            { type: "single" as const, icon: User, label: "단식 (1:1)" },
+          ]).map(({ type, icon: Icon, label }) => {
+            const selected = matchType === type;
+            // 잠긴 방식이 아닌 쪽은 흐리게 + 비활성 — 무엇이 고정됐는지 그대로 보이게 둔다.
+            const disabled = !!lockedMatchType && !selected;
+            return (
+              <button
+                key={type}
+                type="button"
+                disabled={disabled}
+                onClick={() => setMatchType(type)}
+                className={cn(
+                  "px-5 py-2.5 rounded-lg text-sm font-black transition-all duration-200 flex items-center gap-2",
+                  selected
+                    ? "bg-gradient-to-r from-neon-blue to-tier-diamond text-primary-foreground shadow-md"
+                    : "text-muted-foreground hover:text-foreground",
+                  disabled && "opacity-40 cursor-not-allowed hover:text-muted-foreground",
+                )}
+              >
+                <Icon className="size-4" />
+                {label}
+              </button>
+            );
+          })}
           <button
             type="button"
-            onClick={() => setMatchType("double")}
+            aria-pressed={!!lockedMatchType}
+            title={lockedMatchType
+              ? `${lockedMatchType === "double" ? "복식" : "단식"} 고정됨 — 눌러서 해제`
+              : `${matchType === "double" ? "복식" : "단식"}으로 고정`}
+            onClick={() => setLockedMatchType(lockedMatchType ? null : matchType)}
             className={cn(
-              "px-6 py-2.5 rounded-lg text-sm font-black transition-all duration-200 flex items-center gap-2",
-              matchType === "double"
-                ? "bg-gradient-to-r from-neon-blue to-tier-diamond text-primary-foreground shadow-md"
-                : "text-muted-foreground hover:text-foreground"
+              "ml-1 flex size-8 shrink-0 items-center justify-center rounded-lg transition-all duration-200 cursor-pointer",
+              lockedMatchType
+                ? "bg-neon-blue/15 text-neon-blue"
+                : "text-muted-foreground/60 hover:bg-muted/60 hover:text-foreground",
             )}
           >
-            <Users className="size-4" />
-            복식 (2:2)
-          </button>
-          <button
-            type="button"
-            onClick={() => setMatchType("single")}
-            className={cn(
-              "px-6 py-2.5 rounded-lg text-sm font-black transition-all duration-200 flex items-center gap-2",
-              matchType === "single"
-                ? "bg-gradient-to-r from-neon-blue to-tier-diamond text-primary-foreground shadow-md"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <User className="size-4" />
-            단식 (1:1)
+            {lockedMatchType ? <Lock className="size-3.5" /> : <LockOpen className="size-3.5" />}
           </button>
         </div>
       </div>
@@ -1711,6 +1738,44 @@ const ACCENT = {
 } as const;
 type Accent = keyof typeof ACCENT;
 const ALL_GROUP = "__ALL__";
+
+type MatchType = "single" | "double";
+const MATCH_TYPE_LOCK_KEY = "clg:matchTypeLock:";
+
+/**
+ * 경기 방식(단식/복식) 고정 — 기기별 개인 설정.
+ * 한 리그에서 늘 같은 방식만 하는 경우가 많아, 매번 고르거나 잘못 눌러 바뀌는 걸 막는다.
+ * 리그 전체 정책이 아니라 본인 화면에만 적용되므로 권한 검사 없이 누구나 켜고 끌 수 있다.
+ */
+function useMatchTypeLock(classId: string | null): [MatchType | null, (next: MatchType | null) => void] {
+  const [locked, setLocked] = useState<MatchType | null>(null);
+  const seededFor = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!classId || typeof window === "undefined") return;
+    if (seededFor.current === classId) return;
+    seededFor.current = classId;
+    try {
+      const raw = window.localStorage.getItem(MATCH_TYPE_LOCK_KEY + classId);
+      setLocked(raw === "single" || raw === "double" ? raw : null);
+    } catch {
+      setLocked(null);
+    }
+  }, [classId]);
+
+  const update = useCallback((next: MatchType | null) => {
+    setLocked(next);
+    if (!classId || typeof window === "undefined") return;
+    try {
+      if (next) window.localStorage.setItem(MATCH_TYPE_LOCK_KEY + classId, next);
+      else window.localStorage.removeItem(MATCH_TYPE_LOCK_KEY + classId);
+    } catch {
+      // 저장 실패(사생활 보호 모드 등)해도 이번 세션 동안은 잠금이 동작한다.
+    }
+  }, [classId]);
+
+  return [locked, update];
+}
 
 /** 학교 리그 선수 선택 picker의 학년/반 필터. null = 전체. */
 export type PickerFilter = { grade: number | null; classNum: number | null };
