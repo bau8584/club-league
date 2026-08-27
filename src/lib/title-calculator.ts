@@ -91,9 +91,14 @@ type Stats = {
   tierRank: number;
 };
 
-function computeStats(student: Student, students: Student[], matches: Match[], thresholds: any): Stats {
+// 선수 수 × 경기 수만큼 훑지 않도록, 경기 목록은 buildTitleIndex 에서 선수별로 한 번만 갈라 넘긴다.
+function computeStats(
+  student: Student,
+  studentById: Map<string, Student>,
+  mine: Match[],
+  thresholds: any,
+): Stats {
   const id = student.id;
-  const mine = matches.filter((m) => slotOf(m, id) !== null);
   const chrono = [...mine].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
   let wins = 0, losses = 0;
@@ -137,7 +142,7 @@ function computeStats(student: Student, students: Student[], matches: Match[], t
     oppIds.forEach((oid) => { opponents.add(oid); oppCounts[oid] = (oppCounts[oid] || 0) + 1; });
     if (won) {
       const beatHigher = oppIds.some((oid) => {
-        const opp = students.find((s) => s.id === oid);
+        const opp = studentById.get(oid);
         if (!opp) return false;
         return (TIER_RANKING[getTier(opp.rp, thresholds)] ?? 1) > playerTierRank;
       });
@@ -186,8 +191,24 @@ export type TitleIndex = {
 
 // 리그 전체를 한 번에 계산 — 경쟁형(1명) + 개인 성취/성격형
 export function buildTitleIndex(students: Student[], matches: Match[], thresholds: any): TitleIndex {
+  const studentById = new Map(students.map((s) => [s.id, s] as const));
+
+  // 경기를 한 번만 훑어 선수별 목록으로 갈라 둔다.
+  const matchesByPlayer = new Map<string, Match[]>();
+  for (const m of matches) {
+    // 같은 경기에 같은 id 가 두 슬롯에 들어간 경우에도 한 번만 센다(기존 filter 동작과 동일).
+    const ids = new Set([m.playerAId, m.playerA2Id, m.playerBId, m.playerB2Id].filter(Boolean) as string[]);
+    for (const pid of ids) {
+      const list = matchesByPlayer.get(pid);
+      if (list) list.push(m);
+      else matchesByPlayer.set(pid, [m]);
+    }
+  }
+
   const statsById = new Map<string, Stats>();
-  students.forEach((s) => statsById.set(s.id, computeStats(s, students, matches, thresholds)));
+  students.forEach((s) =>
+    statsById.set(s.id, computeStats(s, studentById, matchesByPlayer.get(s.id) ?? [], thresholds)),
+  );
 
   const played = students.filter((s) => (statsById.get(s.id)?.totalGames ?? 0) > 0);
 

@@ -8,6 +8,8 @@ export const Route = createFileRoute("/ranking/$classId")({
     meta: [
       { title: "리그 순위표" },
       { name: "description", content: "로그인 없이 볼 수 있는 리그 공개 순위표." },
+      // 명단이 검색엔진에 색인되지 않도록 막는다(링크를 받은 사람만 보는 화면).
+      { name: "robots", content: "noindex, nofollow" },
     ],
   }),
   component: () => {

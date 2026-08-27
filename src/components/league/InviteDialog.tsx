@@ -1,21 +1,30 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
-import { X, Copy, Check, QrCode } from "lucide-react";
+import { X, Copy, Check, QrCode, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // 관리자용 QR 초대 다이얼로그 — 초대 링크의 QR + 링크 복사.
+export type ShareMode = "invite" | "ranking";
+
 export function InviteDialog({
-  open, onOpenChange, classId, leagueName,
+  open, onOpenChange, classId, leagueName, defaultMode = "invite",
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   classId: string;
   leagueName?: string;
+  /** 어느 탭으로 열지 — 메뉴에서 '공개 순위표'로 바로 들어올 수 있게 한다. */
+  defaultMode?: ShareMode;
 }) {
   const [copied, setCopied] = useState(false);
   // invite = 로그인해서 참가하는 초대 링크 / ranking = 로그인 없이 보는 공개 순위표 링크
-  const [mode, setMode] = useState<"invite" | "ranking">("invite");
+  const [mode, setMode] = useState<ShareMode>(defaultMode);
+
+  // 열릴 때마다 호출한 쪽이 지정한 탭에서 시작한다.
+  useEffect(() => {
+    if (open) { setMode(defaultMode); setCopied(false); }
+  }, [open, defaultMode]);
 
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const inviteUrl = useMemo(() => `${origin}/join?classId=${classId}`, [origin, classId]);
@@ -70,6 +79,18 @@ export function InviteDialog({
         <div className="mx-auto mb-4 w-fit rounded-2xl bg-white p-4 shadow-inner">
           <QRCodeSVG value={shareUrl} size={200} level="M" marginSize={2} />
         </div>
+
+        {/* 공개 순위표는 링크를 복사하기 전에 직접 열어볼 수 있어야 한다. */}
+        {mode === "ranking" && (
+          <a
+            href={rankingUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="mb-2 flex items-center justify-center gap-1.5 rounded-xl border border-neon-blue/40 bg-neon-blue/10 px-3 py-2.5 text-xs font-black text-neon-blue transition-all hover:bg-neon-blue/20 active:scale-95"
+          >
+            <ExternalLink className="size-3.5" /> 순위표 열어보기
+          </a>
+        )}
 
         {/* 링크 + 복사 */}
         <div className="flex items-center gap-2 rounded-xl border border-border/50 bg-input/50 p-1.5">

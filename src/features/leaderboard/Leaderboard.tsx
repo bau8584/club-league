@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { useLeagueStore } from "@/lib/league-store";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -10,9 +10,14 @@ import { PlayerDetailSheet } from "@/components/league/PlayerDetailSheet";
 import { cn } from "@/lib/utils";
 import { Search, SlidersHorizontal, ChevronDown, X } from "lucide-react";
 import { getTier, isUnranked, schoolAxesOf, TIER_ORDER, TIER_STYLES, type TierName, type Student } from "@/lib/league-types";
+import type { TitleDef } from "@/lib/title-calculator";
 import { useIsSchoolLeague } from "@/lib/league-terms";
 
 type GenderFilter = "all" | "M" | "F";
+
+// 한 번에 그릴 행 수. 518명짜리 리그의 표를 통째로 그리면 필터를 한 번 누르는 것만으로
+// 수천 개 DOM 노드가 재조정돼 저사양 폰에서 눈에 띄게 멈춘다. 필요한 만큼만 늘려 그린다.
+const PAGE_SIZE = 50;
 
 function getWinStreak(recent: ("W" | "L")[]): number {
   let count = 0;
@@ -39,6 +44,12 @@ export function Leaderboard({
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [detailStudent, setDetailStudent] = useState<Student | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [limit, setLimit] = useState(PAGE_SIZE);
+
+  const openDetail = useCallback((s: Student) => {
+    setDetailStudent(s);
+    setDetailOpen(true);
+  }, []);
 
   const isSchool = useIsSchoolLeague();
 
@@ -110,12 +121,18 @@ export function Leaderboard({
     return [...rankedPart, ...unrankedPart];
   }, [students, group, grade, classNum, showGrade, showClass, tier, gender, thresholds, placementEnabled, placementGames]);
 
+  // 필터/검색이 바뀌면 처음부터 다시 보여준다.
+  useEffect(() => { setLimit(PAGE_SIZE); }, [group, grade, classNum, tier, gender, query]);
+
   // 이름 검색은 표시만 거른다(각자의 순위는 그대로 유지).
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return ranked;
     return ranked.filter(({ student }) => (student.nickname || student.name).toLowerCase().includes(q));
   }, [ranked, query]);
+
+  const shown = useMemo(() => visible.slice(0, limit), [visible, limit]);
+  const restCount = visible.length - shown.length;
 
   return (
     <div className="space-y-5">
@@ -250,7 +267,7 @@ export function Leaderboard({
         )}
       </div>
 
-      <Card className="overflow-hidden border-border/60 bg-card/60 p-0 backdrop-blur">
+      <Card className="overflow-hidden border-border/60 bg-card/60 p-0">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -263,71 +280,35 @@ export function Leaderboard({
               </tr>
             </thead>
             <tbody>
-              {visible.map(({ student: s, rank, unranked }) => {
-                const total = s.wins + s.losses;
-                const winRate = total === 0 ? 0 : Math.round((s.wins / total) * 100);
-                return (
-                  <tr key={s.id} className="border-b border-border/30 transition-colors hover:bg-accent/40">
-                    <td className="px-2 py-3 font-bold tabular-nums w-10 sm:w-14">
-                      {unranked ? <span className="text-muted-foreground/60">??</span> : <RankBadge rank={rank!} />}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2 font-semibold">
-                        <GenderMark gender={s.gender} />
-                        <button
-                          type="button"
-                          onClick={() => { setDetailStudent(s); setDetailOpen(true); }}
-                          className="flex items-center gap-1.5 text-left transition-colors hover:text-neon-blue active:scale-[0.98]"
-                        >
-                          {(() => { const t = getEquippedTitle(s); return t ? <TitleBadge title={t} /> : null; })()}
-                          <span>{s.nickname || s.name}</span>
-                        </button>
-                        {getWinStreak(s.recent) >= 3 && (
-                          <span
-                            className="inline-flex items-center gap-0.5 rounded-full bg-orange-500/15 px-2 py-0.5 text-[10px] font-black text-orange-500 ring-1 ring-orange-500/30 animate-pulse shadow-[0_0_12px_rgba(249,115,22,0.2)]"
-                            title={`${getWinStreak(s.recent)}연승 중! 🔥`}
-                          >
-                            🔥 {getWinStreak(s.recent)}연승
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <TierBadge rp={s.rp} thresholds={thresholds} unranked={unranked} />
-                    </td>
-                    <td className="px-4 py-3 hidden md:table-cell">
-                      <div className="flex items-center justify-center gap-1">
-                        {Array.from({ length: 5 }).map((_, idx) => {
-                          const r = s.recent[idx];
-                          return (
-                            <span
-                              key={idx}
-                              className={cn(
-                                "flex size-6 items-center justify-center rounded-full text-[10px] font-bold",
-                                !r && "bg-muted/40 text-muted-foreground",
-                                r === "W" && "bg-win/20 text-win ring-1 ring-win/40",
-                                r === "L" && "bg-loss/20 text-loss ring-1 ring-loss/40",
-                              )}
-                            >
-                              {r ?? "·"}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-right tabular-nums hidden sm:table-cell">
-                      <span className="font-semibold">{winRate}%</span>
-                      <span className="ml-1 text-xs text-muted-foreground">({s.wins}W {s.losses}L)</span>
-                    </td>
-                  </tr>
-                );
-              })}
+              {shown.map(({ student: s, rank, unranked }) => (
+                <LeaderboardRow
+                  key={s.id}
+                  student={s}
+                  rank={rank}
+                  unranked={unranked}
+                  thresholds={thresholds}
+                  title={getEquippedTitle(s)}
+                  onSelect={openDetail}
+                />
+              ))}
               {visible.length === 0 && (
-                <tr><td colSpan={5} className="px-4 py-10 text-center text-muted-foreground animate-pulse">조건에 맞는 선수가 없습니다.</td></tr>
+                <tr><td colSpan={5} className="px-4 py-10 text-center text-muted-foreground">조건에 맞는 선수가 없습니다.</td></tr>
               )}
             </tbody>
           </table>
         </div>
+        {restCount > 0 && (
+          <div className="border-t border-border/40 p-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setLimit((n) => n + PAGE_SIZE)}
+              className="h-9 w-full text-xs font-bold text-muted-foreground hover:text-foreground"
+            >
+              {Math.min(PAGE_SIZE, restCount)}명 더 보기 (남은 {restCount}명)
+            </Button>
+          </div>
+        )}
       </Card>
 
       <PlayerDetailSheet
@@ -341,7 +322,86 @@ export function Leaderboard({
   );
 }
 
-function FilterChip({
+/**
+ * 순위표 한 줄. props 가 그대로면 다시 그리지 않는다(memo).
+ * 필터 패널을 열고 닫는 것만으로 수백 줄이 재조정되던 비용을 없앤다.
+ */
+const LeaderboardRow = memo(function LeaderboardRow({
+  student: s,
+  rank,
+  unranked,
+  thresholds,
+  title,
+  onSelect,
+}: {
+  student: Student;
+  rank: number | null;
+  unranked: boolean;
+  thresholds?: Record<TierName, number>;
+  title: TitleDef | null;
+  onSelect: (s: Student) => void;
+}) {
+  const total = s.wins + s.losses;
+  const winRate = total === 0 ? 0 : Math.round((s.wins / total) * 100);
+  const streak = getWinStreak(s.recent);
+  return (
+    <tr className="border-b border-border/30 transition-colors hover:bg-accent/40">
+      <td className="px-2 py-3 font-bold tabular-nums w-10 sm:w-14">
+        {unranked ? <span className="text-muted-foreground/60">??</span> : <RankBadge rank={rank!} />}
+      </td>
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-2 font-semibold">
+          <GenderMark gender={s.gender} />
+          <button
+            type="button"
+            onClick={() => onSelect(s)}
+            className="flex items-center gap-1.5 text-left transition-colors hover:text-neon-blue active:scale-[0.98]"
+          >
+            {title ? <TitleBadge title={title} /> : null}
+            <span>{s.nickname || s.name}</span>
+          </button>
+          {streak >= 3 && (
+            <span
+              className="inline-flex items-center gap-0.5 rounded-full bg-orange-500/15 px-2 py-0.5 text-[10px] font-black text-orange-500 ring-1 ring-orange-500/30"
+              title={`${streak}연승 중! 🔥`}
+            >
+              🔥 {streak}연승
+            </span>
+          )}
+        </div>
+      </td>
+      <td className="px-4 py-3">
+        <TierBadge rp={s.rp} thresholds={thresholds} unranked={unranked} />
+      </td>
+      <td className="px-4 py-3 hidden md:table-cell">
+        <div className="flex items-center justify-center gap-1">
+          {Array.from({ length: 5 }).map((_, idx) => {
+            const r = s.recent[idx];
+            return (
+              <span
+                key={idx}
+                className={cn(
+                  "flex size-6 items-center justify-center rounded-full text-[10px] font-bold",
+                  !r && "bg-muted/40 text-muted-foreground",
+                  r === "W" && "bg-win/20 text-win ring-1 ring-win/40",
+                  r === "L" && "bg-loss/20 text-loss ring-1 ring-loss/40",
+                )}
+              >
+                {r ?? "·"}
+              </span>
+            );
+          })}
+        </div>
+      </td>
+      <td className="px-4 py-3 text-right tabular-nums hidden sm:table-cell">
+        <span className="font-semibold">{winRate}%</span>
+        <span className="ml-1 text-xs text-muted-foreground">({s.wins}W {s.losses}L)</span>
+      </td>
+    </tr>
+  );
+});
+
+export function FilterChip({
   active, onClick, children, tone,
 }: { active: boolean; onClick: () => void; children: React.ReactNode; tone?: string }) {
   return (
