@@ -255,6 +255,15 @@ export async function apiFetchStudentsPublic(classId: string) {
     .or("is_deleted.is.null,is_deleted.eq.false");
 }
 
+/**
+ * 무인증 공개 순위표 전용 조회.
+ * 학교 리그면 서버에서 이름을 성만 남겨(홍○○) 내려준다 — 응답 본문에 실명이 담기지 않도록
+ * 마스킹은 반드시 DB(RPC)에서 한다. players_public 은 anon 권한이 회수돼 있다.
+ */
+export async function apiFetchRankingPublic(classId: string) {
+  return supabase.rpc("get_ranking_public", { p_class_id: classId });
+}
+
 export async function apiUpdateStudentRp(studentId: string, rp: number) {
   return supabase
     .from("players")

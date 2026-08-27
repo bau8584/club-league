@@ -401,7 +401,7 @@ const LeaderboardRow = memo(function LeaderboardRow({
   );
 });
 
-function FilterChip({
+export function FilterChip({
   active, onClick, children, tone,
 }: { active: boolean; onClick: () => void; children: React.ReactNode; tone?: string }) {
   return (

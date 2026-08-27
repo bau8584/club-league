@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
-import { apiFetchLeaguePublic, apiFetchStudentsPublic } from "@/services/league-api";
+import { apiFetchLeaguePublic, apiFetchRankingPublic } from "@/services/league-api";
 import { TierBadge } from "@/components/league/TierBadge";
 import { GenderMark } from "@/components/league/GenderMark";
 import { cn } from "@/lib/utils";
-import { isUnranked, schoolLabelCompact, schoolAxesOf, type Gender, type TierName } from "@/lib/league-types";
+import { getTier, isUnranked, schoolLabelCompact, schoolAxesOf, TIER_ORDER, TIER_STYLES, type Gender, type TierName } from "@/lib/league-types";
+import { FilterChip } from "@/features/leaderboard/Leaderboard";
 import { termsFor } from "@/lib/league-terms";
-import { Trophy, RefreshCw } from "lucide-react";
+import { Trophy, RefreshCw, SlidersHorizontal, ChevronDown } from "lucide-react";
 
+// get_ranking_public RPC 가 내려주는 모양. 학교 리그의 display_name 은 서버에서 마스킹된 이름이다.
 type PublicPlayer = {
   id: string;
   rp: number;
-  nickname: string | null;
   display_name: string | null;
   group_label: string | null;
   gender: Gender;
@@ -20,6 +21,11 @@ type PublicPlayer = {
   class_num: number | null;
   student_no: number | null;
 };
+
+type GenderFilter = "all" | "M" | "F";
+
+// 순위표는 50명씩 끊어 그린다(수백 행을 한 번에 그리면 필터 조작이 눈에 띄게 느려진다).
+const PAGE_SIZE = 50;
 
 type PublicLeague = {
   id: string;
@@ -48,7 +54,7 @@ export function PublicRanking({ classId }: { classId: string }) {
     try {
       const [{ data: lg, error: lgErr }, { data: ps, error: psErr }] = await Promise.all([
         apiFetchLeaguePublic(classId),
-        apiFetchStudentsPublic(classId),
+        apiFetchRankingPublic(classId),
       ]);
       if (lgErr) throw lgErr;
       if (psErr) throw psErr;
@@ -72,10 +78,11 @@ export function PublicRanking({ classId }: { classId: string }) {
   // 갱신 방식: 실시간(Realtime) 구독 대신 30초 폴링.
   //   공개 링크는 한 리그에 수백 명이 동시에 열 수 있는데, 실시간 구독은 열어둔 사람
   //   1명당 연결 1개를 계속 점유해 동시 연결 한도를 가장 먼저 소진시킨다.
-  //   순위표는 초 단위 최신성이 필요 없으므로 주기 조회로 충분하다.
+  //   순위표는 초 단위 최신성이 필요 없으므로 주기 조회로 충분하다(열람자 수만큼 곱해지는
+  //   조회이므로 주기는 넉넉하게 잡는다).
   //   탭이 가려져 있으면 쉬고, 다시 보일 때 한 번 당겨온다.
   useEffect(() => {
-    const REFRESH_MS = 30_000;
+    const REFRESH_MS = 60_000;
     let timer: ReturnType<typeof setInterval> | null = null;
 
     const start = () => {
@@ -111,13 +118,57 @@ export function PublicRanking({ classId }: { classId: string }) {
     [players],
   );
 
-  const ranked = useMemo(() => {
-    return [...players]
-      .map((p) => ({ ...p, wins: p.win_count ?? 0, losses: p.lose_count ?? 0 }))
-      .sort((a, b) => b.rp - a.rp);
+  const availableGroups = useMemo(() => {
+    const set = new Set<string>();
+    players.forEach((p) => { if (p.group_label) set.add(p.group_label); });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [players]);
 
-  const nameOf = (p: PublicPlayer) => p.display_name || p.nickname || "이름 미등록";
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [group, setGroup] = useState<string[]>([]);
+  const [grade, setGrade] = useState<number[]>([]);
+  const [classNum, setClassNum] = useState<number[]>([]);
+  const [tier, setTier] = useState<TierName[]>([]);
+  const [gender, setGender] = useState<GenderFilter>("all");
+  const [limit, setLimit] = useState(PAGE_SIZE);
+
+  const showGrade = isSchool && axes.varyGrade;
+  const showClass = isSchool && axes.varyClass;
+  const showGroup = !isSchool && availableGroups.length > 0;
+  const activeCount =
+    (showGroup && group.length > 0 ? 1 : 0) +
+    (showGrade && grade.length > 0 ? 1 : 0) +
+    (showClass && classNum.length > 0 ? 1 : 0) +
+    (tier.length > 0 ? 1 : 0) +
+    (gender !== "all" ? 1 : 0);
+  const resetFilters = () => { setGroup([]); setGrade([]); setClassNum([]); setTier([]); setGender("all"); };
+  const toggle = <T,>(set: (fn: (p: T[]) => T[]) => void) => (v: T) =>
+    set((p) => (p.includes(v) ? p.filter((x) => x !== v) : [...p, v]));
+  const toggleGroup = toggle<string>(setGroup);
+  const toggleGrade = toggle<number>(setGrade);
+  const toggleClass = toggle<number>(setClassNum);
+  const toggleTier = toggle<TierName>(setTier);
+
+  useEffect(() => { setLimit(PAGE_SIZE); }, [group, grade, classNum, tier, gender]);
+
+  // 순위는 필터로 고른 집합 안에서 다시 매긴다(랭킹 화면과 같은 규칙).
+  const ranked = useMemo(() => {
+    const thresholds = league?.tier_thresholds ?? undefined;
+    return players
+      .filter((p) =>
+        (!showGroup || group.length === 0 ? true : !!p.group_label && group.includes(p.group_label)) &&
+        (!showGrade || grade.length === 0 ? true : p.grade != null && grade.includes(p.grade)) &&
+        (!showClass || classNum.length === 0 ? true : p.class_num != null && classNum.includes(p.class_num)) &&
+        (gender === "all" ? true : p.gender === gender) &&
+        (tier.length === 0 ? true : tier.includes(getTier(p.rp, thresholds))))
+      .map((p) => ({ ...p, wins: p.win_count ?? 0, losses: p.lose_count ?? 0 }))
+      .sort((a, b) => b.rp - a.rp);
+  }, [players, league, group, grade, classNum, tier, gender, showGroup, showGrade, showClass]);
+
+  const shown = useMemo(() => ranked.slice(0, limit), [ranked, limit]);
+  const restCount = ranked.length - shown.length;
+
+  const nameOf = (p: PublicPlayer) => p.display_name || "이름 미등록";
 
   if (loading) {
     return (
@@ -151,7 +202,7 @@ export function PublicRanking({ classId }: { classId: string }) {
               {league.name}
             </h1>
             <p className="mt-1 text-[11px] text-muted-foreground">
-              {league.season} · 등록 {terms.member} {ranked.length}명 · 로그인 없이 볼 수 있는 공개 순위표입니다.
+              {league.season} · {activeCount > 0 ? `조건에 맞는 ${terms.member} ${ranked.length}명` : `등록 ${terms.member} ${players.length}명`} · 로그인 없이 볼 수 있는 공개 순위표입니다.
             </p>
           </div>
           <button
@@ -164,10 +215,89 @@ export function PublicRanking({ classId }: { classId: string }) {
         </div>
       </header>
 
-      <main className="mx-auto max-w-3xl px-4 py-6 sm:px-6">
+      <main className="mx-auto max-w-3xl space-y-3 px-4 py-6 sm:px-6">
+        {/* 필터 — 랭킹 화면과 같은 축(학교: 학년·반 / 동호회: 레벨, 공통: 티어·성별) */}
+        <div className="space-y-3">
+          <button
+            type="button"
+            onClick={() => setFiltersOpen((v) => !v)}
+            className="flex w-full items-center justify-between rounded-lg border border-border/60 bg-card/60 px-3 py-2 text-xs font-bold transition-all hover:border-neon-blue/40"
+          >
+            <span className="flex items-center gap-2">
+              <SlidersHorizontal className="size-4 text-neon-blue" /> 필터
+              {activeCount > 0 && (
+                <span className="rounded-full bg-neon-blue/15 px-1.5 py-0.5 text-[10px] text-neon-blue">{activeCount}</span>
+              )}
+            </span>
+            <ChevronDown className={cn("size-4 text-muted-foreground transition-transform", filtersOpen && "rotate-180")} />
+          </button>
+
+          {filtersOpen && (
+            <div className="space-y-3 rounded-xl border border-border/40 bg-card/40 p-3">
+              {showGroup && (
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">레벨</p>
+                  <div className="flex flex-wrap gap-2">
+                    <FilterChip active={group.length === 0} onClick={() => setGroup([])}>전체보기</FilterChip>
+                    {availableGroups.map((g) => (
+                      <FilterChip key={g} active={group.includes(g)} onClick={() => toggleGroup(g)}>{g}</FilterChip>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {showGrade && (
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">학년</p>
+                  <div className="flex flex-wrap gap-2">
+                    <FilterChip active={grade.length === 0} onClick={() => setGrade([])}>전체 학년</FilterChip>
+                    {axes.grades.map((g) => (
+                      <FilterChip key={g} active={grade.includes(g)} onClick={() => toggleGrade(g)}>{g}학년</FilterChip>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {showClass && (
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">반</p>
+                  <div className="flex flex-wrap gap-2">
+                    <FilterChip active={classNum.length === 0} onClick={() => setClassNum([])}>전체 반</FilterChip>
+                    {axes.classes.map((c) => (
+                      <FilterChip key={c} active={classNum.includes(c)} onClick={() => toggleClass(c)}>{c}반</FilterChip>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">티어</p>
+                <div className="flex flex-wrap gap-2">
+                  <FilterChip active={tier.length === 0} onClick={() => setTier([])}>전체 티어</FilterChip>
+                  {TIER_ORDER.map((t) => (
+                    <FilterChip key={t} active={tier.includes(t)} onClick={() => toggleTier(t)} tone={TIER_STYLES[t].text}>
+                      {TIER_STYLES[t].label}
+                    </FilterChip>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">성별</p>
+                <div className="flex flex-wrap gap-2">
+                  <FilterChip active={gender === "all"} onClick={() => setGender("all")}>전체</FilterChip>
+                  <FilterChip active={gender === "M"} onClick={() => setGender("M")}>남자 ♂</FilterChip>
+                  <FilterChip active={gender === "F"} onClick={() => setGender("F")}>여자 ♀</FilterChip>
+                </div>
+              </div>
+              {activeCount > 0 && (
+                <button type="button" onClick={resetFilters} className="text-[11px] font-bold text-muted-foreground underline hover:text-foreground">
+                  필터 전체 초기화
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
         {ranked.length === 0 ? (
           <p className="rounded-xl border border-dashed border-border/40 bg-muted/5 py-10 text-center text-xs text-muted-foreground">
-            아직 등록된 {terms.member}이 없습니다.
+            {activeCount > 0 ? "조건에 맞는 " + terms.member + "이 없습니다." : "아직 등록된 " + terms.member + "이 없습니다."}
           </p>
         ) : (
           <div className="overflow-x-auto rounded-xl border border-border/40">
@@ -182,7 +312,7 @@ export function PublicRanking({ classId }: { classId: string }) {
                 </tr>
               </thead>
               <tbody>
-                {ranked.map((p, i) => {
+                {shown.map((p, i) => {
                   const unranked = isUnranked(p, placementEnabled, placementGames);
                   return (
                     <tr key={p.id} className="border-t border-border/30">
@@ -214,6 +344,15 @@ export function PublicRanking({ classId }: { classId: string }) {
                 })}
               </tbody>
             </table>
+            {restCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setLimit((n) => n + PAGE_SIZE)}
+                className="w-full border-t border-border/40 py-2.5 text-xs font-bold text-muted-foreground transition-colors hover:text-foreground"
+              >
+                {Math.min(PAGE_SIZE, restCount)}명 더 보기 (남은 {restCount}명)
+              </button>
+            )}
           </div>
         )}
       </main>
