@@ -281,7 +281,11 @@ export function isUnranked(
   placementEnabled: boolean,
   placementGames: number,
 ): boolean {
-  return placementEnabled && s.wins + s.losses < placementGames;
+  const played = s.wins + s.losses;
+  // 한 경기도 안 뛴 사람은 순위를 매길 근거가 없다. 배치고사 기능을 껐더라도
+  // 기본 RP 그대로 중간에 끼어 있으면 순위표가 사실과 달라지므로 언랭크로 둔다.
+  if (played === 0) return true;
+  return placementEnabled && played < placementGames;
 }
 
 export const TIER_ORDER: TierName[] = ["Diamond", "Platinum", "Gold", "Silver", "Bronze"];

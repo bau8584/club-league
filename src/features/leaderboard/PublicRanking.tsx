@@ -160,18 +160,32 @@ export function PublicRanking({ classId }: { classId: string }) {
   useEffect(() => { setLimit(PAGE_SIZE); }, [group, grade, classNum, tier, gender]);
 
   // 순위는 필터로 고른 집합 안에서 다시 매긴다(랭킹 화면과 같은 규칙).
+  // 언랭크(경기 없음 / 배치고사 미완료)는 순위 없이 맨 아래에 이름순으로 붙인다.
   const ranked = useMemo(() => {
     const thresholds = league?.tier_thresholds ?? undefined;
-    return players
-      .filter((p) =>
-        (!showGroup || group.length === 0 ? true : !!p.group_label && group.includes(p.group_label)) &&
-        (!showGrade || grade.length === 0 ? true : p.grade != null && grade.includes(p.grade)) &&
-        (!showClass || classNum.length === 0 ? true : p.class_num != null && classNum.includes(p.class_num)) &&
-        (gender === "all" ? true : p.gender === gender) &&
-        (tier.length === 0 ? true : tier.includes(getTier(p.rp, thresholds))))
-      .map((p) => ({ ...p, wins: p.win_count ?? 0, losses: p.lose_count ?? 0 }))
-      .sort((a, b) => b.rp - a.rp);
-  }, [players, league, group, grade, classNum, tier, gender, showGroup, showGrade, showClass]);
+    const passes = (p: PublicPlayer) =>
+      (!showGroup || group.length === 0 ? true : !!p.group_label && group.includes(p.group_label)) &&
+      (!showGrade || grade.length === 0 ? true : p.grade != null && grade.includes(p.grade)) &&
+      (!showClass || classNum.length === 0 ? true : p.class_num != null && classNum.includes(p.class_num)) &&
+      (gender === "all" ? true : p.gender === gender);
+    const withStats = players.filter(passes).map((p) => ({ ...p, wins: p.win_count ?? 0, losses: p.lose_count ?? 0 }));
+
+    const rankedPart = withStats
+      .filter((p) => !isUnranked(p, placementEnabled, placementGames))
+      .filter((p) => (tier.length === 0 ? true : tier.includes(getTier(p.rp, thresholds))))
+      .sort((a, b) => b.rp - a.rp)
+      .map((p, i) => ({ p, rank: i + 1 as number | null }));
+
+    // 티어 필터가 걸려 있으면(특정 티어만 보기) 언랭크는 뺀다.
+    const unrankedPart = tier.length > 0
+      ? []
+      : withStats
+        .filter((p) => isUnranked(p, placementEnabled, placementGames))
+        .sort((a, b) => (a.display_name ?? "").localeCompare(b.display_name ?? "", "ko"))
+        .map((p) => ({ p, rank: null as number | null }));
+
+    return [...rankedPart, ...unrankedPart];
+  }, [players, league, group, grade, classNum, tier, gender, showGroup, showGrade, showClass, placementEnabled, placementGames]);
 
   const shown = useMemo(() => ranked.slice(0, limit), [ranked, limit]);
   const restCount = ranked.length - shown.length;
@@ -204,14 +218,11 @@ export function PublicRanking({ classId }: { classId: string }) {
           (me.classNum == null || p.class_num === me.classNum) &&
           p.student_no === me.studentNo
         : (p.display_name ?? "").trim() === me.name;
-    const idx = ranked.findIndex(hit);
-    if (idx >= 0) {
-      const p = ranked[idx];
-      return { p, rank: isUnranked(p, placementEnabled, placementGames) ? null : idx + 1, filteredOut: false };
-    }
+    const found = ranked.find((e) => hit(e.p));
+    if (found) return { p: found.p, rank: found.rank, filteredOut: false };
     const outside = players.find(hit);
     return outside ? { p: outside, rank: null, filteredOut: true } : null;
-  }, [me, ranked, players, placementEnabled, placementGames]);
+  }, [me, ranked, players]);
 
   const nameOf = (p: PublicPlayer) => p.display_name || "이름 미등록";
 
@@ -281,7 +292,7 @@ export function PublicRanking({ classId }: { classId: string }) {
             ) : (
               <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <span className="font-mono text-2xl font-black text-neon-blue tabular-nums">
-                  {myRank.rank === null ? "배치 중" : `#${myRank.rank}`}
+                  {myRank.rank === null ? (placementEnabled ? "배치 중" : "경기 없음") : `#${myRank.rank}`}
                 </span>
                 <span className="text-xs text-muted-foreground">/ {ranked.length}명</span>
                 <span className="flex items-center gap-1.5 text-sm font-bold">
@@ -412,20 +423,20 @@ export function PublicRanking({ classId }: { classId: string }) {
                 </tr>
               </thead>
               <tbody>
-                {shown.map((p, i) => {
-                  const unranked = isUnranked(p, placementEnabled, placementGames);
+                {shown.map(({ p, rank }, i) => {
+                  const unranked = rank === null;
                   return (
                     <tr key={p.id} className="border-t border-border/30">
                       <td className={cn(
                         "px-3 py-2 text-center font-mono font-black tabular-nums",
-                        i === 0 ? "text-tier-gold" : i === 1 ? "text-tier-silver" : i === 2 ? "text-tier-bronze" : "text-muted-foreground"
+                        rank === 1 ? "text-tier-gold" : rank === 2 ? "text-tier-silver" : rank === 3 ? "text-tier-bronze" : "text-muted-foreground"
                       )}>
-                        {unranked ? "-" : i + 1}
+                        {unranked ? "??" : rank}
                       </td>
                       <td className="px-2 py-2">
                         <button
                           type="button"
-                          onClick={() => setPicked({ p, rank: unranked ? null : i + 1 })}
+                          onClick={() => setPicked({ p, rank })}
                           className="flex w-full items-center gap-1.5 text-left font-bold transition-colors hover:text-neon-blue active:scale-[0.98]"
                         >
                           <GenderMark gender={p.gender} className="size-3.5 shrink-0 text-[9px]" />
@@ -481,7 +492,7 @@ export function PublicRanking({ classId }: { classId: string }) {
                   <TierBadge rp={p.rp} thresholds={league.tier_thresholds ?? undefined} unranked={rank === null} />
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <Stat label="순위" value={rank === null ? "배치 중" : `#${rank}`} />
+                  <Stat label="순위" value={rank === null ? (placementEnabled ? "배치 중" : "경기 없음") : `#${rank}`} />
                   <Stat label="RP" value={String(p.rp)} />
                   <Stat label={isSchool ? "소속" : "레벨"} value={belong || "-"} />
                   <Stat label="전적" value={`${wins}승 ${losses}패`} />
