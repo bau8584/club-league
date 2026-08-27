@@ -515,7 +515,7 @@ export function LeagueApp({ classId }: { classId: string }) {
         <PushPrompt leagueId={classId} />
 
         {/* 관리자 QR 초대 다이얼로그 */}
-        <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} classId={classId} leagueName={title} defaultMode={shareMode} allowRanking={isSchool} />
+        <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} classId={classId} leagueName={title} defaultMode={shareMode} allowRanking={isSchool} allowInvite={!isSchool} />
 
         {/* Tenant Panels */}
         {tab === "seasonSummary" && currentViewSeason !== "현재 시즌" && (
