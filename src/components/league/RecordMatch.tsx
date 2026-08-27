@@ -1155,15 +1155,16 @@ export function RecordMatch({
           return `${team} · ${who}`;
         };
 
+        // 넓은 화면(태블릿 가로·데스크톱): 왼쪽 대진 / 오른쪽 단계 패널.
+        // 좁은 화면: 한 번에 하나 — 슬롯을 누르면 대진 자리에 선수 목록이 들어온다.
+        // 선수 목록을 별도 팝업으로 띄우지 않는 이유는, 동호회에서는 이 폼 자체가
+        // 이미 팝업 안에 들어 있어 팝업이 겹치기 때문이다.
+        // 두 칸의 높이는 같게 묶고, 넘치는 내용은 각 칸 안에서만 스크롤한다.
+        // 등록 버튼은 두 칸 아래 전체 폭에 둔다 — 한쪽에 치우쳐 있으면 가로 화면에서
+        // 눈에 잘 띄지 않는다.
         return (
-          // 넓은 화면(태블릿 가로·데스크톱): 왼쪽 대진 / 오른쪽 단계 패널.
-          // 좁은 화면: 한 번에 하나 — 슬롯을 누르면 대진 자리에 선수 목록이 들어온다.
-          // 선수 목록을 별도 팝업으로 띄우지 않는 이유는, 동호회에서는 이 폼 자체가
-          // 이미 팝업 안에 들어 있어 팝업이 겹치기 때문이다.
-          // 넓은 화면에서는 두 칸의 높이를 같게 묶고, 넘치는 내용은 각 칸 안에서만
-          // 스크롤한다. 오른쪽 목록 때문에 페이지 전체가 길어져 왼쪽 대진이 화면 밖으로
-          // 밀려나던 문제를 없앤다.
-          <div className="lg:grid lg:h-[clamp(26rem,calc(100vh-15rem),46rem)] lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:items-stretch lg:gap-4">
+          <div className="space-y-3">
+          <div className="lg:grid lg:h-[clamp(26rem,calc(100vh-15rem),46rem)] lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.4fr)] lg:items-stretch lg:gap-4">
             <div className={cn("space-y-3 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:pr-1", act && "hidden lg:block")}>
               <TeamBlock title="팀 A" accent="amber" cols={matchType === "double" ? 2 : 1}>
                 {renderSlot("A", matchType === "double" ? "선수 1" : "선수 A")}
@@ -1226,27 +1227,30 @@ export function RecordMatch({
                       />
                     </div>
                   </Card>
-
-                  <Button
-                    size="lg"
-                    onClick={submit}
-                    disabled={isSyncing}
-                    className="h-14 w-full bg-gradient-to-r from-neon-blue to-tier-diamond text-base font-bold text-primary-foreground glow-primary hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {isSyncing ? (
-                      <>
-                        <span className="mr-2 size-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                        경기 결과 등록 중...
-                      </>
-                    ) : (
-                      <>
-                        <Trophy className="mr-2 size-5" /> 경기 결과 등록
-                      </>
-                    )}
-                  </Button>
                 </>
               )}
             </div>
+          </div>
+
+          {allPicked && !act && (
+            <Button
+              size="lg"
+              onClick={submit}
+              disabled={isSyncing}
+              className="h-14 w-full bg-gradient-to-r from-neon-blue to-tier-diamond text-base font-bold text-primary-foreground glow-primary hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSyncing ? (
+                <>
+                  <span className="mr-2 size-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  경기 결과 등록 중...
+                </>
+              ) : (
+                <>
+                  <Trophy className="mr-2 size-5" /> 경기 결과 등록
+                </>
+              )}
+            </Button>
+          )}
           </div>
         );
       })()}
@@ -2002,7 +2006,10 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
   const [grp, setGrp] = useState<string>(group ?? ALL_GROUP);
   const [addOpen, setAddOpen] = useState(false);
   // 범위를 다 고르고 나면 칩을 접는다. 선수 목록이 세로로 눌리는 걸 막기 위해서다.
-  const [filtersOpen, setFiltersOpen] = useState(true);
+  // 지난번에 고른 범위가 남아 있으면(새로고침 등) 처음부터 접힌 채로 연다.
+  const [filtersOpen, setFiltersOpen] = useState(
+    () => !(isSchool ? (filter.grade != null || filter.classNum != null) : !!group),
+  );
   // school 리그: 레벨(급수) 대신 학년/반으로 좁힌다. 상태는 부모(RecordMatch)가 유지한다.
   const gradeF = filter.grade;
   const classF = filter.classNum;
@@ -2089,7 +2096,7 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
         <div className="shrink-0 space-y-2">
           {activeGrades.length > 0 && (
             <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
-              <Chip active={gradeF === null} accent={accent} onClick={() => onFilterChange({ grade: null, classNum: null })}>전체 학년</Chip>
+              <Chip active={gradeF === null} accent={accent} onClick={() => { onFilterChange({ grade: null, classNum: null }); setFiltersOpen(false); }}>전체 학년</Chip>
               {activeGrades.map((g) => (
                 <Chip key={g} active={gradeF === g} accent={accent} onClick={() => { onFilterChange({ grade: g, classNum: null }); if (!axes.varyClass) setFiltersOpen(false); }}>{g}학년</Chip>
               ))}
@@ -2099,7 +2106,7 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
           {(gradeF !== null || activeGrades.length === 0) && activeClasses.length > 0 && (
             <div className="ml-2 border-l-2 border-border/50 pl-2">
               <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-8 xl:grid-cols-11">
-                <Chip size="sm" active={classF === null} accent={accent} onClick={() => onFilterChange({ grade: gradeF, classNum: null })}>전체</Chip>
+                <Chip size="sm" active={classF === null} accent={accent} onClick={() => { onFilterChange({ grade: gradeF, classNum: null }); setFiltersOpen(false); }}>전체</Chip>
                 {activeClasses.map((c) => (
                   <Chip key={c} size="sm" active={classF === c} accent={accent} onClick={() => { onFilterChange({ grade: gradeF, classNum: c }); setFiltersOpen(false); }}>{c}반</Chip>
                 ))}
@@ -2109,27 +2116,27 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
         </div>
       ) : (
         <div className="grid shrink-0 grid-cols-4 gap-2 sm:grid-cols-7">
-          <Chip active={grp === ALL_GROUP} accent={accent} onClick={() => setGrp(ALL_GROUP)}>전체</Chip>
+          <Chip active={grp === ALL_GROUP} accent={accent} onClick={() => { setGrp(ALL_GROUP); setFiltersOpen(false); }}>전체</Chip>
           {activeGroups.map((g) => (
             <Chip key={g} active={grp === g} accent={accent} onClick={() => { setGrp(g); setFiltersOpen(false); }}>{g}</Chip>
           ))}
         </div>
       )}
       {/* 명단이 길어도 이 칸 안에서만 스크롤한다(페이지가 따라 내려가지 않도록). */}
-      <div className="mt-1 grid max-h-[55vh] min-h-0 flex-1 grid-cols-[repeat(auto-fill,minmax(6.5rem,1fr))] gap-2 overflow-y-auto pr-1 lg:max-h-none">
+      <div className="mt-1 grid max-h-[55vh] min-h-0 flex-1 grid-cols-[repeat(auto-fill,minmax(5.5rem,1fr))] gap-2 overflow-y-auto pr-1 lg:max-h-none">
         {roster.map((s) => (
           <button
             key={s.id}
             type="button"
             onClick={() => onPick(grp, s.id)}
-            className="relative flex min-h-[4.75rem] w-full flex-col items-center justify-between overflow-hidden rounded-lg border border-border/60 bg-surface-deep px-2 pt-6 pb-2.5 text-center transition-all hover:border-neon-blue/60 hover:bg-accent/40 cursor-pointer"
+            className="relative flex min-h-[4.75rem] w-full min-w-0 flex-col items-center justify-between overflow-hidden rounded-lg border border-border/60 bg-surface-deep px-1.5 pt-6 pb-2.5 text-center transition-all hover:border-neon-blue/60 hover:bg-accent/40 cursor-pointer"
           >
             {(isSchool ? schoolLabelCompact(s, axes) : s.group) && (
               <span className="absolute top-1 left-1.5 max-w-[60%] truncate text-left font-mono text-[10px] text-soft">{isSchool ? schoolLabelCompact(s, axes) : s.group}</span>
             )}
             <GenderMark gender={s.gender} className="absolute top-1 right-1.5 size-3.5 text-[9px] shrink-0" />
             <div className="flex w-full min-w-0 flex-grow items-center justify-center">
-              <span className="w-full break-keep text-center text-sm font-bold text-strong">{playerLabel(s)}</span>
+              <span className="w-full truncate text-center text-sm font-bold text-strong">{playerLabel(s)}</span>
             </div>
             <div className="mt-1.5 flex w-full shrink-0 justify-center"><TierBadge rp={s.rp} thresholds={thresholds} unranked={isUnranked(s, placementEnabled, placementGames)} /></div>
           </button>
