@@ -5,7 +5,7 @@ import { TierBadge } from "./TierBadge";
 import { AddMemberForm } from "./AddMemberForm";
 import { GenderMark } from "./GenderMark";
 import { cn } from "@/lib/utils";
-import { Trophy, X, Sparkles, User, Users, Crown, Award, Zap, RotateCcw, UserPlus, Lock, LockOpen } from "lucide-react";
+import { Trophy, X, Sparkles, User, Users, Crown, Award, Zap, RotateCcw, UserPlus, Lock, LockOpen, ChevronDown } from "lucide-react";
 import type { Student, Match, TierName } from "@/lib/league-types";
 import { getTier, getTierSubdivision, TIER_ORDER, getFullTierLabel, isUnranked, schoolLabelCompact, schoolAxesOf } from "@/lib/league-types";
 import { toast } from "sonner";
@@ -1179,19 +1179,9 @@ export function RecordMatch({
             <div className="mt-3 flex flex-col gap-3 lg:mt-0 lg:h-full lg:min-h-0">
               {act && activeSlot ? (
                 <div className="flex min-h-0 flex-1 flex-col gap-2">
-                  <div className="flex shrink-0 items-center justify-between gap-2">
-                    <span className="text-xs font-black text-foreground">
-                      {slotTitle(activeSlot)} <span className="text-muted-foreground">고르는 중</span>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setActiveSlot(null)}
-                      className="rounded-lg border border-border/60 bg-card/60 px-2.5 py-1 text-[11px] font-bold text-muted-foreground transition-all hover:text-foreground active:scale-95 cursor-pointer"
-                    >
-                      대진으로
-                    </button>
-                  </div>
                   <PlayerPicker
+                    title={slotTitle(activeSlot)}
+                    onBack={() => setActiveSlot(null)}
                     students={students}
                     accent={act.accent}
                     group={act.value.group}
@@ -1994,12 +1984,16 @@ function Slot({ accent, label, player, active, locked, onOpen, onClear, threshol
 }
 
 // 선수 선택 picker: 검색 → 레벨 칩 → 선수 목록 (한 번에 1개만 펼쳐짐)
-function PlayerPicker({ students, accent, group, onPick, thresholds, placementEnabled, placementGames, canAddMember, filter, onFilterChange }: {
+function PlayerPicker({ students, accent, group, onPick, thresholds, placementEnabled, placementGames, canAddMember, filter, onFilterChange, title, onBack }: {
   students: Student[]; accent: Accent; group: string | null;
   onPick: (group: string, studentId: string) => void; thresholds?: Record<string, number>;
   placementEnabled: boolean; placementGames: number; canAddMember?: boolean;
   // 학년/반 필터는 부모가 소유한다(슬롯을 옮겨도 유지되도록).
   filter: PickerFilter; onFilterChange: (next: PickerFilter) => void;
+  /** 지금 채우는 자리 이름 — 도구줄에 함께 놓는다. */
+  title?: string;
+  /** 대진으로 돌아가기 */
+  onBack?: () => void;
 }) {
   const terms = useLeagueTerms();
   const isSchool = useIsSchoolLeague();
@@ -2007,6 +2001,8 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
   const [search, setSearch] = useState("");
   const [grp, setGrp] = useState<string>(group ?? ALL_GROUP);
   const [addOpen, setAddOpen] = useState(false);
+  // 범위를 다 고르고 나면 칩을 접는다. 선수 목록이 세로로 눌리는 걸 막기 위해서다.
+  const [filtersOpen, setFiltersOpen] = useState(true);
   // school 리그: 레벨(급수) 대신 학년/반으로 좁힌다. 상태는 부모(RecordMatch)가 유지한다.
   const gradeF = filter.grade;
   const classF = filter.classNum;
@@ -2033,6 +2029,11 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
     return Array.from(set).sort((x, y) => x - y);
   }, [students, gradeF, axes.varyClass]);
 
+  // 도구줄에 띄울 현재 범위 요약 — 접었을 때 무엇으로 좁혀져 있는지 알 수 있어야 한다.
+  const scopeLabel = isSchool
+    ? [gradeF != null ? `${gradeF}학년` : null, classF != null ? `${classF}반` : null].filter(Boolean).join(" ") || "전체"
+    : (grp === ALL_GROUP ? "전체" : grp);
+
   const roster = useMemo(() => {
     const q = search.trim().toLowerCase();
     return students
@@ -2052,15 +2053,37 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
 
   return (
     <Card className={cn("flex h-full min-h-0 flex-col border p-3 backdrop-blur", a.border)}>
-      {/* 검색을 레벨 위에 */}
-      <input
-        type="text"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder={`${terms.nameLabel} 검색`}
-        className="mb-3 w-full shrink-0 rounded-lg border border-border/60 bg-surface-deep px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-neon-blue/60 focus:outline-none"
-      />
-      {isSchool ? (
+      {/* 제목·범위·검색·되돌아가기를 한 줄에 묶는다. 각각 한 줄씩 차지하면
+          정작 선수 목록이 볼 자리가 없다. */}
+      <div className="mb-2 flex shrink-0 items-center gap-1.5">
+        {title && <span className={cn("shrink-0 text-[11px] font-black", a.text)}>{title}</span>}
+        <button
+          type="button"
+          onClick={() => setFiltersOpen((v) => !v)}
+          title="범위 바꾸기"
+          className="flex shrink-0 items-center gap-1 rounded-lg border border-border/60 bg-card/60 px-2 py-1 text-[11px] font-bold text-foreground transition-all hover:border-neon-blue/50 active:scale-95 cursor-pointer"
+        >
+          {scopeLabel}
+          <ChevronDown className={cn("size-3 text-muted-foreground transition-transform", filtersOpen && "rotate-180")} />
+        </button>
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder={terms.nameLabel}
+          className="h-7 min-w-0 flex-1 rounded-lg border border-border/60 bg-surface-deep px-2.5 text-xs text-foreground placeholder:text-muted-foreground focus:border-neon-blue/60 focus:outline-none"
+        />
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="shrink-0 rounded-lg border border-border/60 bg-card/60 px-2 py-1 text-[11px] font-bold text-muted-foreground transition-all hover:text-foreground active:scale-95 cursor-pointer"
+          >
+            대진으로
+          </button>
+        )}
+      </div>
+      {!filtersOpen ? null : isSchool ? (
         // 학년을 고른 다음에 그 학년의 반이 열린다. 학년과 반을 같은 크기로 나란히 두면
         // 같은 위계로 읽히고, 반이 10개만 돼도 줄이 넘쳐 화면을 잡아먹는다.
         <div className="shrink-0 space-y-2">
@@ -2068,7 +2091,7 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
             <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
               <Chip active={gradeF === null} accent={accent} onClick={() => onFilterChange({ grade: null, classNum: null })}>전체 학년</Chip>
               {activeGrades.map((g) => (
-                <Chip key={g} active={gradeF === g} accent={accent} onClick={() => onFilterChange({ grade: g, classNum: null })}>{g}학년</Chip>
+                <Chip key={g} active={gradeF === g} accent={accent} onClick={() => { onFilterChange({ grade: g, classNum: null }); if (!axes.varyClass) setFiltersOpen(false); }}>{g}학년</Chip>
               ))}
             </div>
           )}
@@ -2078,7 +2101,7 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
               <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-8 xl:grid-cols-11">
                 <Chip size="sm" active={classF === null} accent={accent} onClick={() => onFilterChange({ grade: gradeF, classNum: null })}>전체</Chip>
                 {activeClasses.map((c) => (
-                  <Chip key={c} size="sm" active={classF === c} accent={accent} onClick={() => onFilterChange({ grade: gradeF, classNum: c })}>{c}반</Chip>
+                  <Chip key={c} size="sm" active={classF === c} accent={accent} onClick={() => { onFilterChange({ grade: gradeF, classNum: c }); setFiltersOpen(false); }}>{c}반</Chip>
                 ))}
               </div>
             </div>
@@ -2088,12 +2111,12 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
         <div className="grid shrink-0 grid-cols-4 gap-2 sm:grid-cols-7">
           <Chip active={grp === ALL_GROUP} accent={accent} onClick={() => setGrp(ALL_GROUP)}>전체</Chip>
           {activeGroups.map((g) => (
-            <Chip key={g} active={grp === g} accent={accent} onClick={() => setGrp(g)}>{g}</Chip>
+            <Chip key={g} active={grp === g} accent={accent} onClick={() => { setGrp(g); setFiltersOpen(false); }}>{g}</Chip>
           ))}
         </div>
       )}
       {/* 명단이 길어도 이 칸 안에서만 스크롤한다(페이지가 따라 내려가지 않도록). */}
-      <div className="mt-3 grid max-h-[55vh] min-h-0 flex-1 grid-cols-3 gap-2 overflow-y-auto pr-1 sm:grid-cols-4 md:grid-cols-5 lg:max-h-none lg:grid-cols-3 xl:grid-cols-4">
+      <div className="mt-1 grid max-h-[55vh] min-h-0 flex-1 grid-cols-[repeat(auto-fill,minmax(6.5rem,1fr))] gap-2 overflow-y-auto pr-1 lg:max-h-none">
         {roster.map((s) => (
           <button
             key={s.id}
