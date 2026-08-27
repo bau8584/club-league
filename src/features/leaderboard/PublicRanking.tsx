@@ -171,6 +171,8 @@ export function PublicRanking({ classId }: { classId: string }) {
     const withStats = players.filter(passes).map((p) => ({ ...p, wins: p.win_count ?? 0, losses: p.lose_count ?? 0 }));
 
     const rankedPart = withStats
+      // 서버(get_ranking_public)가 이미 걸러 보내지만, 마이그레이션 적용 전 배포에서도
+      // 화면이 어긋나지 않도록 같은 규칙을 한 번 더 건다.
       .filter((p) => !isUnranked(p, placementEnabled, placementGames))
       .filter((p) => (tier.length === 0 ? true : tier.includes(getTier(p.rp, thresholds))))
       .sort((a, b) => b.rp - a.rp)
@@ -183,11 +185,6 @@ export function PublicRanking({ classId }: { classId: string }) {
 
   const shown = useMemo(() => ranked.slice(0, limit), [ranked, limit]);
   const restCount = ranked.length - shown.length;
-  // 표에서 빠진 인원(경기 기록 없음) — 숫자만 알린다.
-  const hiddenCount = useMemo(
-    () => players.filter((p) => isUnranked({ wins: p.win_count ?? 0, losses: p.lose_count ?? 0 }, placementEnabled, placementGames)).length,
-    [players, placementEnabled, placementGames],
-  );
 
   // "내 순위" — 브라우저에만 저장하는 본인 식별값(서버로 보내지 않는다).
   const meStorageKey = `ranking-me-${classId}`;
@@ -218,16 +215,12 @@ export function PublicRanking({ classId }: { classId: string }) {
           p.student_no === me.studentNo
         : (p.display_name ?? "").trim() === me.name;
     const found = ranked.find((e) => hit(e.p));
-    if (found) return { p: found.p, rank: found.rank, filteredOut: false, noGames: false };
+    if (found) return { p: found.p, rank: found.rank, filteredOut: false, gone: false };
     const outside = players.find(hit);
-    if (!outside) return null;
-    const noGames = isUnranked(
-      { wins: outside.win_count ?? 0, losses: outside.lose_count ?? 0 },
-      placementEnabled,
-      placementGames,
-    );
-    return { p: outside, rank: null, filteredOut: !noGames, noGames };
-  }, [me, ranked, players, placementEnabled, placementGames]);
+    // 순위가 없는 사람은 공개 목록 자체에 없다(서버에서 거른다).
+    if (!outside) return { p: null, rank: null, filteredOut: false, gone: true };
+    return { p: outside, rank: null, filteredOut: true, gone: false };
+  }, [me, ranked, players]);
 
   const nameOf = (p: PublicPlayer) => p.display_name || "이름 미등록";
 
@@ -263,7 +256,7 @@ export function PublicRanking({ classId }: { classId: string }) {
               {league.name}
             </h1>
             <p className="mt-1 text-[11px] text-muted-foreground">
-              {league.season} · {activeCount > 0 ? `조건에 맞는 ${terms.member} ${ranked.length}명` : `등록 ${terms.member} ${players.length}명`} · 로그인 없이 볼 수 있는 공개 순위표입니다.
+              {league.season} · {`${activeCount > 0 ? "조건에 맞는 " : ""}${terms.member} ${ranked.length}명`} · 로그인 없이 볼 수 있는 공개 순위표입니다.
             </p>
           </div>
           <button
@@ -289,20 +282,19 @@ export function PublicRanking({ classId }: { classId: string }) {
                 <button type="button" onClick={() => saveMe(null)} title="해제" className="text-muted-foreground hover:text-foreground"><X className="size-3.5" /></button>
               </div>
             </div>
-            {myRank.noGames ? (
+            {myRank.gone ? (
               <p className="mt-1.5 text-xs text-muted-foreground">
-                {nameOf(myRank.p)} 님은 아직 {placementEnabled ? "배치 경기를 마치지 않아" : "경기 기록이 없어"} 순위가 없습니다.
-                경기를 치르면 순위표에 올라갑니다.
+                아직 순위가 없습니다. 경기를 치르면 순위표에 올라갑니다.
               </p>
-            ) : myRank.filteredOut ? (
+            ) : myRank.filteredOut && myRank.p ? (
               <p className="mt-1.5 text-xs text-muted-foreground">
                 {nameOf(myRank.p)} 님은 지금 걸어둔 필터 조건에 포함되지 않습니다.{" "}
                 <button type="button" onClick={resetFilters} className="font-bold text-neon-blue underline">필터 초기화</button>
               </p>
-            ) : (
+            ) : myRank.p ? (
               <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <span className="font-mono text-2xl font-black text-neon-blue tabular-nums">
-                  {myRank.rank === null ? (placementEnabled ? "배치 중" : "경기 없음") : `#${myRank.rank}`}
+                  {myRank.rank === null ? "순위 없음" : `#${myRank.rank}`}
                 </span>
                 <span className="text-xs text-muted-foreground">/ {ranked.length}명</span>
                 <span className="flex items-center gap-1.5 text-sm font-bold">
@@ -314,7 +306,7 @@ export function PublicRanking({ classId }: { classId: string }) {
                   {myRank.p.win_count ?? 0}승 {myRank.p.lose_count ?? 0}패
                 </span>
               </div>
-            )}
+            ) : null}
           </div>
         ) : (
           <button
@@ -420,9 +412,7 @@ export function PublicRanking({ classId }: { classId: string }) {
           <p className="rounded-xl border border-dashed border-border/40 bg-muted/5 py-10 text-center text-xs text-muted-foreground">
             {activeCount > 0
               ? `조건에 맞는 ${terms.member}이 없습니다.`
-              : players.length === 0
-                ? `아직 등록된 ${terms.member}이 없습니다.`
-                : "아직 경기 기록이 없습니다. 첫 경기가 끝나면 순위가 올라갑니다."}
+              : "아직 경기 기록이 없습니다. 첫 경기가 끝나면 순위가 올라갑니다."}
           </p>
         ) : (
           <div className="overflow-x-auto rounded-xl border border-border/40">
@@ -473,9 +463,9 @@ export function PublicRanking({ classId }: { classId: string }) {
                 })}
               </tbody>
             </table>
-            {restCount === 0 && hiddenCount > 0 && (
+            {restCount === 0 && (
               <p className="border-t border-border/40 py-2.5 text-center text-[11px] text-muted-foreground">
-                아직 경기 기록이 없는 {hiddenCount}명은 표시되지 않았습니다.
+                아직 경기 기록이 없는 {terms.member}은 표시되지 않습니다.
               </p>
             )}
             {restCount > 0 && (
@@ -600,7 +590,7 @@ function MeSetup({
                   {p.student_no}번 {nameOf(p)}
                 </button>
               ))}
-              {candidates.length === 0 && <p className="text-[11px] text-muted-foreground">해당 반에 등록된 번호가 없습니다.</p>}
+              {candidates.length === 0 && <p className="text-[11px] text-muted-foreground">아직 이 반에는 경기 기록이 있는 사람이 없습니다.</p>}
             </div>
           )}
         </>
@@ -627,7 +617,9 @@ function MeSetup({
         </>
       )}
 
-      <p className="text-[11px] text-muted-foreground">고른 값은 이 브라우저에만 저장되고 서버로 보내지 않습니다.</p>
+      <p className="text-[11px] text-muted-foreground">
+        내 번호가 보이지 않으면 아직 경기 기록이 없는 것입니다. 고른 값은 이 브라우저에만 저장되고 서버로 보내지 않습니다.
+      </p>
     </div>
   );
 }
