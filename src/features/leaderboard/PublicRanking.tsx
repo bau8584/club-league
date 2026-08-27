@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { getTier, isUnranked, schoolLabelCompact, schoolAxesOf, TIER_ORDER, TIER_STYLES, type Gender, type TierName } from "@/lib/league-types";
 import { FilterChip } from "@/features/leaderboard/Leaderboard";
 import { termsFor } from "@/lib/league-terms";
-import { Trophy, RefreshCw, SlidersHorizontal, ChevronDown } from "lucide-react";
+import { Trophy, RefreshCw, SlidersHorizontal, ChevronDown, UserSearch, X } from "lucide-react";
 
 // get_ranking_public RPC 가 내려주는 모양. 학교 리그의 display_name 은 서버에서 마스킹된 이름이다.
 type PublicPlayer = {
@@ -24,6 +24,11 @@ type PublicPlayer = {
 };
 
 type GenderFilter = "all" | "M" | "F";
+
+/** 브라우저에만 저장하는 본인 식별값. 학교는 학년·반·번호, 동호회는 표시 이름. */
+type MeKey =
+  | { kind: "school"; grade: number | null; classNum: number | null; studentNo: number }
+  | { kind: "club"; name: string };
 
 // 순위표는 50명씩 끊어 그린다(수백 행을 한 번에 그리면 필터 조작이 눈에 띄게 느려진다).
 const PAGE_SIZE = 50;
@@ -171,6 +176,43 @@ export function PublicRanking({ classId }: { classId: string }) {
   const shown = useMemo(() => ranked.slice(0, limit), [ranked, limit]);
   const restCount = ranked.length - shown.length;
 
+  // "내 순위" — 브라우저에만 저장하는 본인 식별값(서버로 보내지 않는다).
+  const meStorageKey = `ranking-me-${classId}`;
+  const [me, setMe] = useState<MeKey | null>(null);
+  const [meFormOpen, setMeFormOpen] = useState(false);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(meStorageKey);
+      setMe(raw ? (JSON.parse(raw) as MeKey) : null);
+    } catch { setMe(null); }
+  }, [meStorageKey]);
+  const saveMe = (v: MeKey | null) => {
+    setMe(v);
+    setMeFormOpen(false);
+    try {
+      if (v) localStorage.setItem(meStorageKey, JSON.stringify(v));
+      else localStorage.removeItem(meStorageKey);
+    } catch { /* 시크릿 모드 등 — 저장만 안 될 뿐 이번 세션에서는 동작한다 */ }
+  };
+
+  // 지금 화면(필터 적용 후)에서 내가 몇 등인지. 필터에 걸려 빠졌으면 그 사실을 알려준다.
+  const myRank = useMemo(() => {
+    if (!me) return null;
+    const hit = (p: PublicPlayer) =>
+      me.kind === "school"
+        ? (me.grade == null || p.grade === me.grade) &&
+          (me.classNum == null || p.class_num === me.classNum) &&
+          p.student_no === me.studentNo
+        : (p.display_name ?? "").trim() === me.name;
+    const idx = ranked.findIndex(hit);
+    if (idx >= 0) {
+      const p = ranked[idx];
+      return { p, rank: isUnranked(p, placementEnabled, placementGames) ? null : idx + 1, filteredOut: false };
+    }
+    const outside = players.find(hit);
+    return outside ? { p: outside, rank: null, filteredOut: true } : null;
+  }, [me, ranked, players, placementEnabled, placementGames]);
+
   const nameOf = (p: PublicPlayer) => p.display_name || "이름 미등록";
 
   if (loading) {
@@ -219,6 +261,61 @@ export function PublicRanking({ classId }: { classId: string }) {
       </header>
 
       <main className="mx-auto max-w-3xl space-y-3 px-4 py-6 sm:px-6">
+        {/* 내 순위 — 표의 50명 페이징과 무관하게 항상 위에 고정된다. 추가 조회 없음. */}
+        {me && myRank ? (
+          <div className="rounded-xl border border-neon-blue/40 bg-neon-blue/5 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[10px] font-black uppercase tracking-wider text-neon-blue">
+                내 순위{activeCount > 0 && " · 필터 기준"}
+              </p>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => setMeFormOpen(true)} className="text-[10px] font-bold text-muted-foreground underline hover:text-foreground">변경</button>
+                <button type="button" onClick={() => saveMe(null)} title="해제" className="text-muted-foreground hover:text-foreground"><X className="size-3.5" /></button>
+              </div>
+            </div>
+            {myRank.filteredOut ? (
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                {nameOf(myRank.p)} 님은 지금 걸어둔 필터 조건에 포함되지 않습니다.{" "}
+                <button type="button" onClick={resetFilters} className="font-bold text-neon-blue underline">필터 초기화</button>
+              </p>
+            ) : (
+              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="font-mono text-2xl font-black text-neon-blue tabular-nums">
+                  {myRank.rank === null ? "배치 중" : `#${myRank.rank}`}
+                </span>
+                <span className="text-xs text-muted-foreground">/ {ranked.length}명</span>
+                <span className="flex items-center gap-1.5 text-sm font-bold">
+                  <GenderMark gender={myRank.p.gender} className="size-3.5 shrink-0 text-[9px]" />
+                  {nameOf(myRank.p)}
+                </span>
+                <TierBadge rp={myRank.p.rp} thresholds={league.tier_thresholds ?? undefined} unranked={myRank.rank === null} />
+                <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                  {myRank.p.win_count ?? 0}승 {myRank.p.lose_count ?? 0}패
+                </span>
+              </div>
+            )}
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setMeFormOpen(true)}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-border/60 bg-card/40 px-3 py-2.5 text-xs font-bold text-muted-foreground transition-all hover:border-neon-blue/40 hover:text-foreground"
+          >
+            <UserSearch className="size-4 text-neon-blue" /> 내 순위 찾기
+          </button>
+        )}
+
+        {meFormOpen && (
+          <MeSetup
+            isSchool={isSchool}
+            players={players}
+            axes={axes}
+            nameOf={nameOf}
+            onCancel={() => setMeFormOpen(false)}
+            onSave={saveMe}
+          />
+        )}
+
         {/* 필터 — 랭킹 화면과 같은 축(학교: 학년·반 / 동호회: 레벨, 공통: 티어·성별) */}
         <div className="space-y-3">
           <button
@@ -399,6 +496,108 @@ export function PublicRanking({ classId }: { classId: string }) {
           })()}
         </DrawerContent>
       </Drawer>
+    </div>
+  );
+}
+
+/** 내 순위 지정 폼 — 명부에 실제로 있는 값만 고르게 해서 오타로 못 찾는 일을 없앤다. */
+function MeSetup({
+  isSchool, players, axes, nameOf, onSave, onCancel,
+}: {
+  isSchool: boolean;
+  players: PublicPlayer[];
+  axes: ReturnType<typeof schoolAxesOf>;
+  nameOf: (p: PublicPlayer) => string;
+  onSave: (v: MeKey) => void;
+  onCancel: () => void;
+}) {
+  const [grade, setGrade] = useState<number | null>(axes.varyGrade ? null : (axes.grades[0] ?? null));
+  const [classNum, setClassNum] = useState<number | null>(axes.varyClass ? null : (axes.classes[0] ?? null));
+  const [q, setQ] = useState("");
+
+  // 고른 학년·반에 실제로 있는 번호만 보여준다.
+  const candidates = useMemo(
+    () =>
+      players
+        .filter((p) => (grade == null || p.grade === grade) && (classNum == null || p.class_num === classNum))
+        .filter((p) => p.student_no != null)
+        .sort((a, b) => (a.student_no ?? 0) - (b.student_no ?? 0)),
+    [players, grade, classNum],
+  );
+
+  const nameHits = useMemo(() => {
+    const k = q.trim().toLowerCase();
+    if (!k) return [];
+    return players.filter((p) => (p.display_name ?? "").toLowerCase().includes(k)).slice(0, 20);
+  }, [players, q]);
+
+  const selectCls = "h-9 rounded-lg border border-border/60 bg-input/50 px-2 text-xs font-bold";
+
+  return (
+    <div className="space-y-3 rounded-xl border border-border/40 bg-card/40 p-3">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-black">내 순위 찾기</p>
+        <button type="button" onClick={onCancel} className="text-muted-foreground hover:text-foreground"><X className="size-4" /></button>
+      </div>
+
+      {isSchool ? (
+        <>
+          <div className="flex flex-wrap gap-2">
+            {axes.varyGrade && (
+              <select className={selectCls} value={grade ?? ""} onChange={(e) => setGrade(e.target.value ? Number(e.target.value) : null)}>
+                <option value="">학년 선택</option>
+                {axes.grades.map((g) => <option key={g} value={g}>{g}학년</option>)}
+              </select>
+            )}
+            {axes.varyClass && (
+              <select className={selectCls} value={classNum ?? ""} onChange={(e) => setClassNum(e.target.value ? Number(e.target.value) : null)}>
+                <option value="">반 선택</option>
+                {axes.classes.map((c) => <option key={c} value={c}>{c}반</option>)}
+              </select>
+            )}
+          </div>
+          {(axes.varyGrade && grade == null) || (axes.varyClass && classNum == null) ? (
+            <p className="text-[11px] text-muted-foreground">학년·반을 먼저 고르면 번호가 나옵니다.</p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {candidates.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => onSave({ kind: "school", grade, classNum, studentNo: p.student_no! })}
+                  className="h-8 rounded-lg border border-border/60 bg-card/60 px-2.5 text-xs font-bold transition-all hover:border-neon-blue/60 hover:text-neon-blue active:scale-95"
+                >
+                  {p.student_no}번 {nameOf(p)}
+                </button>
+              ))}
+              {candidates.length === 0 && <p className="text-[11px] text-muted-foreground">해당 반에 등록된 번호가 없습니다.</p>}
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="이름으로 검색..."
+            className="h-9 w-full rounded-lg border border-border/60 bg-input/50 px-3 text-xs"
+          />
+          <div className="flex flex-wrap gap-1.5">
+            {nameHits.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => onSave({ kind: "club", name: (p.display_name ?? "").trim() })}
+                className="h-8 rounded-lg border border-border/60 bg-card/60 px-2.5 text-xs font-bold transition-all hover:border-neon-blue/60 hover:text-neon-blue active:scale-95"
+              >
+                {nameOf(p)}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      <p className="text-[11px] text-muted-foreground">고른 값은 이 브라우저에만 저장되고 서버로 보내지 않습니다.</p>
     </div>
   );
 }
