@@ -1145,6 +1145,8 @@ export function RecordMatch({
         const order: ("A" | "A2" | "B" | "B2")[] = matchType === "double" ? ["A", "A2", "B", "B2"] : ["A", "B"];
         const nextEmpty = (just: "A" | "A2" | "B" | "B2") =>
           order.find((k) => k !== just && !slots[k].value.studentId && !(k === "A" && !!lockedPlayerId)) ?? null;
+        // 자리가 다 차야 점수가 의미를 갖는다. 그전에는 점수판을 내보내지 않는다.
+        const allPicked = order.every((k) => !!slots[k].value.studentId);
         const slotTitle = (k: "A" | "A2" | "B" | "B2") => {
           const team = k.startsWith("A") ? "팀 A" : "팀 B";
           const who = matchType === "double"
@@ -1202,6 +1204,14 @@ export function RecordMatch({
                     filter={pickerFilter}
                     onFilterChange={setPickerFilter}
                   />
+                </div>
+              ) : !allPicked ? (
+                <div className="flex min-h-[8rem] flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-border/50 bg-card/30 p-6 text-center">
+                  <Users className="size-5 text-muted-foreground/70" />
+                  <p className="text-xs font-bold text-muted-foreground">
+                    {matchType === "double" ? "네 자리" : "두 자리"}를 모두 채우면 점수를 입력할 수 있어요.
+                  </p>
+                  <p className="text-[11px] text-muted-foreground/80">비어 있는 자리를 눌러 {terms.member}를 고르세요.</p>
                 </div>
               ) : (
                 <>
@@ -1763,6 +1773,7 @@ const ACCENT = {
     soft: "border-amber-500/30 bg-amber-500/[0.06]",
     fill: "border-amber-500/60 bg-amber-500/10",
     band: "border-amber-500/40 bg-amber-500/15 text-amber-400",
+    ring: "ring-amber-500/70",
   },
   violet: {
     text: "text-violet-400",
@@ -1770,6 +1781,7 @@ const ACCENT = {
     soft: "border-violet-500/30 bg-violet-500/[0.06]",
     fill: "border-violet-500/60 bg-violet-500/10",
     band: "border-violet-500/40 bg-violet-500/15 text-violet-400",
+    ring: "ring-violet-500/70",
   },
 } as const;
 type Accent = keyof typeof ACCENT;
@@ -1946,7 +1958,7 @@ function Slot({ accent, label, player, active, locked, onOpen, onClear, threshol
   const a = ACCENT[accent];
   if (player) {
     return (
-      <div className={cn("relative rounded-xl border p-3 text-center", a.fill)}>
+      <div className={cn("relative rounded-xl border p-3 text-center", a.fill, active && cn("ring-2 shadow-lg", a.ring))}>
         {locked ? (
           <span className="absolute top-1.5 right-1.5 rounded-md bg-neon-blue/20 px-1.5 py-0.5 text-[10px] font-bold text-neon-blue">나</span>
         ) : (
@@ -1964,11 +1976,16 @@ function Slot({ accent, label, player, active, locked, onOpen, onClear, threshol
   return (
     <button type="button" onClick={onOpen}
       className={cn(
-        "flex min-h-[5rem] flex-col items-center justify-center rounded-xl border border-dashed p-4 text-center transition-all active:scale-95 cursor-pointer",
-        active ? cn(a.border, a.text, "bg-white/[0.03]") : "border-border/50 text-muted-foreground hover:border-border",
+        "flex min-h-[5rem] flex-col items-center justify-center rounded-xl border p-4 text-center transition-all active:scale-95 cursor-pointer",
+        // 지금 고르는 중인 자리는 점선이 아니라 실선 + 링으로 또렷하게 구분한다.
+        // 연한 점선끼리는 어느 자리를 채우는 중인지 알아볼 수가 없다.
+        active
+          ? cn(a.fill, a.text, a.ring, "ring-2 ring-offset-0 shadow-lg")
+          : "border-dashed border-border/50 text-muted-foreground hover:border-border",
       )}>
       <span className="text-xl leading-none">＋</span>
       <span className="mt-1 text-xs font-bold">{label}</span>
+      {active && <span className="mt-0.5 text-[10px] font-black opacity-80">고르는 중</span>}
     </button>
   );
 }
