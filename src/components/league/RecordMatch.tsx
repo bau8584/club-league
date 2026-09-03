@@ -1165,7 +1165,7 @@ export function RecordMatch({
         return (
           <div className="space-y-3">
           <div className="lg:grid lg:h-[clamp(26rem,calc(100vh-15rem),46rem)] lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.4fr)] lg:items-stretch lg:gap-4">
-            <div className={cn("space-y-3 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:pr-1", act && "hidden lg:block")}>
+            <div className={cn("space-y-3 lg:flex lg:h-full lg:min-h-0 lg:flex-col lg:space-y-0 lg:gap-3 lg:overflow-y-auto lg:pr-1", act && "hidden lg:flex")}>
               <TeamBlock title="팀 A" accent="amber" cols={matchType === "double" ? 2 : 1}>
                 {renderSlot("A", matchType === "double" ? "선수 1" : "선수 A")}
                 {matchType === "double" && renderSlot("A2", "선수 2")}
@@ -1175,6 +1175,30 @@ export function RecordMatch({
                 {renderSlot("B", matchType === "double" ? "선수 1" : "선수 B")}
                 {matchType === "double" && renderSlot("B2", "선수 2")}
               </TeamBlock>
+
+              {/* 넓은 화면: 대진 칸의 남는 아래쪽에 붙인다. 두 칸 밑에 두면 세로가
+                  짧은 노트북에서 화면 밖으로 밀려 스크롤해야 보였다. */}
+              {allPicked && (
+                <div className="hidden lg:mt-auto lg:block lg:pt-1">
+                  <Button
+              size="lg"
+              onClick={submit}
+              disabled={isSyncing}
+              className="h-14 w-full bg-gradient-to-r from-neon-blue to-tier-diamond text-base font-bold text-primary-foreground glow-primary hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSyncing ? (
+                <>
+                  <span className="mr-2 size-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  경기 결과 등록 중...
+                </>
+              ) : (
+                <>
+                  <Trophy className="mr-2 size-5" /> 경기 결과 등록
+                </>
+              )}
+            </Button>
+                </div>
+              )}
             </div>
 
             <div className="mt-3 flex flex-col gap-3 lg:mt-0 lg:h-full lg:min-h-0">
@@ -1227,13 +1251,9 @@ export function RecordMatch({
                       />
                     </div>
                   </Card>
-                </>
-              )}
-            </div>
-          </div>
 
-          {allPicked && !act && (
-            <Button
+                  <div className="lg:hidden">
+                    <Button
               size="lg"
               onClick={submit}
               disabled={isSyncing}
@@ -1250,7 +1270,11 @@ export function RecordMatch({
                 </>
               )}
             </Button>
-          )}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
           </div>
         );
       })()}
