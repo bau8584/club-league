@@ -235,6 +235,8 @@ function useLeagueStoreInternal() {
       // 1. Fetch class details
       const { data: classData, error: classErr } = await apiFetchClass(classId);
       if (classErr) throw classErr;
+      // 행이 없다 = 삭제됐거나 현재 계정에 열람 권한이 없다(RLS). 원인을 알 수 있게 안내한다.
+      if (!classData) throw new Error("리그를 찾을 수 없거나 접근 권한이 없습니다.");
 
       // 권한 판별: 방장 = 원조 방장(owner_uid) + 공동방장(co_owner_uids)
       //            관리자 = 방장 + 공동관리자(admin_uids) / 일반회원 = member_uids(가입자)

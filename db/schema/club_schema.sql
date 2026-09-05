@@ -219,6 +219,7 @@ grant execute on function public.is_class_owner(uuid)    to authenticated;
 drop policy if exists "members read leagues" on public.leagues;
 create policy "members read leagues" on public.leagues for select to authenticated
   using (owner_uid = auth.uid()
+    or auth.uid() = any(coalesce(co_owner_uids, '{}'::uuid[]))
     or auth.uid() = any(coalesce(admin_uids, '{}'::uuid[]))
     or auth.uid() = any(coalesce(member_uids, '{}'::uuid[])));
 

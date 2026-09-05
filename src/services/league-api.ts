@@ -19,7 +19,7 @@ export async function apiFetchClass(classId: string) {
     .from("leagues")
     .select("*")
     .eq("id", classId)
-    .single();
+    .maybeSingle();
 }
 
 export async function apiFetchClassSettings(classId: string) {
