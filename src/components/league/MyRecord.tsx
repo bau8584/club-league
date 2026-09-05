@@ -72,7 +72,7 @@ export function MyRecord({
     if (session.studentId) {
       return students.find((s) => s.id === session.studentId) ?? null;
     }
-    return students.find((s) => s.name === session.userName) ?? null;
+    return students.find((s) => s.name === session.userName || s.nickname === session.userName) ?? null;
   }, [session, students, playerId]);
 
   // 2. 본인이 참여한 최근 경기 목록 (최신순)
@@ -234,7 +234,7 @@ export function MyRecord({
                 <span className="text-[10px] font-black uppercase tracking-wider text-neon-blue">{terms.member} 프로필</span>
                 <CardTitle className="text-2xl font-black tracking-tight text-foreground flex items-center gap-2">
                   <GenderMark gender={me.gender} />
-                  <span>{me.name}</span>
+                  <span>{me.nickname || me.name}</span>
                 </CardTitle>
                 {/* 대표 호칭 선택 드롭다운 */}
                 <div className="pt-1.5">
@@ -520,7 +520,7 @@ export function MyRecord({
                           </span>
                           {partner && (
                             <span className="text-[10px] font-bold text-neon-blue bg-neon-blue/10 border border-neon-blue/20 rounded px-1.5 py-0.5">
-                              동료: {partner.name}
+                              동료: {partner.nickname || partner.name}
                             </span>
                           )}
                           <span className="text-[10px] font-bold text-muted-foreground/80 bg-background/50 border border-border/40 rounded px-1 py-0.5">
