@@ -64,8 +64,17 @@ export interface AssignmentInput {
    * 큰 감점과 함께 완화된다.
    */
   busyPlayerIds?: string[];
-  /** 완료 경기 + 현재 큐. 판 수와 조합 이력을 여기서만 센다. */
+  /**
+   * 만남 히스토리 — 누가 누구와 같은 팀이었나 / 누구와 붙었나. 완료 경기 + 현재 큐.
+   * `playHistory`를 주지 않으면 판 수도 여기서 센다.
+   */
   history?: AssignmentHistoryMatch[];
+  /**
+   * 판 수 히스토리. 만남과 창(window)이 다를 때 쓴다 — 커버리지는 지난 학기까지
+   * 소급해서 보고 싶지만 "몇 판 뛰었나"는 오늘 것만 세야 하는 경우가 그렇다.
+   * 생략하면 `history`를 그대로 쓴다.
+   */
+  playHistory?: AssignmentHistoryMatch[];
   /** 뽑을 경기 수. "다 뽑기"가 아니라 모자란 만큼만 채운다. */
   count: number;
   teamSize?: TeamSize;
@@ -103,7 +112,7 @@ const SCHOOL_WEIGHTS: AssignmentWeights = {
   opponentRepeat: 60,
   balance: 6,
   teamSpread: 3,
-  busyReuse: 1000
+  busyReuse: 1000,
 };
 
 /**
@@ -116,7 +125,7 @@ const CLUB_WEIGHTS: AssignmentWeights = {
   opponentRepeat: 15,
   balance: 40,
   teamSpread: 12,
-  busyReuse: 1000
+  busyReuse: 1000,
 };
 
 export function defaultWeights(policy: AssignmentPolicy): AssignmentWeights {
@@ -145,7 +154,7 @@ function pairKey(x: string, y: string): string {
   return x < y ? `${x}|${y}` : `${y}|${x}`;
 }
 
-interface HistoryStats {
+export interface HistoryStats {
   playCount: Map<string, number>;
   partner: Map<string, number>;
   opponent: Map<string, number>;
@@ -188,7 +197,7 @@ function pairingCost(
   teamB: string[],
   stats: HistoryStats,
   ratings: Map<string, number>,
-  w: AssignmentWeights
+  w: AssignmentWeights,
 ): number {
   let cost = 0;
 
@@ -229,7 +238,7 @@ function bestSplit(
   teamSize: TeamSize,
   stats: HistoryStats,
   ratings: Map<string, number>,
-  w: AssignmentWeights
+  w: AssignmentWeights,
 ): { teamA: string[]; teamB: string[]; cost: number } {
   if (teamSize === 1) {
     const [a, b] = group;
@@ -238,9 +247,18 @@ function bestSplit(
 
   const [p0, p1, p2, p3] = group;
   const splits: Array<[string[], string[]]> = [
-    [[p0, p1], [p2, p3]],
-    [[p0, p2], [p1, p3]],
-    [[p0, p3], [p1, p2]]
+    [
+      [p0, p1],
+      [p2, p3],
+    ],
+    [
+      [p0, p2],
+      [p1, p3],
+    ],
+    [
+      [p0, p3],
+      [p1, p2],
+    ],
   ];
 
   let best = { teamA: splits[0][0], teamB: splits[0][1], cost: Infinity };
@@ -295,6 +313,10 @@ export function calculateAssignment(input: AssignmentInput): AssignmentOutput {
   }
 
   const stats = buildHistoryStats(input.history ?? []);
+  if (input.playHistory) {
+    // 판 수만 다른 창에서 다시 센다. 만남 카운트는 history 것을 그대로 둔다.
+    stats.playCount = buildHistoryStats(input.playHistory).playCount;
+  }
   // 입력으로 들어온 큐 인원과, 이번 호출에서 방금 배정한 인원을 나눠 둔다.
   // 전자는 후보가 모자랄 때 감점과 함께 완화할 수 있지만, 후자는 절대 완화하지 않는다.
   // 같은 사람을 한 번의 채우기에서 두 경기에 넣는 것은 물리적으로 불가능하다.
@@ -359,7 +381,7 @@ export function calculateAssignment(input: AssignmentInput): AssignmentOutput {
       teamA: best.teamA,
       teamB: best.teamB,
       cost: best.cost,
-      relaxedPlayerIds: chosen.filter((id) => relaxed.has(id))
+      relaxedPlayerIds: chosen.filter((id) => relaxed.has(id)),
     });
 
     // 방금 뽑은 대진을 즉시 사실로 취급한다. 큐를 계산에 넣는 것과 같은 이유다.

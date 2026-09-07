@@ -4,6 +4,8 @@ import { studentKey, getTier, getTierSubdivision, getFullTierLabel, TIER_ORDER }
 import { toast } from "sonner";
 import { supabase } from "../supabaseClient";
 import { calculateMatchResult } from "@/domain/match-calculator";
+import { calculateAssignment, type AssignmentHistoryMatch, type TeamSize } from "@/domain/assignment-calculator";
+import { getTodayPlayerIds } from "./today-players";
 import {
   apiGetUser,
   apiSignOut,
@@ -53,6 +55,7 @@ import {
   apiFetchDecayLog,
   apiFetchScheduledMatches,
   apiCreateScheduledMatch,
+  apiBulkCreateAssignedMatches,
   apiUpdateScheduledStatus,
   apiDeleteScheduledMatch,
   apiCreateReservation,
@@ -2933,6 +2936,116 @@ function useLeagueStoreInternal() {
     return true;
   }, [loadScheduled]);
 
+  // ── 배정: 큐 채우기 ───────────────────────────────────
+  // 계산은 순수 함수(domain/assignment-calculator)가 한다. 여기서는 재료를 모아 주고
+  // 결과를 배정 전용 bulk insert로 큐에 넣는 일만 한다. 누적 카운터는 저장하지 않는다 —
+  // 매번 (완료 경기 + 현재 큐)에서 다시 세므로 취소·조퇴·삭제가 공짜로 처리된다.
+  const teamsOfMatch = (m: Match): AssignmentHistoryMatch => ({
+    teamA: [m.playerAId, m.playerA2Id].filter(Boolean) as string[],
+    teamB: [m.playerBId, m.playerB2Id].filter(Boolean) as string[],
+  });
+  // 큐 행 → 만남 히스토리. 팀이 확정된 행(슬롯)만 조합 이력으로 센다.
+  // 팀 미정 예약(player_ids)은 누가 같은 팀이 될지 아직 모르므로 판 수로만 센다.
+  const teamsOfScheduled = (m: ScheduledMatch): AssignmentHistoryMatch | null => {
+    if (!m.player_a_id || !m.player_b_id) return null;
+    return {
+      teamA: [m.player_a_id, m.player_a2_id].filter(Boolean) as string[],
+      teamB: [m.player_b_id, m.player_b2_id].filter(Boolean) as string[],
+    };
+  };
+
+  const fillAssignmentQueue = useCallback(async (opts?: {
+    /** 뽑을 경기 수. "다 뽑기"가 아니라 모자란 만큼만 채운다. */
+    count?: number;
+    teamSize?: TeamSize;
+    /** 생략하면 리그 유형을 따른다 (school: 다양성 우선 / club: 판 수 균등 우선). */
+    policy?: "school" | "club";
+    /** 후보 모집단을 직접 지정. 생략하면 오늘 참여자 + 큐에 든 사람. */
+    participantIds?: string[];
+    seed?: number;
+  }): Promise<number> => {
+    if (!isClassManagerRef.current) { toast.error("권한이 없습니다."); return 0; }
+    const cid = currentClassIdRef.current;
+    if (!cid) return 0;
+
+    const count = Math.max(1, opts?.count ?? 1);
+    const teamSize: TeamSize = opts?.teamSize ?? 2;
+    const policy = opts?.policy ?? (leagueTypeRef.current === "school" ? "school" : "club");
+
+    // 큐 = 아직 결과가 안 들어온 행. 도전장(challenge)은 큐가 아니다.
+    const queue = scheduledMatches.filter((m) => m.status === "waiting" || m.status === "called");
+    const queuedIds = new Set<string>();
+    for (const m of queue) {
+      for (const id of (m.player_ids?.length
+        ? m.player_ids
+        : [m.player_a_id, m.player_b_id, m.player_a2_id, m.player_b2_id]).filter(Boolean) as string[]) {
+        queuedIds.add(id);
+      }
+    }
+
+    // 후보 = 오늘 참석자. 지각·조퇴는 상태가 아니라 "지금 이 목록에 있는가"로만 표현된다.
+    // 큐에 든 사람도 모집단에는 넣는다(계산기가 busyPlayerIds로 하드 제외한다).
+    const alive = new Set(students.map((s) => s.id));
+    let participantIds = opts?.participantIds?.filter((id) => alive.has(id));
+    if (!participantIds?.length) {
+      const today = getTodayPlayerIds(matches);
+      participantIds = students
+        .map((s) => s.id)
+        .filter((id) => today.has(id) || queuedIds.has(id));
+    }
+    // 오늘 아무도 안 뛰었고 큐도 비어 있으면(그날 첫 배정) 전원을 후보로 본다.
+    if (participantIds.length < teamSize * 2) participantIds = students.map((s) => s.id);
+
+    const queueHistory = queue.map(teamsOfScheduled).filter(Boolean) as AssignmentHistoryMatch[];
+    // 팀 미정 예약: 판 수만 센다(만남은 아직 모른다).
+    const queuePlayOnly: AssignmentHistoryMatch[] = queue
+      .filter((m) => !m.player_a_id && m.player_ids?.length)
+      .map((m) => ({ teamA: m.player_ids as string[], teamB: [] }));
+
+    const todayKey = new Date().toDateString();
+    const isTodayMatch = (m: Match) => new Date(m.date).toDateString() === todayKey;
+
+    const out = calculateAssignment({
+      participants: students
+        .filter((s) => participantIds!.includes(s.id))
+        .map((s) => ({ id: s.id, rating: s.rp })),
+      busyPlayerIds: [...queuedIds],
+      // 만남(커버리지)은 과거 기록까지 소급해서 본다.
+      history: [...matches.map(teamsOfMatch), ...queueHistory],
+      // 판 수는 오늘 것만 센다 — "나만 덜 뛰었다"는 오늘 안에서의 불만이다.
+      playHistory: [
+        ...matches.filter(isTodayMatch).map(teamsOfMatch),
+        ...queueHistory,
+        ...queuePlayOnly,
+      ],
+      count,
+      teamSize,
+      policy,
+      seed: opts?.seed,
+    });
+
+    if (out.matches.length === 0) {
+      toast.error("인원이 모자라 대진을 뽑지 못했어요.");
+      return 0;
+    }
+
+    // 큐 맨 뒤에 붙인다. 기존 마지막 행보다 뒤 시각이어야 순서가 유지된다.
+    const lastAt = queue.reduce((acc, m) => Math.max(acc, new Date(m.created_at).getTime()), 0);
+    const { error } = await apiBulkCreateAssignedMatches({
+      classId: cid,
+      matches: out.matches.map((m) => ({ teamA: m.teamA, teamB: m.teamB })),
+      matchType: teamSize === 1 ? "single" : "double",
+      baseTimeMs: Math.max(Date.now(), lastAt + 1),
+    });
+    if (error) { toast.error("배정 실패: " + error.message); return 0; }
+
+    await loadScheduled(cid);
+    toast.success(out.shortfall > 0
+      ? `${out.matches.length}경기를 배정했어요. (인원이 모자라 ${out.shortfall}경기는 못 뽑았어요)`
+      : `${out.matches.length}경기를 배정했어요.`);
+    return out.matches.length;
+  }, [loadScheduled, matches, scheduledMatches, students]);
+
   // 예약할 수 있는 권한: 관리자 또는 (자율 입력 모드에서) 연동된 회원
   const canReserve = () => isClassManagerRef.current || (matchInputModeRef.current !== "admin-only" && !!myPlayerId);
 
@@ -3485,6 +3598,7 @@ function useLeagueStoreInternal() {
     fetchDecayLog,
     scheduledMatches,
     createScheduledMatch,
+    fillAssignmentQueue,
     callScheduledMatch,
     removeScheduledMatch,
     createReservation,

@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
   calculateAssignment,
   type AssignmentHistoryMatch,
-  type AssignmentPlayer
+  type AssignmentPlayer,
 } from "./assignment-calculator";
 
 const players = (n: number): AssignmentPlayer[] =>
@@ -22,7 +22,7 @@ describe("calculateAssignment", () => {
     const out = calculateAssignment({
       participants: players(12),
       busyPlayerIds: ["p1", "p2", "p3", "p4"],
-      count: 2
+      count: 2,
     });
     const all = new Set(out.matches.flatMap(flat));
     for (const id of ["p1", "p2", "p3", "p4"]) expect(all.has(id)).toBe(false);
@@ -35,7 +35,7 @@ describe("calculateAssignment", () => {
       participants: players(8),
       busyPlayerIds: [],
       history: queued,
-      count: 1
+      count: 1,
     });
     expect(flat(out.matches[0]).sort()).toEqual(["p5", "p6", "p7", "p8"]);
   });
@@ -43,13 +43,13 @@ describe("calculateAssignment", () => {
   it("학교 정책은 안 만난 조합을 우선한다", () => {
     const history: AssignmentHistoryMatch[] = [
       { teamA: ["p1", "p2"], teamB: ["p3", "p4"] },
-      { teamA: ["p5", "p6"], teamB: ["p7", "p8"] }
+      { teamA: ["p5", "p6"], teamB: ["p7", "p8"] },
     ];
     const out = calculateAssignment({
       participants: players(8),
       history,
       count: 1,
-      policy: "school"
+      policy: "school",
     });
     const m = out.matches[0];
     const partners = [...m.teamA, ...m.teamB];
@@ -58,7 +58,7 @@ describe("calculateAssignment", () => {
       ["p1", "p2"],
       ["p3", "p4"],
       ["p5", "p6"],
-      ["p7", "p8"]
+      ["p7", "p8"],
     ].some(([a, b]) => {
       const sameTeam = (t: string[]) => t.includes(a) && t.includes(b);
       return sameTeam(m.teamA) || sameTeam(m.teamB);
@@ -73,10 +73,10 @@ describe("calculateAssignment", () => {
         { id: "a", rating: 1600 },
         { id: "b", rating: 1000 },
         { id: "c", rating: 1500 },
-        { id: "d", rating: 1100 }
+        { id: "d", rating: 1100 },
       ],
       count: 1,
-      policy: "club"
+      policy: "club",
     });
     const rating: Record<string, number> = { a: 1600, b: 1000, c: 1500, d: 1100 };
     const sum = (t: string[]) => t.reduce((acc, id) => acc + rating[id], 0);
@@ -94,7 +94,7 @@ describe("calculateAssignment", () => {
     const out = calculateAssignment({
       participants: players(5),
       busyPlayerIds: ["p1", "p2"],
-      count: 1
+      count: 1,
     });
     expect(out.matches).toHaveLength(1);
     expect(out.matches[0].relaxedPlayerIds.length).toBe(1);
@@ -112,7 +112,7 @@ describe("calculateAssignment", () => {
   it("같은 seed면 같은 결과가 나온다", () => {
     const args = { participants: players(12), count: 3, seed: 7 } as const;
     expect(calculateAssignment({ ...args }).matches).toEqual(
-      calculateAssignment({ ...args }).matches
+      calculateAssignment({ ...args }).matches,
     );
   });
 
@@ -125,7 +125,7 @@ describe("calculateAssignment", () => {
         history,
         count: 5,
         policy: "school",
-        seed: session
+        seed: session,
       });
       history = [...history, ...out.matches.map((m) => ({ teamA: m.teamA, teamB: m.teamB }))];
     }
