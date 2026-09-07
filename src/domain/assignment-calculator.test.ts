@@ -40,7 +40,7 @@ describe("calculateAssignment", () => {
     expect(flat(out.matches[0]).sort()).toEqual(["p5", "p6", "p7", "p8"]);
   });
 
-  it("학교 정책은 안 만난 조합을 우선한다", () => {
+  it("[다양성 우선]은 안 만난 조합을 우선한다", () => {
     const history: AssignmentHistoryMatch[] = [
       { teamA: ["p1", "p2"], teamB: ["p3", "p4"] },
       { teamA: ["p5", "p6"], teamB: ["p7", "p8"] },
@@ -49,7 +49,7 @@ describe("calculateAssignment", () => {
       participants: players(8),
       history,
       count: 1,
-      policy: "school",
+      policy: "diversity",
     });
     const m = out.matches[0];
     const partners = [...m.teamA, ...m.teamB];
@@ -76,7 +76,7 @@ describe("calculateAssignment", () => {
         { id: "d", rating: 1100 },
       ],
       count: 1,
-      policy: "club",
+      policy: "balanced",
     });
     const rating: Record<string, number> = { a: 1600, b: 1000, c: 1500, d: 1100 };
     const sum = (t: string[]) => t.reduce((acc, id) => acc + rating[id], 0);
@@ -124,7 +124,7 @@ describe("calculateAssignment", () => {
         participants: roster,
         history,
         count: 5,
-        policy: "school",
+        policy: "diversity",
         seed: session,
       });
       history = [...history, ...out.matches.map((m) => ({ teamA: m.teamA, teamB: m.teamB }))];
@@ -141,5 +141,109 @@ describe("calculateAssignment", () => {
     expect(Math.max(...values) - Math.min(...values)).toBeLessThanOrEqual(1);
     // 파트너 조합 150쌍 중 상당수를 실제로 채운다 (총 150팀 생성)
     expect(partners.size).toBeGreaterThanOrEqual(120);
+  });
+});
+
+describe("배정 프리셋", () => {
+  // 실력이 뚜렷하게 갈리는 8명. 강한 4명(s1~s4)과 약한 4명(w1~w4).
+  const skewed = [
+    { id: "s1", rating: 1800 },
+    { id: "s2", rating: 1750 },
+    { id: "s3", rating: 1700 },
+    { id: "s4", rating: 1650 },
+    { id: "w1", rating: 900 },
+    { id: "w2", rating: 880 },
+    { id: "w3", rating: 860 },
+    { id: "w4", rating: 840 },
+  ];
+  const isStrong = (id: string) => id.startsWith("s");
+
+  it("[실력 우선]은 비슷한 실력끼리 붙인다", () => {
+    const out = calculateAssignment({ participants: skewed, count: 1, policy: "skill", seed: 1 });
+    const ids = flat(out.matches[0]);
+    // 강-약이 섞이지 않는다: 넷 다 같은 급.
+    expect(ids.every(isStrong) || ids.every((id) => !isStrong(id))).toBe(true);
+  });
+
+  it("[다양성 우선]은 안 만난 조합을 실력보다 앞에 둔다", () => {
+    // 강한 넷은 이미 서로 다 만났다. 실력만 보면 또 그들끼리 붙어야 한다.
+    const history: AssignmentHistoryMatch[] = [
+      { teamA: ["s1", "s2"], teamB: ["s3", "s4"] },
+      { teamA: ["s1", "s3"], teamB: ["s2", "s4"] },
+      { teamA: ["s1", "s4"], teamB: ["s2", "s3"] },
+    ];
+    const diversity = calculateAssignment({
+      participants: skewed,
+      history,
+      playHistory: [],
+      count: 1,
+      policy: "diversity",
+      seed: 1,
+    });
+    const skill = calculateAssignment({
+      participants: skewed,
+      history,
+      playHistory: [],
+      count: 1,
+      policy: "skill",
+      seed: 1,
+    });
+    const mixed = (ids: string[]) => ids.some(isStrong) && ids.some((id) => !isStrong(id));
+    // 다양성은 새 조합을 찾아 강-약을 섞고, 실력 우선은 같은 급을 고수한다.
+    expect(mixed(flat(diversity.matches[0]))).toBe(true);
+    expect(mixed(flat(skill.matches[0]))).toBe(false);
+  });
+
+  it("[다양성 우선]의 실력 제약은 느슨하다 — 만족하는 조합이 없으면 막지 않는다", () => {
+    // 실력 차가 어떻게 나눠도 한계를 넘는 4명. 그래도 대진은 나온다.
+    const out = calculateAssignment({
+      participants: [
+        { id: "a", rating: 2000 },
+        { id: "b", rating: 1900 },
+        { id: "c", rating: 100 },
+        { id: "d", rating: 90 },
+      ],
+      count: 1,
+      policy: "diversity",
+      balanceLimit: 50,
+    });
+    expect(out.matches).toHaveLength(1);
+  });
+
+  it("세 프리셋이 실제로 다른 결과를 낸다", () => {
+    // 실력이 고르게 퍼진 8명 + 약간의 만남 이력. 세 기준이 서로 다른 대진을 고른다.
+    const roster = [
+      { id: "a", rating: 1870 },
+      { id: "b", rating: 808 },
+      { id: "c", rating: 1057 },
+      { id: "d", rating: 1180 },
+      { id: "e", rating: 1430 },
+      { id: "f", rating: 1630 },
+      { id: "g", rating: 836 },
+      { id: "h", rating: 1178 },
+    ];
+    const history: AssignmentHistoryMatch[] = [
+      { teamA: ["g", "h"], teamB: ["d", "e"] },
+      { teamA: ["b", "a"], teamB: ["d", "f"] },
+    ];
+    const run = (policy: "diversity" | "balanced" | "skill") =>
+      JSON.stringify(
+        calculateAssignment({
+          participants: roster,
+          history,
+          playHistory: [],
+          count: 1,
+          policy,
+          seed: 1,
+        }).matches.map((m) => [m.teamA, m.teamB]),
+      );
+    expect(new Set([run("diversity"), run("balanced"), run("skill")]).size).toBe(3);
+  });
+
+  it("rating이 없으면 실력 항이 빠지고 프리셋과 무관하게 대진은 나온다", () => {
+    for (const policy of ["diversity", "balanced", "skill"] as const) {
+      const out = calculateAssignment({ participants: players(8), count: 2, policy });
+      expect(out.matches).toHaveLength(2);
+    }
   });
 });

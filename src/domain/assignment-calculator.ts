@@ -21,12 +21,27 @@
 export type TeamSize = 1 | 2;
 
 /**
- * 정책 프리셋. 같은 기능처럼 보이지만 목적함수의 우선순위가 사실상 뒤집힌다.
- * - school: 다양성(안 만난 조합) > 판 수 균등 > 실력 균형
- * - club:   판 수 균등 > 실력 균형 > 다양성
- * 하나의 가중합으로 둘 다 덮으려 하면 양쪽 다 미묘하게 이상해진다.
+ * 배정 프리셋 — 사용자가 뽑는 순간 고르는 단 하나의 선택.
+ *
+ * "다양성 / 실력"은 나란한 선택지가 아니라 층위가 다른 두 가지다.
+ * 다양성은 "누구를 붙일까"(짝짓기 기준)이고, 실력 균형은 "얼마나 팽팽하게"이며,
+ * 둘은 배타적이지 않다 — "안 만난 조합 중에서 실력 차가 크지 않은 쪽"처럼 동시에 쓴다.
+ * 그래서 노출하는 것은 그 축 위의 위치 하나뿐이다.
+ *
+ * - diversity: 안 만난 사람끼리. 사전식으로 다양성이 항상 이기고, 실력은 느슨한 제약
+ * - balanced:  안 만난 조합 중 실력이 맞는 쪽. 가중합
+ * - skill:     비슷한 실력끼리. 사전식으로 실력이 항상 이김
+ *
+ * 기본값은 리그 유형이 고른다(school → diversity, club → balanced). 호출부가 명시하면 그게 이긴다.
+ * 리그 설정에서 미리 받아 두는 값이 아니라 뽑는 순간의 한 번 선택이므로,
+ * "미리 받아 두면 낡는다"는 이유로 기각된 설정값들과는 성격이 다르다.
  */
-export type AssignmentPolicy = "school" | "club";
+export type AssignmentPreset = "diversity" | "balanced" | "skill";
+
+/** 리그 유형별 기본 프리셋. 유형은 기본값을 고르는 데만 쓴다. */
+export function defaultPreset(leagueType: "school" | "club"): AssignmentPreset {
+  return leagueType === "school" ? "diversity" : "balanced";
+}
 
 export interface AssignmentPlayer {
   id: string;
@@ -78,7 +93,12 @@ export interface AssignmentInput {
   /** 뽑을 경기 수. "다 뽑기"가 아니라 모자란 만큼만 채운다. */
   count: number;
   teamSize?: TeamSize;
-  policy?: AssignmentPolicy;
+  /** 생략하면 diversity. 리그 유형별 기본값은 defaultPreset()으로 고른다. */
+  policy?: AssignmentPreset;
+  /** [다양성 우선]의 느슨한 제약 한계(1인당 평균 실력 차). */
+  balanceLimit?: number;
+  /** [실력 우선]이 실력 차를 같은 급으로 묶는 단위. */
+  skillGranularity?: number;
   /** 프리셋 위에 얹는 부분 조정. */
   weights?: Partial<AssignmentWeights>;
   /** 동점 처리를 결정론적으로 흔든다. 같은 seed면 같은 결과가 나온다. */
@@ -103,34 +123,50 @@ export interface AssignmentOutput {
 }
 
 /**
- * 학교는 다양성이 본체다. 코트가 모자라도 한 판이 길어 회전이 없으니
- * "안 만난 조합"을 채우는 것이 배정의 존재 이유다.
+ * 가중치는 [절충]의 가중합에만 그대로 쓰인다. [다양성 우선]·[실력 우선]은 사전식이라
+ * 이 값들이 항목 *안에서의* 비중(파트너 반복 vs 상대 반복 등)만 정한다.
  */
-const SCHOOL_WEIGHTS: AssignmentWeights = {
-  playCount: 40,
-  partnerRepeat: 120,
-  opponentRepeat: 60,
-  balance: 6,
-  teamSpread: 3,
+const BASE_WEIGHTS: AssignmentWeights = {
+  playCount: 100,
+  partnerRepeat: 60,
+  opponentRepeat: 30,
+  balance: 30,
+  teamSpread: 10,
   busyReuse: 1000,
 };
+
+const PRESET_WEIGHTS: Record<AssignmentPreset, AssignmentWeights> = {
+  // 다양성이 사전식으로 이기므로 가중치는 항목 내부 비중만 담당한다.
+  diversity: { ...BASE_WEIGHTS },
+  // 절충: 판 수 균등 > 실력 균형 > 다양성. 동호회의 최대 민원은 예외 없이 "나만 덜 뛰었다"이다.
+  balanced: {
+    ...BASE_WEIGHTS,
+    playCount: 160,
+    balance: 40,
+    teamSpread: 12,
+    partnerRepeat: 30,
+    opponentRepeat: 15,
+  },
+  skill: { ...BASE_WEIGHTS },
+};
+
+export function defaultWeights(preset: AssignmentPreset): AssignmentWeights {
+  return { ...PRESET_WEIGHTS[preset] };
+}
 
 /**
- * 동호회는 항상 인원 > 코트이고, 최대 민원은 예외 없이 "나만 덜 뛰었다"이다.
- * 성인은 실력 격차에도 민감해서 균형이 명시적 2순위다.
+ * [다양성 우선]의 "느슨한 제약" 한계 — 두 팀의 1인당 평균 실력 차가 이보다 크면
+ * 다양성보다 먼저 감점된다. 다만 조건을 만족하는 조합이 하나도 없으면 전부 같은
+ * 위반 상태가 되어 다양성이 다시 결정한다(막히지 않는 제약).
  */
-const CLUB_WEIGHTS: AssignmentWeights = {
-  playCount: 160,
-  partnerRepeat: 30,
-  opponentRepeat: 15,
-  balance: 40,
-  teamSpread: 12,
-  busyReuse: 1000,
-};
+const DEFAULT_BALANCE_LIMIT = 300;
 
-export function defaultWeights(policy: AssignmentPolicy): AssignmentWeights {
-  return { ...(policy === "school" ? SCHOOL_WEIGHTS : CLUB_WEIGHTS) };
-}
+/**
+ * [실력 우선]에서 실력 차를 반올림하는 단위. 연속값을 그대로 1순위로 두면
+ * 동점이 나지 않아 2순위(다양성)가 영영 작동하지 않는다. 같은 급으로 묶어
+ * "실력이 사실상 같으면 안 만난 쪽"이 되게 한다.
+ */
+const DEFAULT_SKILL_GRANULARITY = 25;
 
 /**
  * 조합 후보 상한. 한 경기를 뽑을 때 우선순위 상위 이만큼만 완전 탐색한다.
@@ -191,62 +227,131 @@ export function buildHistoryStats(history: AssignmentHistoryMatch[]): HistorySta
   return stats;
 }
 
-/** 4명(또는 2명)을 팀으로 나눈 뒤 그 대진의 비용을 잰다. 낮을수록 좋다. */
-function pairingCost(
+/**
+ * 한 대진의 비용을 항목별로 나눠 잰다. 프리셋마다 항목을 다르게 조합하기 때문에
+ * 하나의 합으로 뭉쳐 두면 사전식 비교가 불가능하다.
+ */
+interface CostParts {
+  /** 조합 반복(파트너 + 상대). 낮을수록 새로운 조합이다. */
+  diversity: number;
+  /** 이미 뛴 판 수 합. 낮을수록 덜 뛴 사람들이다. */
+  play: number;
+  /** 팀 간 실력 차 + 팀 내 편중. 낮을수록 팽팽하다. */
+  balance: number;
+  /** 두 팀의 1인당 평균 실력 차. 느슨한 제약 판정에만 쓴다. */
+  gap: number;
+  /**
+   * 네 명이 실력적으로 얼마나 한 덩어리인가(팀 간 차 + 팀 내 편중).
+   * "비슷한 실력끼리"는 팀 간 차만으로는 표현되지 않는다 — 강-약 / 강-약으로 나누면
+   * 두 팀 합은 같지만 그건 실력이 섞인 경기다.
+   */
+  homogeneity: number;
+  /** 큐에 든 사람을 완화로 다시 쓴 대가. 어떤 프리셋에서도 항상 1순위다. */
+  relax: number;
+  /** 동점을 결정론적으로 가르는 미세값. */
+  jitter: number;
+}
+
+function costParts(
   teamA: string[],
   teamB: string[],
   stats: HistoryStats,
   ratings: Map<string, number>,
   w: AssignmentWeights,
-): number {
-  let cost = 0;
-
+  relaxed: Set<string>,
+  jitter: Map<string, number>,
+): CostParts {
+  let diversity = 0;
   for (const team of [teamA, teamB]) {
     for (let i = 0; i < team.length; i++) {
       for (let j = i + 1; j < team.length; j++) {
-        cost += w.partnerRepeat * (stats.partner.get(pairKey(team[i], team[j])) ?? 0);
+        diversity += w.partnerRepeat * (stats.partner.get(pairKey(team[i], team[j])) ?? 0);
       }
     }
   }
   for (const a of teamA) {
     for (const b of teamB) {
-      cost += w.opponentRepeat * (stats.opponent.get(pairKey(a, b)) ?? 0);
+      diversity += w.opponentRepeat * (stats.opponent.get(pairKey(a, b)) ?? 0);
     }
   }
 
-  const sum = (team: string[]) => team.reduce((acc, id) => acc + (ratings.get(id) ?? 0), 0);
-  const hasRating = teamA.concat(teamB).some((id) => ratings.has(id));
-  if (hasRating) {
-    const gap = Math.abs(sum(teamA) - sum(teamB)) / teamA.length;
-    cost += (w.balance * gap) / 100;
-
+  let balance = 0;
+  let gap = 0;
+  let spreadSum = 0;
+  const members = [...teamA, ...teamB];
+  if (members.some((id) => ratings.has(id))) {
+    const sum = (team: string[]) => team.reduce((acc, id) => acc + (ratings.get(id) ?? 0), 0);
+    gap = Math.abs(sum(teamA) - sum(teamB)) / teamA.length;
     // 팀 내 편중: 강-강 / 약-약으로 갈리면 두 팀 합이 같아도 경기가 재미없다.
     const spread = (team: string[]) => {
       if (team.length < 2) return 0;
       const vals = team.map((id) => ratings.get(id) ?? 0);
       return Math.max(...vals) - Math.min(...vals);
     };
-    cost += (w.teamSpread * (spread(teamA) + spread(teamB))) / 100;
+    spreadSum = spread(teamA) + spread(teamB);
+    balance = (w.balance * gap) / 100 + (w.teamSpread * spreadSum) / 100;
   }
 
-  return cost;
+  let play = 0;
+  let relax = 0;
+  let jit = 0;
+  for (const id of members) {
+    play += w.playCount * (stats.playCount.get(id) ?? 0);
+    if (relaxed.has(id)) relax += w.busyReuse;
+    jit += (jitter.get(id) ?? 0) * 0.001;
+  }
+
+  return { diversity, play, balance, gap, homogeneity: gap + spreadSum, relax, jitter: jit };
 }
 
-/** 뽑힌 인원을 팀으로 나누는 모든 경우 중 최선을 고른다(4명이면 3가지). */
-function bestSplit(
-  group: string[],
-  teamSize: TeamSize,
-  stats: HistoryStats,
-  ratings: Map<string, number>,
-  w: AssignmentWeights,
-): { teamA: string[]; teamB: string[]; cost: number } {
-  if (teamSize === 1) {
-    const [a, b] = group;
-    return { teamA: [a], teamB: [b], cost: pairingCost([a], [b], stats, ratings, w) };
+/** 사전식 비교용 키. 앞자리부터 순서대로 비교하고, 같으면 다음 자리로 넘어간다. */
+function sortKey(
+  parts: CostParts,
+  preset: AssignmentPreset,
+  balanceLimit: number,
+  skillGranularity: number,
+): number[] {
+  switch (preset) {
+    case "diversity":
+      // 실력은 느슨한 제약(한계를 넘었는가 0/1)일 뿐, 그 안에서는 다양성이 항상 이긴다.
+      return [
+        parts.relax,
+        parts.gap > balanceLimit ? 1 : 0,
+        parts.diversity,
+        parts.play,
+        parts.balance,
+        parts.jitter,
+      ];
+    case "skill":
+      // 실력이 항상 이긴다. 같은 급으로 묶어야 2순위(다양성)가 작동한다.
+      return [
+        parts.relax,
+        Math.round(parts.homogeneity / skillGranularity),
+        parts.diversity,
+        parts.play,
+        parts.balance,
+        parts.jitter,
+      ];
+    case "balanced":
+    default:
+      // 하나의 가중합. 세 항목이 서로를 밀고 당긴다.
+      return [parts.relax + parts.diversity + parts.play + parts.balance + parts.jitter];
   }
+}
 
+function compareKeys(a: number[], b: number[]): number {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const d = (a[i] ?? 0) - (b[i] ?? 0);
+    if (d !== 0) return d;
+  }
+  return 0;
+}
+
+/** 뽑힌 인원을 팀으로 나누는 모든 경우(4명이면 3가지). */
+function splitsOf(group: string[], teamSize: TeamSize): Array<[string[], string[]]> {
+  if (teamSize === 1) return [[[group[0]], [group[1]]]];
   const [p0, p1, p2, p3] = group;
-  const splits: Array<[string[], string[]]> = [
+  return [
     [
       [p0, p1],
       [p2, p3],
@@ -260,13 +365,6 @@ function bestSplit(
       [p1, p2],
     ],
   ];
-
-  let best = { teamA: splits[0][0], teamB: splits[0][1], cost: Infinity };
-  for (const [teamA, teamB] of splits) {
-    const cost = pairingCost(teamA, teamB, stats, ratings, w);
-    if (cost < best.cost) best = { teamA, teamB, cost };
-  }
-  return best;
 }
 
 /** k개를 고르는 조합을 모두 만든다. 후보 창이 작아서(≤12) 완전 탐색이 싸다. */
@@ -298,8 +396,10 @@ function combinations<T>(items: T[], k: number): T[][] {
  */
 export function calculateAssignment(input: AssignmentInput): AssignmentOutput {
   const teamSize: TeamSize = input.teamSize ?? 2;
-  const policy: AssignmentPolicy = input.policy ?? "school";
-  const w = { ...defaultWeights(policy), ...(input.weights ?? {}) };
+  const preset: AssignmentPreset = input.policy ?? "diversity";
+  const w = { ...defaultWeights(preset), ...(input.weights ?? {}) };
+  const balanceLimit = input.balanceLimit ?? DEFAULT_BALANCE_LIMIT;
+  const skillGranularity = input.skillGranularity ?? DEFAULT_SKILL_GRANULARITY;
   const rng = makeRng(input.seed ?? 0);
   const needed = teamSize * 2;
 
@@ -357,18 +457,23 @@ export function calculateAssignment(input: AssignmentInput): AssignmentOutput {
     const anchor = ordered[0];
     const window = ordered.slice(1, CANDIDATE_WINDOW);
 
-    let best: { teamA: string[]; teamB: string[]; cost: number } | null = null;
+    // 조합과 팀 나누기를 함께 훑는다. 프리셋에 따라 "좋은 팀 나누기"의 기준까지
+    // 달라지므로 팀을 먼저 고정하고 조합을 고를 수 없다.
+    let best: { teamA: string[]; teamB: string[]; cost: number; key: number[] } | null = null;
     for (const rest of combinations(window, needed - 1)) {
       const group = [anchor, ...rest];
-      const split = bestSplit(group, teamSize, stats, ratings, w);
-
-      let cost = split.cost;
-      for (const id of group) {
-        cost += w.playCount * (stats.playCount.get(id) ?? 0);
-        if (relaxed.has(id)) cost += w.busyReuse;
-        cost += (jitter.get(id) ?? 0) * 0.001; // 동점일 때만 갈린다
+      for (const [teamA, teamB] of splitsOf(group, teamSize)) {
+        const parts = costParts(teamA, teamB, stats, ratings, w, relaxed, jitter);
+        const key = sortKey(parts, preset, balanceLimit, skillGranularity);
+        if (!best || compareKeys(key, best.key) < 0) {
+          best = {
+            teamA,
+            teamB,
+            key,
+            cost: parts.relax + parts.diversity + parts.play + parts.balance,
+          };
+        }
       }
-      if (!best || cost < best.cost) best = { ...split, cost };
     }
 
     if (!best) {

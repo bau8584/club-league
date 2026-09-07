@@ -4,7 +4,13 @@ import { studentKey, getTier, getTierSubdivision, getFullTierLabel, TIER_ORDER }
 import { toast } from "sonner";
 import { supabase } from "../supabaseClient";
 import { calculateMatchResult } from "@/domain/match-calculator";
-import { calculateAssignment, type AssignmentHistoryMatch, type TeamSize } from "@/domain/assignment-calculator";
+import {
+  calculateAssignment,
+  defaultPreset,
+  type AssignmentHistoryMatch,
+  type AssignmentPreset,
+  type TeamSize,
+} from "@/domain/assignment-calculator";
 import { getTodayPlayerIds } from "./today-players";
 import {
   apiGetUser,
@@ -2954,12 +2960,26 @@ function useLeagueStoreInternal() {
     };
   };
 
+  // 실력을 무엇으로 재는가: 급수 데이터가 있으면 급수를, 없으면 RP를 쓴다.
+  // 동호회에서 "실력이 맞는다"는 RP가 아니라 급수 기준이어야 납득하기 때문이다.
+  // levels는 높은 → 낮은 순이라 인덱스를 뒤집어 RP와 같은 방향(클수록 강함)으로 맞춘다.
+  const ratingOf = (s: Student): number => {
+    if (levels.length > 1 && s.group) {
+      const idx = levels.findIndex((l) => l.name === s.group);
+      if (idx >= 0) return ((levels.length - 1 - idx) / (levels.length - 1)) * 1000;
+    }
+    return s.rp;
+  };
+
   const fillAssignmentQueue = useCallback(async (opts?: {
     /** 뽑을 경기 수. "다 뽑기"가 아니라 모자란 만큼만 채운다. */
     count?: number;
     teamSize?: TeamSize;
-    /** 생략하면 리그 유형을 따른다 (school: 다양성 우선 / club: 판 수 균등 우선). */
-    policy?: "school" | "club";
+    /**
+     * 배정 기준. 생략하면 리그 유형이 기본값을 고른다(school → 다양성 우선,
+     * club → 절충). 호출부가 명시하면 그게 이긴다 — 유형은 기본값에만 쓴다.
+     */
+    policy?: AssignmentPreset;
     /** 후보 모집단을 직접 지정. 생략하면 오늘 참여자 + 큐에 든 사람. */
     participantIds?: string[];
     seed?: number;
@@ -2970,7 +2990,7 @@ function useLeagueStoreInternal() {
 
     const count = Math.max(1, opts?.count ?? 1);
     const teamSize: TeamSize = opts?.teamSize ?? 2;
-    const policy = opts?.policy ?? (leagueTypeRef.current === "school" ? "school" : "club");
+    const preset: AssignmentPreset = opts?.policy ?? defaultPreset(leagueTypeRef.current);
 
     // 큐 = 아직 결과가 안 들어온 행. 도전장(challenge)은 큐가 아니다.
     const queue = scheduledMatches.filter((m) => m.status === "waiting" || m.status === "called");
@@ -3008,7 +3028,7 @@ function useLeagueStoreInternal() {
     const out = calculateAssignment({
       participants: students
         .filter((s) => participantIds!.includes(s.id))
-        .map((s) => ({ id: s.id, rating: s.rp })),
+        .map((s) => ({ id: s.id, rating: ratingOf(s) })),
       busyPlayerIds: [...queuedIds],
       // 만남(커버리지)은 과거 기록까지 소급해서 본다.
       history: [...matches.map(teamsOfMatch), ...queueHistory],
@@ -3020,7 +3040,7 @@ function useLeagueStoreInternal() {
       ],
       count,
       teamSize,
-      policy,
+      policy: preset,
       seed: opts?.seed,
     });
 
@@ -3044,7 +3064,7 @@ function useLeagueStoreInternal() {
       ? `${out.matches.length}경기를 배정했어요. (인원이 모자라 ${out.shortfall}경기는 못 뽑았어요)`
       : `${out.matches.length}경기를 배정했어요.`);
     return out.matches.length;
-  }, [loadScheduled, matches, scheduledMatches, students]);
+  }, [levels, loadScheduled, matches, scheduledMatches, students]);
 
   // 예약할 수 있는 권한: 관리자 또는 (자율 입력 모드에서) 연동된 회원
   const canReserve = () => isClassManagerRef.current || (matchInputModeRef.current !== "admin-only" && !!myPlayerId);
