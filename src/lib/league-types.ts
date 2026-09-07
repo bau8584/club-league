@@ -72,6 +72,16 @@ export type ScheduledMatch = {
   created_at: string;
 };
 
+// 배정 세션 — "지금 여기 모인 참가자 명단 한 벌". 리그당 1행(league_id = PK).
+// 이력은 남기지 않는다 — 커버리지와 판 수는 전부 matches 에서 유도된다.
+export type AssignmentSession = {
+  league_id: string;
+  player_ids: string[];              // 오늘 참석자(출석 체크 결과)
+  match_type: "single" | "double";   // 세션의 종목
+  started_at: string;
+  updated_at?: string;
+};
+
 export type Match = {
   // --- Supabase DB 테이블 스키마 속성 ---
   id: string; // UUID (Primary Key)

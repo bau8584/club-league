@@ -136,6 +136,47 @@ export async function apiBulkCreateAssignedMatches(payload: AssignedMatchInput) 
   return supabase.from("scheduled_matches").insert(rows).select();
 }
 
+// --- 배정 세션(참가자 명단) ---
+// 명단과 큐가 다른 저장소에 있으면 계산이 틀린다. 큐가 이미 서버에 있으므로 명단도 서버에 둔다.
+export async function apiFetchAssignmentSession(classId: string) {
+  return supabase.from("assignment_sessions").select("*").eq("league_id", classId).maybeSingle();
+}
+
+/**
+ * [새로 시작] / 명단 수정 — league_id 가 PK 라서 upsert 한 번이면 끝난다.
+ * `startedAt`을 주면 새 세션(경계)이고, 안 주면 기존 세션의 명단만 고치는 것이다.
+ */
+export async function apiUpsertAssignmentSession(payload: {
+  classId: string;
+  playerIds: string[];
+  matchType: "single" | "double";
+  startedAt?: string;
+}) {
+  return supabase
+    .from("assignment_sessions")
+    .upsert(
+      {
+        league_id: payload.classId,
+        player_ids: payload.playerIds,
+        match_type: payload.matchType,
+        ...(payload.startedAt ? { started_at: payload.startedAt } : {}),
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "league_id" },
+    )
+    .select()
+    .maybeSingle();
+}
+
+/** 세션 경계에서 미소화 큐를 비운다. 날짜로는 못 자른다 — 같은 날 3교시와 4교시는 날짜가 같다. */
+export async function apiClearQueue(classId: string) {
+  return supabase
+    .from("scheduled_matches")
+    .delete()
+    .eq("league_id", classId)
+    .in("status", ["waiting", "called"]);
+}
+
 export async function apiUpdateScheduledStatus(id: string, status: "waiting" | "called" | "done" | "cancelled") {
   return supabase.from("scheduled_matches").update({ status }).eq("id", id);
 }

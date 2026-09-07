@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo, createContext, useContext } from "react";
-import type { Student, Match, ScheduledMatch, Gender, TierName, TierSettings, DynamicBonuses, DynamicPenalties, TiersRecord, DecaySettingsRecord, MatchInputMode, LeagueType } from "./league-types";
+import type { Student, Match, ScheduledMatch, AssignmentSession, Gender, TierName, TierSettings, DynamicBonuses, DynamicPenalties, TiersRecord, DecaySettingsRecord, MatchInputMode, LeagueType } from "./league-types";
 import { studentKey, getTier, getTierSubdivision, getFullTierLabel, TIER_ORDER } from "./league-types";
 import { toast } from "sonner";
 import { supabase } from "../supabaseClient";
@@ -62,6 +62,9 @@ import {
   apiFetchScheduledMatches,
   apiCreateScheduledMatch,
   apiBulkCreateAssignedMatches,
+  apiFetchAssignmentSession,
+  apiUpsertAssignmentSession,
+  apiClearQueue,
   apiUpdateScheduledStatus,
   apiDeleteScheduledMatch,
   apiCreateReservation,
@@ -149,6 +152,11 @@ function useLeagueStoreInternal() {
   const [deletedPlayers, setDeletedPlayers] = useState<Student[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [scheduledMatches, setScheduledMatches] = useState<ScheduledMatch[]>([]);
+  // 배정 세션(참가자 명단). 리그당 1행이라 단일 객체다.
+  const [assignmentSession, setAssignmentSession] = useState<AssignmentSession | null>(null);
+  const assignmentSessionRef = useRef<AssignmentSession | null>(null);
+  const loadSessionRef = useRef<((classId: string) => void) | null>(null);
+  useEffect(() => { assignmentSessionRef.current = assignmentSession; }, [assignmentSession]);
   const loadScheduledRef = useRef<((classId: string) => void) | null>(null);
   const [title, setTitle] = useState<string>("2026 초등 리그전");
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
@@ -449,6 +457,12 @@ function useLeagueStoreInternal() {
         setScheduledMatches((sched || []) as ScheduledMatch[]);
       } catch { /* 비치명적 */ }
 
+      // 배정 세션(참가자 명단) — 없으면 null(아직 [새로 시작] 전)
+      try {
+        const { data: sess } = await apiFetchAssignmentSession(classId);
+        setAssignmentSession((sess as AssignmentSession) ?? null);
+      } catch { /* 테이블 마이그레이션 전이면 조용히 넘어간다 */ }
+
       setCurrentClassId(classId);
 
       // 시즌 목록 채우기: ["현재 시즌", ...과거 시즌 라벨]
@@ -491,6 +505,15 @@ function useLeagueStoreInternal() {
           { event: "*", schema: "public", table: "scheduled_matches", filter: `league_id=eq.${classId}` },
           () => {
             loadScheduledRef.current?.(classId);
+          }
+        )
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "assignment_sessions", filter: `league_id=eq.${classId}` },
+          () => {
+            // 명단이 바뀌면 모든 기기가 즉시 따라와야 한다. 옛 명단으로 [채우기]를 누르면
+            // 결석자가 다시 들어간 대진이 나오고, 어긋난 순간을 아무도 눈치채지 못한다.
+            loadSessionRef.current?.(classId);
           }
         )
         .subscribe();
@@ -2942,6 +2965,67 @@ function useLeagueStoreInternal() {
     return true;
   }, [loadScheduled]);
 
+  // ── 배정 세션 — 참가자 명단 ───────────────────────────
+  // 출석 체크가 입력의 전부다. 명단은 서버에 두고 실시간으로 공유한다.
+  const loadAssignmentSession = useCallback(async (classId: string) => {
+    try {
+      const { data } = await apiFetchAssignmentSession(classId);
+      setAssignmentSession((data as AssignmentSession) ?? null);
+    } catch { /* 비치명적 */ }
+  }, []);
+  useEffect(() => { loadSessionRef.current = loadAssignmentSession; }, [loadAssignmentSession]);
+
+  /**
+   * [새로 시작] — 세션 경계. 기존 큐를 전부 지우고 새 명단을 확정한다.
+   *
+   * 소화 못 한 큐를 정리하는 별도 로직이 필요 없다. 4교시 5반이 들어오면 3교시의
+   * 미소화 경기가 그때 사라진다. 날짜 기준은 안 된다 — 같은 날 3교시와 4교시는 날짜가 같다.
+   */
+  const startAssignmentSession = useCallback(async (payload: {
+    playerIds: string[];
+    matchType?: "single" | "double";
+  }): Promise<boolean> => {
+    if (!isClassManagerRef.current) { toast.error("권한이 없습니다."); return false; }
+    const cid = currentClassIdRef.current;
+    if (!cid) return false;
+    const { error: clearError } = await apiClearQueue(cid);
+    if (clearError) { toast.error("대기열 정리 실패: " + clearError.message); return false; }
+    const { data, error } = await apiUpsertAssignmentSession({
+      classId: cid,
+      playerIds: payload.playerIds,
+      matchType: payload.matchType ?? "double",
+      startedAt: new Date().toISOString(),
+    });
+    if (error) { toast.error("세션 시작 실패: " + error.message); return false; }
+    setAssignmentSession((data as AssignmentSession) ?? null);
+    await loadScheduled(cid);
+    toast.success(`참석 ${payload.playerIds.length}명으로 시작했어요.`);
+    return true;
+  }, [loadScheduled]);
+
+  /**
+   * 명단·종목만 고친다(세션 경계 아님). 지각·조퇴가 여기로 들어온다 —
+   * 상태로 모델링하지 않고, 그 순간 명단에 있는가만 본다.
+   * 이미 뽑힌 큐는 건드리지 않는다. 잘못 들어간 줄은 눈으로 보고 빼면 된다.
+   */
+  const updateAssignmentSession = useCallback(async (payload: {
+    playerIds?: string[];
+    matchType?: "single" | "double";
+  }): Promise<boolean> => {
+    if (!isClassManagerRef.current) { toast.error("권한이 없습니다."); return false; }
+    const cid = currentClassIdRef.current;
+    if (!cid) return false;
+    const base = assignmentSessionRef.current;
+    const { data, error } = await apiUpsertAssignmentSession({
+      classId: cid,
+      playerIds: payload.playerIds ?? base?.player_ids ?? [],
+      matchType: payload.matchType ?? base?.match_type ?? "double",
+    });
+    if (error) { toast.error("명단 저장 실패: " + error.message); return false; }
+    setAssignmentSession((data as AssignmentSession) ?? null);
+    return true;
+  }, []);
+
   // ── 배정: 큐 채우기 ───────────────────────────────────
   // 계산은 순수 함수(domain/assignment-calculator)가 한다. 여기서는 재료를 모아 주고
   // 결과를 배정 전용 bulk insert로 큐에 넣는 일만 한다. 누적 카운터는 저장하지 않는다 —
@@ -2995,7 +3079,8 @@ function useLeagueStoreInternal() {
     const cid = currentClassIdRef.current;
     if (!cid) return 0;
 
-    const teamSize: TeamSize = opts?.teamSize ?? 2;
+    const teamSize: TeamSize =
+      opts?.teamSize ?? (assignmentSessionRef.current?.match_type === "single" ? 1 : 2);
     const preset: AssignmentPreset = opts?.policy ?? defaultPreset(leagueTypeRef.current);
 
     // 큐 = 아직 결과가 안 들어온 행. 도전장(challenge)은 큐가 아니다.
@@ -3009,18 +3094,25 @@ function useLeagueStoreInternal() {
       }
     }
 
-    // 후보 = 오늘 참석자. 지각·조퇴는 상태가 아니라 "지금 이 목록에 있는가"로만 표현된다.
-    // 큐에 든 사람도 모집단에는 넣는다(계산기가 busyPlayerIds로 하드 제외한다).
+    // 후보 = 세션 명단(= 출석 체크 결과). 지각·조퇴는 상태가 아니라
+    // "지금 이 명단에 있는가"로만 표현된다. 큐에 든 사람도 모집단에는 넣는다
+    // (계산기가 busyPlayerIds로 하드 제외한다).
     const alive = new Set(students.map((s) => s.id));
     let participantIds = opts?.participantIds?.filter((id) => alive.has(id));
     if (!participantIds?.length) {
+      participantIds = (assignmentSessionRef.current?.player_ids ?? []).filter((id) => alive.has(id));
+    }
+    if (!participantIds.length) {
+      // 세션이 아직 없는 리그(동호회 등) — 옛 규칙으로 떨어진다: 오늘 뛴 사람 + 큐에 든 사람.
       const today = getTodayPlayerIds(matches);
       participantIds = students
         .map((s) => s.id)
         .filter((id) => today.has(id) || queuedIds.has(id));
     }
-    // 오늘 아무도 안 뛰었고 큐도 비어 있으면(그날 첫 배정) 전원을 후보로 본다.
-    if (participantIds.length < teamSize * 2) participantIds = students.map((s) => s.id);
+    if (!participantIds.length) {
+      toast.error("참석자를 먼저 체크하세요.");
+      return 0;
+    }
 
     // 한 바퀴 = 지금 놀고 있는 사람 수 ÷ 경기당 인원. 코트 수가 아니라 인원으로 잡는다 —
     // "전원이 한 판씩"이 목표이고, 코트 수는 우연히 비슷한 숫자가 나올 뿐 목적과 무관하다.
@@ -3632,6 +3724,9 @@ function useLeagueStoreInternal() {
     fetchDecayLog,
     scheduledMatches,
     createScheduledMatch,
+    assignmentSession,
+    startAssignmentSession,
+    updateAssignmentSession,
     fillAssignmentQueue,
     callScheduledMatch,
     removeScheduledMatch,

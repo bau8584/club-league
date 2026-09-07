@@ -854,6 +854,27 @@ grant execute on function public.get_league_members(uuid)           to authentic
 grant execute on function public.remove_league_member(uuid, uuid)   to authenticated;
 grant execute on function public.apply_dormancy_decay(uuid, text, jsonb) to authenticated;
 
+-- ============================================================
+-- 배정 세션 — 큐를 소유하는 단위는 "반"이 아니라 "지금 모인 명단 한 벌"
+-- ============================================================
+create table if not exists public.assignment_sessions (
+  league_id    uuid primary key references public.leagues(id) on delete cascade,
+  player_ids   uuid[] not null default '{}',      -- 오늘 참석자(출석 체크 결과)
+  match_type   text not null default 'double',    -- single | double (세션의 종목)
+  started_at   timestamptz not null default now(),
+  updated_by   uuid default auth.uid(),
+  updated_at   timestamptz not null default now()
+);
+alter table public.assignment_sessions enable row level security;
+
+drop policy if exists "recorders read session" on public.assignment_sessions;
+create policy "recorders read session" on public.assignment_sessions for select to authenticated
+  using (public.is_class_recorder(league_id));
+drop policy if exists "teachers manage session" on public.assignment_sessions;
+create policy "teachers manage session" on public.assignment_sessions for all to authenticated
+  using (public.is_class_teacher(league_id)) with check (public.is_class_teacher(league_id));
+
+
 grant select, insert, update, delete on public.leagues        to authenticated;
 grant select, insert, update, delete on public.players        to authenticated;
 grant select, insert, update, delete on public.matches        to authenticated;
@@ -861,6 +882,7 @@ grant select, insert, update, delete on public.league_secrets to authenticated;
 grant select                          on public.season_standings to authenticated;
 grant select                          on public.decay_log         to authenticated;
 grant select, insert, update, delete  on public.scheduled_matches to authenticated;
+grant select, insert, update, delete  on public.assignment_sessions to authenticated;
 grant select, insert, update, delete  on public.push_subscriptions to authenticated;
 grant select on public.players_public to anon, authenticated;
 

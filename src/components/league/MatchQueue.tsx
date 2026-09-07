@@ -41,6 +41,7 @@ export function MatchQueue({
     deletedById,
     myPlayerId,
     leagueType,
+    assignmentSession,
     fillAssignmentQueue,
     removeScheduledMatch,
   } = useLeagueStore();
@@ -48,7 +49,6 @@ export function MatchQueue({
   const [preset, setPreset] = useState<AssignmentPreset>(
     leagueType === "school" ? "diversity" : "balanced",
   );
-  const [matchType, setMatchType] = useState<"single" | "double">("double");
   const [filling, setFilling] = useState(false);
 
   const byId = useMemo(() => {
@@ -75,7 +75,8 @@ export function MatchQueue({
 
   const fill = async (mode: "round" | "one") => {
     setFilling(true);
-    await fillAssignmentQueue({ mode, policy: preset, teamSize: matchType === "single" ? 1 : 2 });
+    // 종목은 세션 설정이다. 여기서는 채우는 단위(한 바퀴 / 1경기)만 정한다.
+    await fillAssignmentQueue({ mode, policy: preset });
     setFilling(false);
   };
 
@@ -162,7 +163,13 @@ export function MatchQueue({
         </div>
       )}
 
-      {canManage && (
+      {canManage && !assignmentSession?.player_ids?.length && (
+        <p className="mt-4 border-t border-border/30 pt-4 text-[11px] text-muted-foreground">
+          위에서 출석을 먼저 체크하세요. 체크된 사람만 대진에 들어갑니다.
+        </p>
+      )}
+
+      {canManage && !!assignmentSession?.player_ids?.length && (
         <div className="mt-4 border-t border-border/30 pt-4">
           <div className="flex flex-wrap items-center gap-1.5">
             {PRESETS.map((p) => (
@@ -180,23 +187,6 @@ export function MatchQueue({
                 {p.label}
               </button>
             ))}
-            <div className="ml-auto flex shrink-0 items-center gap-1">
-              {(["double", "single"] as const).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => setMatchType(t)}
-                  className={cn(
-                    "rounded-lg border px-2 py-1 text-[10px] font-black transition-all",
-                    matchType === t
-                      ? "border-border/60 bg-input text-foreground"
-                      : "border-transparent text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {t === "double" ? "복식" : "단식"}
-                </button>
-              ))}
-            </div>
           </div>
           <p className="mt-1.5 text-[11px] text-muted-foreground">
             {PRESETS.find((p) => p.value === preset)?.hint}
