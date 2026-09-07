@@ -113,10 +113,10 @@ export function SessionRoster() {
   // 세션이 없으면 처음부터 체크 화면이다. 있으면 접어 두고 [명단 수정]으로 연다.
   const open = editing || !hasSession;
 
-  // 명단이 한 반뿐이면 전원 체크에서 결석자를 빼는 쪽이 빠르다.
-  // 여러 학년·반이 섞여 있으면(전교 리그) 전원 체크가 오히려 위험하므로 빈 상태에서 시작한다.
-  const singleClassLeague = !axes.varyGrade && !axes.varyClass;
-  const initialPick = () => (singleClassLeague ? roster.map((s) => s.id) : []);
+  // 교사가 하는 일은 "온 사람 체크"가 아니라 "안 온 사람 빼기"다. 30명 중 결석은 보통 두엇이다.
+  // 그래서 보이는 사람은 전부 참석으로 두고, 결석자만 눌러서 뺀다.
+  // 반을 고르면 그 반이 통째로 참석이 되므로, 전교 리그에서도 전원 체크의 위험이 없다.
+  const initialPick = () => visible.map((s) => s.id);
 
   const beginEdit = () => {
     setDraft(
@@ -135,6 +135,9 @@ export function SessionRoster() {
       return base.includes(id) ? base.filter((x) => x !== id) : [...base, id];
     });
   };
+
+  // 지금 화면에서 빠져 있는 사람 = 결석. 교사가 확인하는 숫자는 이쪽이다.
+  const absentVisible = visible.filter((s) => !picked.includes(s.id)).length;
 
   /** 보이는 사람만 한꺼번에 켜고 끈다. 필터 밖 체크는 건드리지 않는다. */
   const bulkVisible = (on: boolean) => {
@@ -176,12 +179,12 @@ export function SessionRoster() {
         </div>
         <div className="min-w-0 flex-1">
           <h2 className="text-base font-black tracking-tight text-foreground">
-            {hasSession ? `참석 ${present.length}명` : "출석 체크"}
+            {hasSession ? `참석 ${present.length}명` : "결석 체크"}
           </h2>
           <p className="text-[11px] text-muted-foreground">
             {hasSession
               ? `${scopeLabel ? `${scopeLabel} · ` : ""}${assignmentSession?.match_type === "single" ? "단식" : "복식"} · ${fmtTime(assignmentSession!.started_at)} 시작 · 이 명단에서만 대진을 뽑습니다.`
-              : "오늘 온 사람을 체크하세요. 체크된 사람만 대진에 들어갑니다."}
+              : "안 온 사람만 눌러서 빼세요. 남은 사람으로 대진을 뽑습니다."}
           </p>
         </div>
         {hasSession && !editing && (
@@ -264,14 +267,14 @@ export function SessionRoster() {
                 onClick={() => bulkVisible(true)}
                 className="rounded-lg border border-border/40 px-2 py-1 text-[10px] font-black text-muted-foreground hover:text-foreground"
               >
-                {visible.length === roster.length ? "전체" : "보이는 전체"}
+                {visible.length === roster.length ? "전원 참석" : "이 반 전원 참석"}
               </button>
               <button
                 type="button"
                 onClick={() => bulkVisible(false)}
                 className="rounded-lg border border-border/40 px-2 py-1 text-[10px] font-black text-muted-foreground hover:text-foreground"
               >
-                해제
+                전원 결석
               </button>
             </div>
           </div>
@@ -295,7 +298,8 @@ export function SessionRoster() {
                         "rounded-full border px-2.5 py-1 text-xs font-bold transition-all",
                         on
                           ? "border-neon-green/50 bg-neon-green/15 text-neon-green"
-                          : "border-border/40 text-muted-foreground line-through hover:text-foreground",
+                          : // 결석은 눈에 띄어야 한다 — 교사가 훑어보는 대상은 빠진 사람이다.
+                            "border-amber-500/40 bg-amber-500/10 text-amber-500/80 line-through",
                       )}
                     >
                       {dn(s)}
