@@ -1,5 +1,6 @@
 import { supabase } from "../supabaseClient";
 import type { PlayerInsert, MatchInsert, MatchUpdate } from "../lib/database.types";
+import { buildAssignedMatchRows, type AssignedMatchInput } from "../domain/assignment-rows";
 
 // 동호회 스키마(leagues/players/matches/league_secrets/players_public)에 대응.
 // 프론트엔드 호환을 위해 함수/파라미터 이름은 유지하되, 테이블/컬럼은 클럽 이름 사용.
@@ -114,6 +115,25 @@ export async function apiCreateScheduledMatch(payload: {
     player_b2_id: payload.playerB2Id ?? null,
     court: payload.court ?? null,
   });
+}
+
+/**
+ * 배정 전용 bulk insert — 계산기가 낸 대진을 큐에 한 번에 넣는다.
+ *
+ * `apiCreateReservation`을 재사용하지 않는다. 같은 테이블에 쓰지만 검증 규칙이 다르다.
+ * 예약은 1인 3개 제한과 "본인 포함" 검사가 있고 팀 미정(player_ids)이지만,
+ * 배정은 운영진이 남들 경기를 대량 생성하는 것이고 팀이 이미 확정(슬롯 4개)이다.
+ * 한 함수에 "배정이면 이 검사 건너뛰기" 플래그를 달기 시작하면 두 기능이 서로를 망가뜨린다.
+ * 읽는 쪽(목록·취소)은 그대로 공유한다.
+ *
+ * `court`는 항상 null이다 — 아무도 그 데이터를 안 쓰고, 눈으로 보면 알고, 틀려도 아무도 안 고친다.
+ * created_at은 행마다 1ms씩 벌려 넣는다. 한 번의 insert는 트랜잭션 시각이 같아
+ * default now()로는 큐 순서가 뒤섞이는데, 상위 N개가 곧 "진행 중"이므로 순서가 곧 의미다.
+ */
+export async function apiBulkCreateAssignedMatches(payload: AssignedMatchInput) {
+  const rows = buildAssignedMatchRows(payload);
+  if (rows.length === 0) return { data: [], error: null };
+  return supabase.from("scheduled_matches").insert(rows).select();
 }
 
 export async function apiUpdateScheduledStatus(id: string, status: "waiting" | "called" | "done" | "cancelled") {
