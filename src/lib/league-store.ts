@@ -2972,7 +2972,14 @@ function useLeagueStoreInternal() {
   };
 
   const fillAssignmentQueue = useCallback(async (opts?: {
-    /** 뽑을 경기 수. "다 뽑기"가 아니라 모자란 만큼만 채운다. */
+    /**
+     * 채우는 단위. "다 뽑기"가 아니라 모자란 만큼만 채운다.
+     * - round: 한 바퀴 = 지금 놀고 있는 사람 ÷ 경기당 인원. "전원 한 판씩"이 그날의 목표다
+     * - one:   한 건만. 큐 길이를 일정하게 유지하는 운용
+     * 4로 안 나눠떨어져 남는 사람은 판 수가 적어 다음 채우기에서 자동으로 먼저 들어간다.
+     */
+    mode?: "round" | "one";
+    /** 뽑을 경기 수를 직접 지정. mode보다 우선한다. */
     count?: number;
     teamSize?: TeamSize;
     /**
@@ -2988,7 +2995,6 @@ function useLeagueStoreInternal() {
     const cid = currentClassIdRef.current;
     if (!cid) return 0;
 
-    const count = Math.max(1, opts?.count ?? 1);
     const teamSize: TeamSize = opts?.teamSize ?? 2;
     const preset: AssignmentPreset = opts?.policy ?? defaultPreset(leagueTypeRef.current);
 
@@ -3015,6 +3021,14 @@ function useLeagueStoreInternal() {
     }
     // 오늘 아무도 안 뛰었고 큐도 비어 있으면(그날 첫 배정) 전원을 후보로 본다.
     if (participantIds.length < teamSize * 2) participantIds = students.map((s) => s.id);
+
+    // 한 바퀴 = 지금 놀고 있는 사람 수 ÷ 경기당 인원. 코트 수가 아니라 인원으로 잡는다 —
+    // "전원이 한 판씩"이 목표이고, 코트 수는 우연히 비슷한 숫자가 나올 뿐 목적과 무관하다.
+    const freeCount = participantIds.filter((id) => !queuedIds.has(id)).length;
+    const count = Math.max(
+      1,
+      opts?.count ?? (opts?.mode === "one" ? 1 : Math.floor(freeCount / (teamSize * 2))),
+    );
 
     const queueHistory = queue.map(teamsOfScheduled).filter(Boolean) as AssignmentHistoryMatch[];
     // 팀 미정 예약: 판 수만 센다(만남은 아직 모른다).

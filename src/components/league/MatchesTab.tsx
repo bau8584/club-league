@@ -8,6 +8,7 @@ import { CalendarPlus, Megaphone, Plus, X, Trophy, ChevronRight, ClipboardList, 
 import { useLeagueStore } from "@/lib/league-store";
 import { RecordMatch, type MatchResultData, type PlayerResult } from "./RecordMatch";
 import { MatchRecommend } from "./MatchRecommend";
+import { MatchQueue } from "./MatchQueue";
 import { getTier, type Match, type Student } from "@/lib/league-types";
 import { getTodayPlayerIds } from "@/lib/today-players";
 import { useLeagueTerms, useIsSchoolLeague } from "@/lib/league-terms";
@@ -124,6 +125,9 @@ export function MatchesTab({ incomingInitials, onConsumeInitials, openMatchId, o
   const [activeReservation, setActiveReservation] = useState<typeof scheduledMatches[number] | null>(null);
   // 매치 추천 등 외부에서 넘어온 프리필(예약과 무관한 직접 기록)
   const [directInitials, setDirectInitials] = useState<Initials | null>(null);
+  // 같은 줄을 다시 눌러도 폼이 채워지도록 프리필 객체를 새로 만들게 하는 값.
+  // (RecordMatch 의 프리필 effect 가 initials 의 객체 동일성으로 재실행된다)
+  const [prefillNonce, setPrefillNonce] = useState(0);
   // 자율(free) 모드의 비관리자는 '내가 낀 경기'만 기록 — 슬롯 A를 본인으로 고정.
   // (예약 결과 입력은 참가자가 이미 정해져 있으므로 고정하지 않음)
   const lockedPlayerId = (!isClassManager && matchInputMode === "free" && !activeReservation) ? myPlayerId : null;
@@ -146,12 +150,28 @@ export function MatchesTab({ incomingInitials, onConsumeInitials, openMatchId, o
     }
     if (ids.length >= 2) return { playerAId: ids[0], playerBId: ids[1], matchType: "single" as const };
     return null;
-  }, [activeReservation, directInitials]);
+    // prefillNonce: 같은 예약을 다시 골랐을 때도 새 객체를 만들어 폼을 다시 채운다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeReservation, directInitials, prefillNonce]);
 
   const openResultInput = (reservation: typeof scheduledMatches[number] | null) => {
     setActiveReservation(reservation);
     setDirectInitials(null);
     setRecordOpen(true);
+  };
+
+  // 큐 줄의 [결과 입력]. school 은 결과 입력 폼이 같은 화면에 이미 있으므로 모달을 띄우지
+  // 않고 그 폼을 채운다 — "경기 끝남 → 결과 등록 → 다음이 올라옴"이 한 화면에서 돌아야 한다.
+  const recordFormRef = useRef<HTMLDivElement>(null);
+  const openQueueRow = (row: typeof scheduledMatches[number]) => {
+    setActiveReservation(row);
+    setDirectInitials(null);
+    setPrefillNonce((n) => n + 1);
+    if (isSchool) {
+      requestAnimationFrame(() => recordFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    } else {
+      setRecordOpen(true);
+    }
   };
 
   // 매치 추천에서 넘어온 프리필이 있으면 결과 입력 창을 그 대진으로 연다
@@ -179,6 +199,8 @@ export function MatchesTab({ incomingInitials, onConsumeInitials, openMatchId, o
       const summary = `${winners} 승 · ${sa}:${sb}`;
       const parts = participantsOf(activeReservation);
       linkReservationResult(activeReservation.id, m.id, parts, summary);
+      // 큐에서 온 경기는 여기서 끝난다. 다음 입력이 이미 사라진 줄에 다시 연결되면 안 된다.
+      setActiveReservation(null);
     }
     return m;
   };
@@ -277,8 +299,13 @@ export function MatchesTab({ incomingInitials, onConsumeInitials, openMatchId, o
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
       {/* ── 경기 결과 입력 ── school: 버튼→팝업 대신 경기장 탭에 폼을 바로 노출 */}
+      {/* ── 대기열 ── 경기 탭 상단. 지금은 학교 리그에만 (동호회는 예약 목록과 합칠 때 함께) */}
+      {isSchool && !readOnly && (
+        <MatchQueue canManage={isClassManager} onRecordRow={openQueueRow} />
+      )}
+
       {canRecord && isSchool && (
-        <Card className="border border-border/40 bg-card/50 p-5 shadow-lg backdrop-blur">
+        <Card ref={recordFormRef} className="border border-border/40 bg-card/50 p-5 shadow-lg backdrop-blur">
           <div className="mb-3 flex items-center gap-2.5">
             <div className="flex size-9 items-center justify-center rounded-xl bg-neon-blue/15 text-neon-blue">
               <Trophy className="size-5" />
