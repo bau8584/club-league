@@ -9,11 +9,25 @@ import type { Student } from "@/lib/league-types";
 
 const dn = (s?: Student | null) => (s ? s.nickname || s.name : "?");
 
-/** 학년-반 키. 학년이나 반이 없는 명단(동호회·단일 학급)은 빈 문자열 하나로 묶인다. */
+/**
+ * 학년-반 키.
+ *
+ * 명단에 반 정보가 없을 수 있다 — 일괄 등록에서 이름만 붙여넣으면 학년·반·번호가 전부
+ * null이고, 그건 정상적인 사용 방식이다(한 반만 쓰는 리그는 반을 적을 이유가 없다).
+ * 그런 학생은 빈 키 하나로 묶인다. 전원이 빈 키면 고를 것이 없으므로 칩 자체가 안 뜨고
+ * 명단 = 전원이 된다. 일부만 비어 있으면 "반 미지정" 묶음으로 따로 보인다.
+ */
 const classKeyOf = (s: Student): string =>
-  s.grade == null && s.classNum == null ? "" : `${s.grade ?? "?"}-${s.classNum ?? "?"}`;
+  s.grade == null && s.classNum == null ? "" : `${s.grade ?? ""}-${s.classNum ?? ""}`;
 
-const classLabel = (key: string) => (key === "" ? "전체" : `${key}반`);
+/** 있는 축만 읽는다. 학년만 있으면 "5학년", 반만 있으면 "3반", 둘 다면 "5-3반". */
+function classLabel(key: string): string {
+  if (key === "") return "반 미지정";
+  const [g, c] = key.split("-");
+  if (g && c) return `${g}-${c}반`;
+  if (g) return `${g}학년`;
+  return `${c}반`;
+}
 
 /** 학교는 학년·반·번호 순, 그 외에는 이름 순. 교사가 출석부를 훑는 순서 그대로. */
 function sortForRoster(list: Student[]): Student[] {
@@ -171,6 +185,8 @@ export function SessionRoster() {
     });
   };
 
+  // 여러 반을 섞는 것(학년 대전)은 예외적인 경우다. 평소에는 반 칩을 누르면 교체되고,
+  // [반 더하기]를 켰을 때만 더해진다 — 눌렀는데 이전 반이 남아 있는 사고를 막는다.
   const [multi, setMulti] = useState(false);
 
   // 반 구성이 바뀌면 새 수업이다 → 큐를 비우고 시작한다.
@@ -181,7 +197,12 @@ export function SessionRoster() {
       ? true
       : selected.some((k) => !sessionClasses.includes(k));
 
-  const scopeText = selected.length === 0 ? "" : selected.map(classLabel).join(", ");
+  // 반 정보가 없는 명단에서는 "반 미지정"을 제목에 붙이지 않는다 — 고를 것이 없으니
+  // 그냥 오늘 수업이다. 여러 반 중 하나로 섞여 있을 때만 이름이 필요하다.
+  const labelOf = (keys: string[]) =>
+    keys.length === 1 && keys[0] === "" ? "" : keys.map(classLabel).join(", ");
+  const scopeText = labelOf(selected);
+  const sessionText = labelOf(sessionClasses);
 
   const save = async () => {
     setSaving(true);
@@ -208,7 +229,7 @@ export function SessionRoster() {
         <div className="min-w-0 flex-1">
           <h2 className="text-base font-black tracking-tight text-foreground">
             {hasSession && !editing
-              ? `${sessionClasses.map(classLabel).join(", ")} · ${present.length}명`
+              ? `${sessionText ? `${sessionText} · ` : ""}참석 ${present.length}명`
               : "수업 시작"}
           </h2>
           <p className="text-[11px] text-muted-foreground">
@@ -235,15 +256,25 @@ export function SessionRoster() {
               </ClassChip>
             ))}
           </div>
-          <label className="mt-2 flex w-fit cursor-pointer items-center gap-1.5 text-[11px] font-bold text-muted-foreground select-none">
-            <input
-              type="checkbox"
-              checked={multi}
-              onChange={(e) => setMulti(e.target.checked)}
-              className="size-3.5 accent-neon-blue"
-            />
-            여러 반 섞기 (학년 대전)
-          </label>
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setMulti((v) => !v)}
+              className={cn(
+                "rounded-lg border px-2.5 py-1 text-[11px] font-black transition-all",
+                multi
+                  ? "border-neon-blue/50 bg-neon-blue/15 text-neon-blue"
+                  : "border-border/40 text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {multi ? "반 더하는 중 · 끄기" : "+ 반 더하기"}
+            </button>
+            <span className="text-[11px] text-muted-foreground">
+              {multi
+                ? "누르는 반이 명단에 더해집니다. 다시 누르면 빠집니다."
+                : "학년 대전처럼 여러 반을 섞을 때만 켜세요."}
+            </span>
+          </div>
         </div>
       )}
 
@@ -255,7 +286,7 @@ export function SessionRoster() {
         <>
           <div className="mb-2 flex items-center gap-2">
             <span className="text-xs font-bold text-muted-foreground">
-              {scopeText} 참석 {picked.length}명
+              {scopeText ? `${scopeText} ` : ""}참석 {picked.length}명
               {absentIds.size > 0 && (
                 <span className="ml-1.5 font-black text-amber-500">결석 {absentIds.size}명</span>
               )}
@@ -279,30 +310,47 @@ export function SessionRoster() {
           </div>
 
           <div className="max-h-56 overflow-y-auto rounded-xl border border-border/30 p-2">
-            <div className="flex flex-wrap gap-1.5">
-              {scopeStudents.map((s) => {
-                const out = absentIds.has(s.id);
-                return (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => toggleAbsent(s)}
-                    className={cn(
-                      "rounded-full border px-2.5 py-1 text-xs font-bold transition-all",
-                      out
-                        ? // 결석은 눈에 띄어야 한다 — 교사가 훑어보는 대상은 빠진 사람이다.
-                          "border-amber-500/40 bg-amber-500/10 text-amber-500/80 line-through"
-                        : "border-neon-green/50 bg-neon-green/15 text-neon-green",
-                    )}
-                  >
-                    {dn(s)}
-                    {s.studentNo != null && (
-                      <span className="ml-1 text-[10px] font-normal opacity-70">{s.studentNo}</span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+            {selected.map((key) => {
+              const group = scopeStudents.filter((s) => classKeyOf(s) === key);
+              if (group.length === 0) return null;
+              return (
+                <div key={key} className="mb-2 last:mb-0">
+                  {/* 여러 반을 섞었을 때만 반 머리글을 붙인다. 한 반이면 군더더기다. */}
+                  {selected.length > 1 && (
+                    <p className="mb-1 text-[10px] font-black text-muted-foreground">
+                      {classLabel(key)} ({group.filter((s) => !absentIds.has(s.id)).length}/
+                      {group.length})
+                    </p>
+                  )}
+                  <div className="flex flex-wrap gap-1.5">
+                    {group.map((s) => {
+                      const out = absentIds.has(s.id);
+                      return (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => toggleAbsent(s)}
+                          className={cn(
+                            "rounded-full border px-2.5 py-1 text-xs font-bold transition-all",
+                            out
+                              ? // 결석은 눈에 띄어야 한다 — 교사가 훑어보는 대상은 빠진 사람이다.
+                                "border-amber-500/40 bg-amber-500/10 text-amber-500/80 line-through"
+                              : "border-neon-green/50 bg-neon-green/15 text-neon-green",
+                          )}
+                        >
+                          {dn(s)}
+                          {s.studentNo != null && (
+                            <span className="ml-1 text-[10px] font-normal opacity-70">
+                              {s.studentNo}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
           {/* 종목은 그 수업의 성격이라 세션 설정이다. 채우는 단위(한 바퀴/1경기)와는 다른 축. */}
@@ -335,7 +383,7 @@ export function SessionRoster() {
                 disabled={saving || picked.length === 0}
                 className="mt-3 h-11 w-full rounded-xl bg-neon-green text-sm font-black text-primary-foreground hover:bg-neon-green/90"
               >
-                {classesChanged ? `${scopeText} 수업 시작` : "명단 반영"}
+                {classesChanged ? `${scopeText ? `${scopeText} ` : ""}수업 시작` : "명단 반영"}
               </Button>
               <p className="mt-2 text-[11px] text-muted-foreground">
                 {classesChanged
