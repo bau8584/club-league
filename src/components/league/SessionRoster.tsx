@@ -1,14 +1,19 @@
 import type React from "react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { ClipboardCheck, RotateCcw } from "lucide-react";
-import { Input } from "@/components/ui/input";
+import { ClipboardCheck } from "lucide-react";
 import { useLeagueStore } from "@/lib/league-store";
-import { schoolAxesOf, schoolLabelCompact, type Student } from "@/lib/league-types";
+import type { Student } from "@/lib/league-types";
 
 const dn = (s?: Student | null) => (s ? s.nickname || s.name : "?");
+
+/** 학년-반 키. 학년이나 반이 없는 명단(동호회·단일 학급)은 빈 문자열 하나로 묶인다. */
+const classKeyOf = (s: Student): string =>
+  s.grade == null && s.classNum == null ? "" : `${s.grade ?? "?"}-${s.classNum ?? "?"}`;
+
+const classLabel = (key: string) => (key === "" ? "전체" : `${key}반`);
 
 /** 학교는 학년·반·번호 순, 그 외에는 이름 순. 교사가 출석부를 훑는 순서 그대로. */
 function sortForRoster(list: Student[]): Student[] {
@@ -31,16 +36,7 @@ function fmtTime(iso: string): string {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-/**
- * 출석 체크 = 배정의 유일한 입력.
- *
- * 명단이 곧 배정 후보다. 지각·조퇴를 상태로 모델링하지 않고, 채울 때마다 "그 순간 이 명단에
- * 있는 사람" 중에서 뽑으므로 조퇴자는 그 시점부터 안 뽑히고 지각자는 그 시점부터 뽑힌다.
- *
- * [새로 시작]이 세션 경계다 — 기존 큐를 전부 지우고 새 명단을 확정한다. 4교시 5반이
- * 들어오면 3교시의 미소화 경기가 그때 사라진다.
- */
-function FilterChip({
+function ClassChip({
   on,
   onClick,
   children,
@@ -54,9 +50,9 @@ function FilterChip({
       type="button"
       onClick={onClick}
       className={cn(
-        "rounded-lg border px-2.5 py-1 text-[11px] font-black transition-all",
+        "rounded-lg border px-3 py-1.5 text-xs font-black transition-all",
         on
-          ? "border-neon-blue/50 bg-neon-blue/15 text-neon-blue"
+          ? "border-neon-blue/50 bg-neon-blue/20 text-neon-blue"
           : "border-border/40 text-muted-foreground hover:text-foreground",
       )}
     >
@@ -65,111 +61,143 @@ function FilterChip({
   );
 }
 
+/**
+ * 출석 = 반을 고르고, 안 온 학생만 빼는 것.
+ *
+ * 명단의 단위는 "아무나 모은 집합"이 아니라 **반**이다. 5교시 5-5 수업이 끝나고 6교시
+ * 5-7이 들어오면 교사가 하는 일은 "반을 바꾸는 것" 하나여야 한다 — 5-5를 전부 결석으로
+ * 돌리고, 5-7을 전원 출석으로 켜고, 다시 결석생을 찾는 세 번의 일이 아니다.
+ * 그래서 반 선택 자체가 곧 명단이고, 반을 바꾸면 이전 반은 통째로 빠진다.
+ *
+ * 결석은 반 안에서만 기억한다. 반을 다시 고르면 그 반의 결석 표시가 그대로 살아난다
+ * (같은 반이 다음 교시에 또 들어오는 경우).
+ */
 export function SessionRoster() {
   const { students, assignmentSession, startAssignmentSession, updateAssignmentSession } =
     useLeagueStore();
 
   const roster = useMemo(() => sortForRoster(students), [students]);
 
-  // 500명짜리 전교 리그에서 전원을 한 줄에 늘어놓으면 고를 수가 없다.
-  // 수업은 반 단위로 하므로 학년·반으로 먼저 좁힌다. (값이 한 종류뿐인 축은 칩을 띄우지 않는다)
-  const axes = useMemo(() => schoolAxesOf(students), [students]);
-  const [filterGrade, setFilterGrade] = useState<number | null>(null);
-  const [filterClass, setFilterClass] = useState<number | null>(null);
-  const [search, setSearch] = useState("");
+  /** 명단에 존재하는 반 목록. 반이 하나뿐이면 고를 것이 없다. */
+  const classKeys = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of roster) set.add(classKeyOf(s));
+    return Array.from(set).sort();
+  }, [roster]);
+  const singleClass = classKeys.length <= 1;
 
-  const availableClasses = useMemo(() => {
-    if (!axes.varyClass) return [];
-    const set = new Set<number>();
-    for (const s of students) {
-      if (s.classNum == null) continue;
-      if (filterGrade != null && s.grade !== filterGrade) continue;
-      set.add(s.classNum);
-    }
-    return Array.from(set).sort((a, b) => a - b);
-  }, [students, filterGrade, axes.varyClass]);
-
-  // 필터는 "보이는 사람"만 줄인다. 체크 상태는 필터 밖 사람도 그대로 유지된다 —
-  // 학년 대전처럼 여러 반이 섞인 명단을 반씩 훑어 담을 수 있어야 한다.
-  const visible = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return roster.filter((s) => {
-      if (filterGrade != null && s.grade !== filterGrade) return false;
-      if (filterClass != null && s.classNum !== filterClass) return false;
-      if (!q) return true;
-      return (
-        (s.name || "").toLowerCase().includes(q) || (s.nickname || "").toLowerCase().includes(q)
-      );
-    });
-  }, [roster, filterGrade, filterClass, search]);
-
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState<string[]>([]);
+  const [selected, setSelected] = useState<string[]>([]);
+  // 결석은 반별로 기억한다. 반을 바꿔도 그 반의 표시가 남고, 다른 반에 영향을 주지 않는다.
+  const [absent, setAbsent] = useState<Record<string, string[]>>({});
   const [draftType, setDraftType] = useState<"single" | "double">("double");
+  const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const present = useMemo(() => assignmentSession?.player_ids ?? [], [assignmentSession]);
   const hasSession = !!assignmentSession && present.length > 0;
-  // 세션이 없으면 처음부터 체크 화면이다. 있으면 접어 두고 [명단 수정]으로 연다.
-  const open = editing || !hasSession;
 
-  // 교사가 하는 일은 "온 사람 체크"가 아니라 "안 온 사람 빼기"다. 30명 중 결석은 보통 두엇이다.
-  // 그래서 보이는 사람은 전부 참석으로 두고, 결석자만 눌러서 뺀다.
-  // 반을 고르면 그 반이 통째로 참석이 되므로, 전교 리그에서도 전원 체크의 위험이 없다.
-  const initialPick = () => visible.map((s) => s.id);
-
-  const beginEdit = () => {
-    setDraft(
-      hasSession ? present.filter((id) => students.some((s) => s.id === id)) : initialPick(),
-    );
-    setDraftType(assignmentSession?.match_type === "single" ? "single" : "double");
-    setEditing(true);
-  };
-
-  // 세션이 없을 때는 전원 체크된 상태로 시작한다 — 결석 몇 명을 빼는 쪽이 빠르다.
-  const picked = editing ? draft : initialPick();
-  const toggle = (id: string) => {
-    if (!editing) beginEdit();
-    setDraft((prev) => {
-      const base = editing ? prev : initialPick();
-      return base.includes(id) ? base.filter((x) => x !== id) : [...base, id];
-    });
-  };
-
-  // 지금 화면에서 빠져 있는 사람 = 결석. 교사가 확인하는 숫자는 이쪽이다.
-  const absentVisible = visible.filter((s) => !picked.includes(s.id)).length;
-
-  /** 보이는 사람만 한꺼번에 켜고 끈다. 필터 밖 체크는 건드리지 않는다. */
-  const bulkVisible = (on: boolean) => {
-    const base = editing ? draft : initialPick();
-    const ids = new Set(visible.map((s) => s.id));
-    setEditing(true);
-    setDraft(on ? Array.from(new Set([...base, ...ids])) : base.filter((id) => !ids.has(id)));
-  };
-
-  // 접힌 요약에 "어느 반인지"를 보여준다 — 옆 반 명단으로 돌리고 있는 사고를 바로 알아채야 한다.
-  const scopeLabel = useMemo(() => {
-    if (!hasSession) return "";
+  /** 현재 세션이 어느 반으로 돌아가고 있는지. 반이 바뀌면 그것이 곧 새 수업이다. */
+  const sessionClasses = useMemo(() => {
     const set = new Set<string>();
     for (const id of present) {
       const s = students.find((x) => x.id === id);
-      if (!s) continue;
-      if (s.grade == null && s.classNum == null) continue;
-      set.add(`${s.grade ?? "?"}-${s.classNum ?? "?"}`);
-      if (set.size > 3) break;
+      if (s) set.add(classKeyOf(s));
     }
-    if (set.size === 0) return "";
-    return set.size > 3 ? "여러 반" : Array.from(set).join(", ");
-  }, [hasSession, present, students]);
+    return Array.from(set).sort();
+  }, [present, students]);
 
-  const save = async (asNewSession: boolean) => {
+  // 열려 있는 세션이 있으면 그 반을 골라 둔 상태로 시작한다.
+  useEffect(() => {
+    if (editing) return;
+    if (hasSession) {
+      setSelected(sessionClasses);
+      setAbsent(() => {
+        const out: Record<string, string[]> = {};
+        for (const key of sessionClasses) {
+          out[key] = roster
+            .filter((s) => classKeyOf(s) === key && !present.includes(s.id))
+            .map((s) => s.id);
+        }
+        return out;
+      });
+      setDraftType(assignmentSession?.match_type === "single" ? "single" : "double");
+    } else if (singleClass && classKeys.length === 1) {
+      setSelected(classKeys);
+    }
+  }, [
+    editing,
+    hasSession,
+    sessionClasses,
+    present,
+    roster,
+    assignmentSession,
+    singleClass,
+    classKeys,
+  ]);
+
+  /** 고른 반의 학생 전원. 이것이 명단의 모집단이다. */
+  const scopeStudents = useMemo(
+    () => roster.filter((s) => selected.includes(classKeyOf(s))),
+    [roster, selected],
+  );
+  const absentIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const key of selected) for (const id of absent[key] ?? []) set.add(id);
+    return set;
+  }, [selected, absent]);
+  const picked = useMemo(
+    () => scopeStudents.filter((s) => !absentIds.has(s.id)).map((s) => s.id),
+    [scopeStudents, absentIds],
+  );
+
+  /** 반 선택 = 명단 교체. 여러 반을 섞는 경우(학년 대전)만 명시적으로 추가한다. */
+  const pickClass = (key: string, additive: boolean) => {
+    setEditing(true);
+    setSelected((prev) => {
+      if (!additive) return [key];
+      return prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key].sort();
+    });
+  };
+
+  const toggleAbsent = (s: Student) => {
+    const key = classKeyOf(s);
+    setEditing(true);
+    setAbsent((prev) => {
+      const list = prev[key] ?? [];
+      return {
+        ...prev,
+        [key]: list.includes(s.id) ? list.filter((x) => x !== s.id) : [...list, s.id],
+      };
+    });
+  };
+
+  const [multi, setMulti] = useState(false);
+
+  // 반 구성이 바뀌면 새 수업이다 → 큐를 비우고 시작한다.
+  // 같은 반에서 몇 명만 바뀐 것은 지각·조퇴다 → 큐를 그대로 둔다.
+  // 교사가 "명단 저장이냐 새로 시작이냐"를 고를 일이 아니라, 무엇이 바뀌었는지가 정한다.
+  const classesChanged =
+    !hasSession || selected.length !== sessionClasses.length
+      ? true
+      : selected.some((k) => !sessionClasses.includes(k));
+
+  const scopeText = selected.length === 0 ? "" : selected.map(classLabel).join(", ");
+
+  const save = async () => {
     setSaving(true);
-    const ok = asNewSession
+    const ok = classesChanged
       ? await startAssignmentSession({ playerIds: picked, matchType: draftType })
       : await updateAssignmentSession({ playerIds: picked, matchType: draftType });
     setSaving(false);
     if (ok) setEditing(false);
   };
+
+  const dirty =
+    editing &&
+    (classesChanged ||
+      picked.length !== present.length ||
+      picked.some((id) => !present.includes(id)) ||
+      draftType !== (assignmentSession?.match_type ?? "double"));
 
   return (
     <Card className="border border-border/40 bg-card/50 p-5 shadow-lg backdrop-blur">
@@ -179,141 +207,105 @@ export function SessionRoster() {
         </div>
         <div className="min-w-0 flex-1">
           <h2 className="text-base font-black tracking-tight text-foreground">
-            {hasSession ? `참석 ${present.length}명` : "결석 체크"}
+            {hasSession && !editing
+              ? `${sessionClasses.map(classLabel).join(", ")} · ${present.length}명`
+              : "수업 시작"}
           </h2>
           <p className="text-[11px] text-muted-foreground">
-            {hasSession
-              ? `${scopeLabel ? `${scopeLabel} · ` : ""}${assignmentSession?.match_type === "single" ? "단식" : "복식"} · ${fmtTime(assignmentSession!.started_at)} 시작 · 이 명단에서만 대진을 뽑습니다.`
-              : "안 온 사람만 눌러서 빼세요. 남은 사람으로 대진을 뽑습니다."}
+            {hasSession && !editing
+              ? `${assignmentSession?.match_type === "single" ? "단식" : "복식"} · ${fmtTime(assignmentSession!.started_at)} 시작 · 이 명단에서만 대진을 뽑습니다.`
+              : singleClass
+                ? "안 온 학생만 눌러서 빼세요."
+                : "수업할 반을 고르고, 안 온 학생만 눌러서 빼세요."}
           </p>
         </div>
-        {hasSession && !editing && (
-          <Button
-            onClick={beginEdit}
-            size="sm"
-            variant="outline"
-            className="h-8 shrink-0 rounded-lg border-border/50 px-3 text-[11px] font-black"
-          >
-            명단 수정
-          </Button>
-        )}
       </div>
 
-      {open && (
+      {/* 반 고르기 = 명단 정하기. 반이 하나뿐인 리그에는 고를 것이 없다. */}
+      {!singleClass && (
+        <div className="mb-3">
+          <div className="flex flex-wrap gap-1.5">
+            {classKeys.map((key) => (
+              <ClassChip
+                key={key}
+                on={selected.includes(key)}
+                onClick={() => pickClass(key, multi)}
+              >
+                {classLabel(key)}
+              </ClassChip>
+            ))}
+          </div>
+          <label className="mt-2 flex w-fit cursor-pointer items-center gap-1.5 text-[11px] font-bold text-muted-foreground select-none">
+            <input
+              type="checkbox"
+              checked={multi}
+              onChange={(e) => setMulti(e.target.checked)}
+              className="size-3.5 accent-neon-blue"
+            />
+            여러 반 섞기 (학년 대전)
+          </label>
+        </div>
+      )}
+
+      {selected.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-border/30 py-6 text-center text-[11px] text-muted-foreground">
+          수업할 반을 고르세요.
+        </p>
+      ) : (
         <>
-          {/* 범위 좁히기 — 수업은 반 단위로 한다. 값이 한 종류뿐인 축은 칩을 띄우지 않는다. */}
-          {(axes.varyGrade || axes.varyClass) && (
-            <div className="mb-2 space-y-2">
-              {axes.varyGrade && (
-                <div className="flex flex-wrap gap-1.5">
-                  <FilterChip
-                    on={filterGrade == null}
-                    onClick={() => {
-                      setFilterGrade(null);
-                      setFilterClass(null);
-                    }}
-                  >
-                    전체 학년
-                  </FilterChip>
-                  {axes.grades.map((g) => (
-                    <FilterChip
-                      key={g}
-                      on={filterGrade === g}
-                      onClick={() => {
-                        setFilterGrade(g);
-                        setFilterClass(null);
-                      }}
-                    >
-                      {g}학년
-                    </FilterChip>
-                  ))}
-                </div>
-              )}
-              {availableClasses.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  <FilterChip on={filterClass == null} onClick={() => setFilterClass(null)}>
-                    전체 반
-                  </FilterChip>
-                  {availableClasses.map((c) => (
-                    <FilterChip key={c} on={filterClass === c} onClick={() => setFilterClass(c)}>
-                      {c}반
-                    </FilterChip>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="이름 검색..."
-            className="mb-2 h-9 w-full border-border/50 bg-input text-xs"
-          />
-
           <div className="mb-2 flex items-center gap-2">
             <span className="text-xs font-bold text-muted-foreground">
-              체크 {picked.length}명
-              {visible.length !== roster.length && (
-                <span className="ml-1 font-normal text-muted-foreground/70">
-                  (보이는 {visible.length}명 중{" "}
-                  {visible.filter((s) => picked.includes(s.id)).length}명)
-                </span>
+              {scopeText} 참석 {picked.length}명
+              {absentIds.size > 0 && (
+                <span className="ml-1.5 font-black text-amber-500">결석 {absentIds.size}명</span>
               )}
             </span>
-            <div className="ml-auto flex items-center gap-1">
+            {absentIds.size > 0 && (
               <button
                 type="button"
-                onClick={() => bulkVisible(true)}
-                className="rounded-lg border border-border/40 px-2 py-1 text-[10px] font-black text-muted-foreground hover:text-foreground"
+                onClick={() => {
+                  setEditing(true);
+                  setAbsent((prev) => {
+                    const out = { ...prev };
+                    for (const key of selected) out[key] = [];
+                    return out;
+                  });
+                }}
+                className="ml-auto rounded-lg border border-border/40 px-2 py-1 text-[10px] font-black text-muted-foreground hover:text-foreground"
               >
-                {visible.length === roster.length ? "전원 참석" : "이 반 전원 참석"}
+                결석 표시 지우기
               </button>
-              <button
-                type="button"
-                onClick={() => bulkVisible(false)}
-                className="rounded-lg border border-border/40 px-2 py-1 text-[10px] font-black text-muted-foreground hover:text-foreground"
-              >
-                전원 결석
-              </button>
-            </div>
-          </div>
-
-          <div className="max-h-56 overflow-y-auto rounded-xl border border-border/30 p-2">
-            {visible.length === 0 ? (
-              <p className="py-6 text-center text-[11px] text-muted-foreground">
-                해당하는 사람이 없어요.
-              </p>
-            ) : (
-              <div className="flex flex-wrap gap-1.5">
-                {visible.map((s) => {
-                  const on = picked.includes(s.id);
-                  const label = schoolLabelCompact(s, axes);
-                  return (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => toggle(s.id)}
-                      className={cn(
-                        "rounded-full border px-2.5 py-1 text-xs font-bold transition-all",
-                        on
-                          ? "border-neon-green/50 bg-neon-green/15 text-neon-green"
-                          : // 결석은 눈에 띄어야 한다 — 교사가 훑어보는 대상은 빠진 사람이다.
-                            "border-amber-500/40 bg-amber-500/10 text-amber-500/80 line-through",
-                      )}
-                    >
-                      {dn(s)}
-                      {label ? (
-                        <span className="ml-1 text-[10px] font-normal opacity-70">{label}</span>
-                      ) : null}
-                    </button>
-                  );
-                })}
-              </div>
             )}
           </div>
 
-          {/* 종목은 그 수업·리그의 성격이라 세션 설정이다. 채우는 단위(한 바퀴/1경기)와는 다른 축. */}
+          <div className="max-h-56 overflow-y-auto rounded-xl border border-border/30 p-2">
+            <div className="flex flex-wrap gap-1.5">
+              {scopeStudents.map((s) => {
+                const out = absentIds.has(s.id);
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => toggleAbsent(s)}
+                    className={cn(
+                      "rounded-full border px-2.5 py-1 text-xs font-bold transition-all",
+                      out
+                        ? // 결석은 눈에 띄어야 한다 — 교사가 훑어보는 대상은 빠진 사람이다.
+                          "border-amber-500/40 bg-amber-500/10 text-amber-500/80 line-through"
+                        : "border-neon-green/50 bg-neon-green/15 text-neon-green",
+                    )}
+                  >
+                    {dn(s)}
+                    {s.studentNo != null && (
+                      <span className="ml-1 text-[10px] font-normal opacity-70">{s.studentNo}</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 종목은 그 수업의 성격이라 세션 설정이다. 채우는 단위(한 바퀴/1경기)와는 다른 축. */}
           <div className="mt-3 flex items-center gap-2">
             <span className="text-[11px] font-bold text-muted-foreground">종목</span>
             {(["double", "single"] as const).map((t) => (
@@ -326,7 +318,7 @@ export function SessionRoster() {
                 }}
                 className={cn(
                   "rounded-lg border px-2.5 py-1 text-[11px] font-black transition-all",
-                  (editing ? draftType : (assignmentSession?.match_type ?? "double")) === t
+                  draftType === t
                     ? "border-neon-blue/50 bg-neon-blue/15 text-neon-blue"
                     : "border-border/40 text-muted-foreground hover:text-foreground",
                 )}
@@ -336,35 +328,21 @@ export function SessionRoster() {
             ))}
           </div>
 
-          <div className="mt-3 flex gap-2">
-            {hasSession && (
+          {(dirty || !hasSession) && (
+            <>
               <Button
-                onClick={() => save(false)}
+                onClick={save}
                 disabled={saving || picked.length === 0}
-                className="h-11 flex-1 rounded-xl bg-neon-blue text-sm font-black text-primary-foreground hover:bg-neon-blue/90"
+                className="mt-3 h-11 w-full rounded-xl bg-neon-green text-sm font-black text-primary-foreground hover:bg-neon-green/90"
               >
-                명단 저장
+                {classesChanged ? `${scopeText} 수업 시작` : "명단 반영"}
               </Button>
-            )}
-            <Button
-              onClick={() => save(true)}
-              disabled={saving || picked.length === 0}
-              variant={hasSession ? "outline" : "default"}
-              className={cn(
-                "h-11 rounded-xl text-sm font-black",
-                hasSession
-                  ? "shrink-0 border-border/50 px-4"
-                  : "flex-1 bg-neon-green text-primary-foreground hover:bg-neon-green/90",
-              )}
-            >
-              <RotateCcw className="mr-1.5 size-4" />
-              {hasSession ? "새로 시작" : "이 명단으로 시작"}
-            </Button>
-          </div>
-          {hasSession && editing && (
-            <p className="mt-2 text-[11px] text-muted-foreground">
-              [새로 시작]은 대기 중인 경기를 전부 지우고 새 명단으로 다시 시작합니다.
-            </p>
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                {classesChanged
+                  ? "대기 중인 경기를 지우고 이 명단으로 새로 시작합니다."
+                  : "대기 중인 경기는 그대로 두고 명단만 고칩니다. (지각·조퇴)"}
+              </p>
+            </>
           )}
         </>
       )}
