@@ -5,7 +5,7 @@ import { TierBadge } from "@/components/league/TierBadge";
 import { GenderMark } from "@/components/league/GenderMark";
 import { cn } from "@/lib/utils";
 import { getTier, isUnranked, schoolLabelCompact, schoolAxesOf, TIER_ORDER, TIER_STYLES, type Gender, type TierName } from "@/lib/league-types";
-import { FilterChip } from "@/features/leaderboard/Leaderboard";
+import { FilterChip } from "@/components/league/FilterChip";
 import { termsFor } from "@/lib/league-terms";
 import { Trophy, RefreshCw, SlidersHorizontal, ChevronDown, UserSearch, X } from "lucide-react";
 

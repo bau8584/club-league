@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { ListOrdered, Plus, Sparkles, X } from "lucide-react";
+import { ChevronDown, Plus, Sparkles, X } from "lucide-react";
 import { useLeagueStore } from "@/lib/league-store";
+import { teamsOf, useQueueRows } from "@/lib/use-queue-rows";
 import type { ScheduledMatch, Student } from "@/lib/league-types";
 import type { AssignmentPreset } from "@/domain/assignment-calculator";
 
@@ -29,14 +29,19 @@ const PRESETS: { value: AssignmentPreset; label: string; hint: string }[] = [
  */
 export function MatchQueue({
   canManage,
+  stepLabel,
   onRecordRow,
 }: {
   canManage: boolean;
+  /**
+   * 이 단계의 이름("2단계 · 대진"). 학생 화면에서는 단계가 하나뿐이라 카드 제목이 곧
+   * 대기열이므로 null을 준다 — 그때는 머리글 없이 목록만 그린다.
+   */
+  stepLabel?: string | null;
   /** 줄의 [결과 입력] — 4명이 확정이므로 선수 선택 없이 바로 점수판으로 간다. */
   onRecordRow: (row: ScheduledMatch) => void;
 }) {
   const {
-    scheduledMatches,
     students,
     deletedById,
     myPlayerId,
@@ -50,6 +55,7 @@ export function MatchQueue({
     leagueType === "school" ? "diversity" : "balanced",
   );
   const [filling, setFilling] = useState(false);
+  const [presetOpen, setPresetOpen] = useState(false);
 
   const byId = useMemo(() => {
     const m = new Map<string, Student>();
@@ -58,20 +64,7 @@ export function MatchQueue({
     return m;
   }, [students, deletedById]);
 
-  // 큐는 만든 순서대로다. 위에서부터 코트에 들어간다.
-  const queue = useMemo(
-    () =>
-      scheduledMatches
-        .filter((m) => m.status === "waiting" || m.status === "called")
-        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()),
-    [scheduledMatches],
-  );
-
-  const teamsOf = (r: ScheduledMatch) => ({
-    teamA: [r.player_a_id, r.player_a2_id].filter(Boolean) as string[],
-    teamB: [r.player_b_id, r.player_b2_id].filter(Boolean) as string[],
-    pool: ((r.player_ids || []).filter(Boolean) as string[]) ?? [],
-  });
+  const { queue, myTurn } = useQueueRows();
 
   const fill = async (mode: "round" | "one") => {
     setFilling(true);
@@ -80,34 +73,31 @@ export function MatchQueue({
     setFilling(false);
   };
 
-  const myTurn = queue.findIndex((r) => {
-    const { teamA, teamB, pool } = teamsOf(r);
-    return !!myPlayerId && [...teamA, ...teamB, ...pool].includes(myPlayerId);
-  });
-
   return (
-    <Card className="border border-border/40 bg-card/50 p-5 shadow-lg backdrop-blur">
-      <div className="mb-3 flex items-center gap-2.5">
-        <div className="flex size-9 items-center justify-center rounded-xl bg-neon-blue/15 text-neon-blue">
-          <ListOrdered className="size-5" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <h2 className="text-base font-black tracking-tight text-foreground">
-            대기열 ({queue.length})
-          </h2>
+    <div>
+      {/* 학생 화면에서는 카드 제목이 곧 "대기열 (N)"이라 머리글이 겹친다 → 통째로 생략. */}
+      {stepLabel && (
+        <div className={cn("min-w-0", queue.length > 0 && "mb-3")}>
+          <p className="text-xs font-black text-foreground">
+            {stepLabel} ({queue.length})
+          </p>
+          {/* 줄이 없을 때 줄 서는 법을 설명할 이유가 없다. 빈 대기열에서 알아야 할 것은
+              "지금 무엇을 하면 되는가" 하나뿐이고, 그건 사람마다 다르다. */}
           <p className="text-[11px] text-muted-foreground">
-            {myTurn >= 0
-              ? `내 차례 ${myTurn + 1}번째예요.`
-              : "위에서부터 코트에 들어갑니다. 결과를 입력하면 그 줄이 빠집니다."}
+            {queue.length === 0
+              ? canManage
+                ? "대진을 채워서 시작하세요."
+                : "아직 대기 중인 경기가 없어요."
+              : myTurn >= 0
+                ? `내 차례 ${myTurn + 1}번째예요.`
+                : "위에서부터 코트에 들어갑니다. 결과를 입력하면 그 줄이 빠집니다."}
           </p>
         </div>
-      </div>
+      )}
 
-      {queue.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-border/30 py-6 text-center text-[11px] text-muted-foreground">
-          대기 중인 경기가 없어요.{canManage ? " 아래에서 대진을 채우세요." : ""}
-        </p>
-      ) : (
+      {/* 빈 대기열에 점선 상자를 세우지 않는다. "아래에서 대진을 채우세요"는 바로 아래
+          [한 바퀴 채우기] 버튼이 이미 하는 말이고, 그 안내에 화면 절반을 쓸 이유가 없다. */}
+      {queue.length > 0 && (
         <div className="space-y-2">
           {queue.map((r, i) => {
             const { teamA, teamB, pool } = teamsOf(r);
@@ -164,33 +154,59 @@ export function MatchQueue({
       )}
 
       {canManage && !assignmentSession?.player_ids?.length && (
-        <p className="mt-4 border-t border-border/30 pt-4 text-[11px] text-muted-foreground">
-          위에서 출석을 먼저 체크하세요. 체크된 사람만 대진에 들어갑니다.
+        <p className="text-[11px] text-muted-foreground">
+          1단계를 마치면 대진을 뽑을 수 있어요. 참석한 사람만 대진에 들어갑니다.
         </p>
       )}
 
       {canManage && !!assignmentSession?.player_ids?.length && (
         <div className="mt-4 border-t border-border/30 pt-4">
-          <div className="flex flex-wrap items-center gap-1.5">
-            {PRESETS.map((p) => (
-              <button
-                key={p.value}
-                type="button"
-                onClick={() => setPreset(p.value)}
-                className={cn(
-                  "rounded-full border px-3 py-1 text-xs font-black transition-all",
-                  preset === p.value
-                    ? "border-neon-blue/50 bg-neon-blue/20 text-neon-blue"
-                    : "border-border/40 text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
-          <p className="mt-1.5 text-[11px] text-muted-foreground">
-            {PRESETS.find((p) => p.value === preset)?.hint}
-          </p>
+          {/* 대진 방식은 대개 기본값 그대로 둔다. 평소에는 지금 무엇으로 뽑는지만 한 줄로
+              알리고, 바꾸려는 사람만 펼친다 — 처음 보는 사람에게 뜻 모를 선택지 셋을
+              들이밀지 않는다. */}
+          {presetOpen ? (
+            <div className="animate-in fade-in slide-in-from-top-1 duration-150">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {PRESETS.map((p) => (
+                  <button
+                    key={p.value}
+                    type="button"
+                    onClick={() => setPreset(p.value)}
+                    className={cn(
+                      "rounded-full border px-3 py-1 text-xs font-black transition-all",
+                      preset === p.value
+                        ? "border-neon-blue/50 bg-neon-blue/20 text-neon-blue"
+                        : "border-border/40 text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setPresetOpen(false)}
+                  className="ml-auto text-[11px] font-bold text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                >
+                  접기
+                </button>
+              </div>
+              <p className="mt-1.5 text-[11px] text-muted-foreground">
+                {PRESETS.find((p) => p.value === preset)?.hint}
+              </p>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setPresetOpen(true)}
+              className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+            >
+              대진 방식{" "}
+              <span className="font-black text-foreground">
+                {PRESETS.find((p) => p.value === preset)?.label}
+              </span>
+              <ChevronDown className="size-3.5" />
+            </button>
+          )}
 
           <div className="mt-3 flex gap-2">
             <Button
@@ -211,6 +227,6 @@ export function MatchQueue({
           </div>
         </div>
       )}
-    </Card>
+    </div>
   );
 }
