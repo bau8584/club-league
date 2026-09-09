@@ -457,3 +457,45 @@ export type Achievement = {
   targetValue: number;
   isUnlocked: boolean;
 };
+
+/**
+ * 학년-반 키.
+ *
+ * 명단에 반 정보가 없을 수 있다 — 일괄 등록에서 이름만 붙여넣으면 학년·반·번호가 전부
+ * null이고, 그건 정상적인 사용 방식이다(한 반만 쓰는 리그는 반을 적을 이유가 없다).
+ * 그런 학생은 빈 키 하나로 묶인다. 전원이 빈 키면 고를 것이 없으므로 칩 자체가 안 뜨고
+ * 명단 = 전원이 된다. 일부만 비어 있으면 "반 미지정" 묶음으로 따로 보인다.
+ */
+export const classKeyOf = (s: { grade?: number | null; classNum?: number | null }): string =>
+  s.grade == null && s.classNum == null ? "" : `${s.grade ?? ""}-${s.classNum ?? ""}`;
+
+/** 있는 축만 읽는다. 학년만 있으면 "5학년", 반만 있으면 "3반", 둘 다면 "5-3반". */
+export function classLabel(key: string): string {
+  if (key === "") return "반 미지정";
+  const [g, c] = key.split("-");
+  if (g && c) return `${g}-${c}반`;
+  if (g) return `${g}학년`;
+  return `${c}반`;
+}
+
+/**
+ * 학년·반·번호 순, 같으면 이름 순. 교사가 출석부를 훑는 순서 그대로다.
+ * 학년·반·번호가 없는 명단(동호회)에서는 축이 전부 0으로 같아져 이름 순으로 떨어진다.
+ */
+type RosterSortable = {
+  grade?: number | null;
+  classNum?: number | null;
+  studentNo?: number | null;
+  name?: string;
+  nickname?: string | null;
+};
+export function sortStudentsForRoster<T extends RosterSortable>(list: T[]): T[] {
+  const dn = (s: T) => s.nickname || s.name || "";
+  return [...list].sort(
+    (a, b) =>
+      (a.grade ?? 0) - (b.grade ?? 0) ||
+      (a.classNum ?? 0) - (b.classNum ?? 0) ||
+      (a.studentNo ?? 0) - (b.studentNo ?? 0) ||
+      dn(a).localeCompare(dn(b), "ko"),
+  );
+}

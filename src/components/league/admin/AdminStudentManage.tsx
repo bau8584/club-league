@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,8 +7,15 @@ import { Users, Save, Trash2, ShieldAlert, HelpCircle, RotateCcw, ChevronDown, C
 import { cn } from "@/lib/utils";
 import { useLeagueStore } from "@/lib/league-store";
 import { useLeagueTerms, useIsSchoolLeague } from "@/lib/league-terms";
-import type { Gender, Student, Match, TierName } from "@/lib/league-types";
+import {
+  classKeyOf,
+  classLabel,
+  schoolAxesOf,
+  sortStudentsForRoster,
+  type Gender, type Student, type Match, type TierName,
+} from "@/lib/league-types";
 import { TierBadge } from "../TierBadge";
+import { FilterChip } from "../FilterChip";
 import { AddMemberForm } from "../AddMemberForm";
 import { CURRENT_YEAR, normalizeBirthYear, yy2 } from "@/lib/birth-year";
 import {
@@ -156,6 +163,9 @@ export function AdminStudentManage({ students, onDeleteStudent, onDeleteStudents
   const trashName = (s: DeletedStudent) => s.nickname || s.name || "이름없음";
 
   const [filterGroup, setFilterGroup] = useState<string | null>(null);
+  // school 리그의 범위 필터. 순위표와 같은 다중 선택 규칙 — 빈 배열이 곧 "전체"다.
+  const [filterGrade, setFilterGrade] = useState<number[]>([]);
+  const [filterClass, setFilterClass] = useState<number[]>([]);
   const [draft, setDraft] = useState<Record<string, RowDraft>>({});
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
@@ -175,14 +185,48 @@ export function AdminStudentManage({ students, onDeleteStudent, onDeleteStudents
     [students]
   );
 
+  // 학년/반 축. 한 종류뿐인 축(학급 리그의 학년 등)은 필터로도 머리글로도 의미가 없다.
+  const axes = useMemo(() => schoolAxesOf(students), [students]);
+  const showGrade = isSchool && axes.varyGrade;
+  const showClass = isSchool && axes.varyClass;
+  // 반 칩은 고른 학년 안에서만 추린다 — 5학년만 보는데 6학년의 반 번호가 뜰 이유가 없다.
+  const availableClasses = useMemo(() => {
+    if (!showClass) return [];
+    const set = new Set<number>();
+    for (const s of students) {
+      if (s.classNum == null) continue;
+      if (filterGrade.length > 0 && (s.grade == null || !filterGrade.includes(s.grade))) continue;
+      set.add(s.classNum);
+    }
+    return Array.from(set).sort((a, b) => a - b);
+  }, [students, showClass, filterGrade]);
+
   const rows = useMemo(
     () =>
-      students
-        .filter((s) => filterGroup == null || (s.group || "") === filterGroup)
-        .slice()
-        .sort((a, b) => (a.nickname || a.name).localeCompare(b.nickname || b.name, "ko")),
-    [students, filterGroup]
+      sortStudentsForRoster(
+        students
+          .filter((s) => filterGroup == null || (s.group || "") === filterGroup)
+          .filter((s) => (!showGrade || filterGrade.length === 0 ? true : s.grade != null && filterGrade.includes(s.grade)))
+          .filter((s) => (!showClass || filterClass.length === 0 ? true : s.classNum != null && filterClass.includes(s.classNum)))
+      ),
+    [students, filterGroup, showGrade, showClass, filterGrade, filterClass]
   );
+
+  /**
+   * 표를 반 단위로 끊어 머리글을 붙인다. 500명짜리 명단이 한 덩어리로 흐르면
+   * 어느 반을 고치는 중인지 알 수 없다. 반이 하나뿐이면 머리글은 군더더기다.
+   */
+  const rowGroups = useMemo(() => {
+    if (!isSchool) return null;
+    const out: { key: string; list: Student[] }[] = [];
+    for (const s of rows) {
+      const key = classKeyOf(s);
+      const last = out[out.length - 1];
+      if (last && last.key === key) last.list.push(s);
+      else out.push({ key, list: [s] });
+    }
+    return out.length > 1 ? out : null;
+  }, [isSchool, rows]);
   const studentsById = useMemo(() => new Map(students.map((s) => [s.id, s])), [students]);
 
   // 레벨 전환 시 미저장 편집/선택 초기화
@@ -190,6 +234,17 @@ export function AdminStudentManage({ students, onDeleteStudent, onDeleteStudents
     setDraft({});
     setSelected(new Set());
     setFilterGroup(g);
+  };
+  // 범위가 바뀌면 화면에서 사라진 행이 선택·편집 상태로 남지 않도록 초기화한다.
+  const scopeChanged = () => { setDraft({}); setSelected(new Set()); };
+  const toggleGrade = (g: number) => {
+    scopeChanged();
+    setFilterGrade((p) => (p.includes(g) ? p.filter((x) => x !== g) : [...p, g]));
+    setFilterClass([]); // 학년이 바뀌면 그 학년에 없는 반 선택은 뜻을 잃는다
+  };
+  const toggleClass = (c: number) => {
+    scopeChanged();
+    setFilterClass((p) => (p.includes(c) ? p.filter((x) => x !== c) : [...p, c]));
   };
   useEffect(() => { setSelected(new Set()); }, [filterGroup]);
 
@@ -341,8 +396,36 @@ export function AdminStudentManage({ students, onDeleteStudent, onDeleteStudents
         </div>
       )}
 
-      {/* 레벨 필터 */}
+      {/* 범위 필터 — school은 학년/반, club은 레벨. 칩 모양은 순위표와 같은 것을 쓴다. */}
       <div className="rounded-xl border border-border/40 bg-muted/10 p-4 space-y-3">
+        {showGrade && (
+          <div>
+            <span className="text-xs text-neon-blue font-bold uppercase tracking-wider">학년</span>
+            <div className="flex flex-wrap gap-2 mt-2">
+              <FilterChip active={filterGrade.length === 0} onClick={() => { scopeChanged(); setFilterGrade([]); setFilterClass([]); }}>전체 학년</FilterChip>
+              {axes.grades.map((g) => (
+                <FilterChip key={g} active={filterGrade.includes(g)} onClick={() => toggleGrade(g)}>{g}학년</FilterChip>
+              ))}
+            </div>
+          </div>
+        )}
+        {showClass && (
+          <div>
+            <span className="text-xs text-neon-blue font-bold uppercase tracking-wider">반</span>
+            <div className="flex flex-wrap gap-2 mt-2">
+              <FilterChip active={filterClass.length === 0} onClick={() => { scopeChanged(); setFilterClass([]); }}>전체 반</FilterChip>
+              {availableClasses.map((c) => (
+                <FilterChip key={c} active={filterClass.includes(c)} onClick={() => toggleClass(c)}>{c}반</FilterChip>
+              ))}
+            </div>
+          </div>
+        )}
+        {isSchool && students.length > 0 && (
+          <p className="text-[11px] text-muted-foreground">
+            {rows.length === students.length ? `${terms.member} ${students.length}명 전체` : `${students.length}명 중 ${rows.length}명 보는 중`}
+          </p>
+        )}
+        {!isSchool && (
         <div>
           <span className="text-xs text-neon-blue font-bold uppercase tracking-wider">레벨</span>
           <div className="flex flex-wrap gap-2 mt-2">
@@ -361,6 +444,10 @@ export function AdminStudentManage({ students, onDeleteStudent, onDeleteStudents
             {students.length === 0 && <span className="text-xs text-muted-foreground py-1">등록된 {terms.member}이 없습니다.</span>}
           </div>
         </div>
+        )}
+        {isSchool && students.length === 0 && (
+          <span className="text-xs text-muted-foreground py-1">등록된 {terms.member}이 없습니다.</span>
+        )}
       </div>
 
       <div className="mt-5 space-y-3">
@@ -408,7 +495,16 @@ export function AdminStudentManage({ students, onDeleteStudent, onDeleteStudents
               </tr>
             </thead>
             <tbody>
-              {rows.map((s, idx) => {
+              {(rowGroups ?? [{ key: "", list: rows }]).map((grp) => (
+              <Fragment key={grp.key}>
+              {rowGroups && (
+                <tr className="border-t border-border/20 bg-muted/30">
+                  <td colSpan={(isClassOwner ? 9 : 8) + (isSchool ? 1 : 0)} className="px-3 py-1.5 text-[11px] font-black text-muted-foreground">
+                    {classLabel(grp.key)} <span className="font-bold opacity-70">({grp.list.length}명)</span>
+                  </td>
+                </tr>
+              )}
+              {grp.list.map((s, idx) => {
                 const r = rowOf(s);
                 const dirty = isDirty(s);
                 return (
@@ -593,6 +689,8 @@ export function AdminStudentManage({ students, onDeleteStudent, onDeleteStudents
                   </tr>
                 );
               })}
+              </Fragment>
+              ))}
               {rows.length === 0 && (
                 <tr><td colSpan={(isClassOwner ? 9 : 8) + (isSchool ? 1 : 0)} className="py-8 text-center text-muted-foreground text-xs">등록된 {terms.member}이 없습니다.</td></tr>
               )}

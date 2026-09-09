@@ -5,7 +5,7 @@ import { TierBadge } from "./TierBadge";
 import { AddMemberForm } from "./AddMemberForm";
 import { GenderMark } from "./GenderMark";
 import { cn } from "@/lib/utils";
-import { Trophy, X, Sparkles, User, Users, Crown, Award, Zap, RotateCcw, UserPlus, Lock, LockOpen, ChevronDown } from "lucide-react";
+import { Trophy, X, Sparkles, User, Users, Crown, Award, Zap, RotateCcw, UserPlus, Lock, LockOpen, ChevronDown, Delete, Pencil } from "lucide-react";
 import type { Student, Match, TierName } from "@/lib/league-types";
 import { getTier, getTierSubdivision, TIER_ORDER, getFullTierLabel, isUnranked, schoolLabelCompact, schoolAxesOf } from "@/lib/league-types";
 import { toast } from "sonner";
@@ -131,6 +131,35 @@ export function RecordMatch({
   lockedMatchTypeRef.current = lockedMatchType;
   const [scoreA, setScoreA] = useState(0);
   const [scoreB, setScoreB] = useState(0);
+  // 점수는 실시간 집계가 아니라 경기가 끝난 뒤 최종 점수를 넣는다. 그래서 가감 버튼
+  // 대신 숫자패드 한 벌을 두 팀이 함께 쓴다(팀마다 도구를 두면 화면의 대부분이
+  // 도구로 차고, 같은 버튼이 두 번 나와 어느 쪽을 누르는지 헷갈렸다).
+  // activeScore = 지금 숫자패드가 겨냥하는 팀.
+  const [activeScore, setActiveScore] = useState<"A" | "B">("A");
+  // 팀을 새로 고른 직후의 첫 숫자는 기존 값에 이어 붙이지 않고 갈아끼운다.
+  // 21점이 들어 있는데 5를 누르면 215가 아니라 5가 되어야 한다.
+  const [scoreFresh, setScoreFresh] = useState(true);
+  const selectScore = (team: "A" | "B") => {
+    setActiveScore(team);
+    setScoreFresh(true);
+  };
+  const setActiveScoreValue = (v: number) => (activeScore === "A" ? setScoreA(v) : setScoreB(v));
+  const activeScoreValue = activeScore === "A" ? scoreA : scoreB;
+  const pressDigit = (d: number) => {
+    // 세 자리를 넘길 일이 없다. 넘치면 그냥 무시해 오입력이 쌓이지 않게 한다.
+    const next = scoreFresh ? d : activeScoreValue * 10 + d;
+    if (next > 999) return;
+    setActiveScoreValue(next);
+    setScoreFresh(false);
+  };
+  const pressBackspace = () => {
+    setActiveScoreValue(Math.floor(activeScoreValue / 10));
+    setScoreFresh(false);
+  };
+  const pressClear = () => {
+    setActiveScoreValue(0);
+    setScoreFresh(true);
+  };
 
   // Modal states
   const [showModal, setShowModal] = useState(false);
@@ -825,6 +854,7 @@ export function RecordMatch({
     setB2({ group: b2.group, studentId: null });
     setScoreA(0); 
     setScoreB(0);
+    selectScore("A");
   };
 
   const handleUpdateGender = (gender: "M" | "F") => {
@@ -1147,6 +1177,15 @@ export function RecordMatch({
           order.find((k) => k !== just && !slots[k].value.studentId && !(k === "A" && !!lockedPlayerId)) ?? null;
         // 자리가 다 차야 점수가 의미를 갖는다. 그전에는 점수판을 내보내지 않는다.
         const allPicked = order.every((k) => !!slots[k].value.studentId);
+        // 점수를 넣는 단계(좁은 화면)에서는 대진을 한 줄로 접는다.
+        const collapseTeams = allPicked && !act;
+        const teamEntries = (team: "A" | "B") =>
+          order
+            .filter((k) => k.startsWith(team))
+            .map((k) => ({
+              name: slots[k].player ? playerLabel(slots[k].player!) : "?",
+              onEdit: () => setActiveSlot(k),
+            }));
         const slotTitle = (k: "A" | "A2" | "B" | "B2") => {
           const team = k.startsWith("A") ? "팀 A" : "팀 B";
           const who = matchType === "double"
@@ -1155,89 +1194,136 @@ export function RecordMatch({
           return `${team} · ${who}`;
         };
 
-        // 넓은 화면(태블릿 가로·데스크톱): 왼쪽 대진 / 오른쪽 단계 패널.
-        // 좁은 화면: 한 번에 하나 — 슬롯을 누르면 대진 자리에 선수 목록이 들어온다.
+        // 팀 바로 아래에 그 팀 점수판을 둔다 — 좁은 화면이든 넓은 화면이든 똑같이.
+        //   좁은 화면: 팀 A → A 점수 → VS → 팀 B → B 점수 (위에서 아래로)
+        //   넓은 화면: 1행에 팀 A · VS · 팀 B, 2행에 A 점수 · B 점수 (좌우로)
+        // 선수와 점수가 같은 축에 놓여야 어느 칸이 어느 팀인지 한눈에 읽힌다.
+        // (팀은 위아래, 점수는 좌우로 두었더니 축이 어긋나 헷갈렸다.)
+        // 넓은 화면에서는 DOM 순서 대신 행·열을 직접 지정한다. 점수판 둘을 같은
+        // 행에 묶어야 두 팀 블록의 높이가 달라져도 점수판 높이가 어긋나지 않는다.
+        // 가운데 VS 칸은 폭을 고정한다(w-12) — 두 행의 열 폭을 같게 하려면 필요하다.
+        // 선수 목록은 대진 아래 전체 폭에 펼친다 — 폭이 넓을수록 이름 찾기가 쉽다.
+        // 좁은 화면: 한 번에 하나 — 슬롯을 누르면 대진이 접히고 선수 목록만 남는다.
         // 선수 목록을 별도 팝업으로 띄우지 않는 이유는, 동호회에서는 이 폼 자체가
         // 이미 팝업 안에 들어 있어 팝업이 겹치기 때문이다.
-        // 두 칸의 높이는 같게 묶고, 넘치는 내용은 각 칸 안에서만 스크롤한다.
-        // 등록 버튼은 두 칸 아래 전체 폭에 둔다 — 한쪽에 치우쳐 있으면 가로 화면에서
+        // 등록 버튼은 전체 폭에 둔다 — 한쪽에 치우쳐 있으면 가로 화면에서
         // 눈에 잘 띄지 않는다.
         return (
           <div className="space-y-3">
-          <div className="lg:grid lg:h-[clamp(26rem,calc(100vh-15rem),46rem)] lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.4fr)] lg:items-stretch lg:gap-4">
-            <div className={cn("space-y-3 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:pr-1", act && "hidden lg:block")}>
-              <TeamBlock title="팀 A" accent="amber" cols={matchType === "double" ? 2 : 1}>
-                {renderSlot("A", matchType === "double" ? "선수 1" : "선수 A")}
-                {matchType === "double" && renderSlot("A2", "선수 2")}
-              </TeamBlock>
-              <div className="text-center text-xl font-black text-muted-foreground">VS</div>
-              <TeamBlock title="팀 B" accent="violet" cols={matchType === "double" ? 2 : 1}>
-                {renderSlot("B", matchType === "double" ? "선수 1" : "선수 B")}
-                {matchType === "double" && renderSlot("B2", "선수 2")}
-              </TeamBlock>
-
+          <div
+            className={cn(
+              "space-y-3 lg:grid lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:items-start lg:gap-x-4 lg:gap-y-3 lg:space-y-0",
+              act && "hidden lg:grid",
+            )}
+          >
+            <div className="lg:col-start-1 lg:row-start-1">
+              <div className={cn(collapseTeams && "hidden lg:block")}>
+                <TeamBlock title="팀 A" accent="amber" cols={matchType === "double" ? 2 : 1}>
+                  {renderSlot("A", matchType === "double" ? "선수 1" : "선수 A")}
+                  {matchType === "double" && renderSlot("A2", "선수 2")}
+                </TeamBlock>
+              </div>
             </div>
 
-            <div className="mt-3 flex flex-col gap-3 lg:mt-0 lg:h-full lg:min-h-0">
-              {act && activeSlot ? (
-                <div className="flex min-h-0 flex-1 flex-col gap-2">
-                  <PlayerPicker
-                    title={slotTitle(activeSlot)}
-                    onBack={() => setActiveSlot(null)}
-                    students={students}
-                    accent={act.accent}
-                    group={act.value.group}
-                    onPick={(group, studentId) => {
-                      const just = activeSlot;
-                      act.set({ group, studentId });
-                      setActiveSlot(nextEmpty(just));
-                    }}
-                    thresholds={thresholds}
-                    placementEnabled={placementEnabled}
-                    placementGames={placementGames}
-                    canAddMember={isClassOwner}
-                    filter={pickerFilter}
-                    onFilterChange={setPickerFilter}
-                  />
-                </div>
-              ) : !allPicked ? (
-                <div className="flex min-h-[8rem] flex-1 flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-border/50 bg-card/30 p-6 text-center">
-                  <Users className="size-5 text-muted-foreground/70" />
-                  <p className="text-xs font-bold text-muted-foreground">
-                    {matchType === "double" ? "네 자리" : "두 자리"}를 모두 채우면 점수를 입력할 수 있어요.
-                  </p>
-                  <p className="text-[11px] text-muted-foreground/80">비어 있는 자리를 눌러 {terms.member}를 고르세요.</p>
-                </div>
-              ) : (
-                <>
-                  <Card className="border-border/60 bg-card/60 p-3 sm:p-6 backdrop-blur">
-                    <div className="mb-4 text-center text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground">스코어보드</div>
-                    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:gap-4">
-                      <ScorePad
-                        name={matchType === "double" ? "팀 A" : (playerA ? playerLabel(playerA) : "선수 A")}
-                        value={scoreA}
-                        onChange={setScoreA}
-                        accent="amber"
-                      />
-                      <div className="px-0.5 text-base sm:text-2xl font-black text-muted-foreground">VS</div>
-                      <ScorePad
-                        name={matchType === "double" ? "팀 B" : (playerB ? playerLabel(playerB) : "선수 B")}
-                        value={scoreB}
-                        onChange={setScoreB}
-                        accent="violet"
-                      />
-                    </div>
-                  </Card>
+            {allPicked && (
+              <div className="lg:col-start-1 lg:row-start-2">
+                <ScoreRow
+                  title="팀 A"
+                  accent="amber"
+                  entries={teamEntries("A")}
+                  value={scoreA}
+                  selected={activeScore === "A"}
+                  onSelect={() => selectScore("A")}
+                  onDigit={pressDigit}
+                  onBackspace={pressBackspace}
+                  onClear={pressClear}
+                />
+              </div>
+            )}
 
-                </>
-              )}
+            <div className={cn(
+              "text-center text-xl font-black text-muted-foreground lg:col-start-2 lg:row-start-1 lg:flex lg:h-full lg:w-12 lg:items-center lg:justify-center",
+              collapseTeams && "hidden lg:flex",
+            )}>VS</div>
+
+            <div className="lg:col-start-3 lg:row-start-1">
+              <div className={cn(collapseTeams && "hidden lg:block")}>
+                <TeamBlock title="팀 B" accent="violet" cols={matchType === "double" ? 2 : 1}>
+                  {renderSlot("B", matchType === "double" ? "선수 1" : "선수 B")}
+                  {matchType === "double" && renderSlot("B2", "선수 2")}
+                </TeamBlock>
+              </div>
             </div>
+
+            {allPicked && (
+              <div className="lg:col-start-3 lg:row-start-2">
+                <ScoreRow
+                  title="팀 B"
+                  accent="violet"
+                  entries={teamEntries("B")}
+                  value={scoreB}
+                  selected={activeScore === "B"}
+                  onSelect={() => selectScore("B")}
+                  onDigit={pressDigit}
+                  onBackspace={pressBackspace}
+                  onClear={pressClear}
+                />
+              </div>
+            )}
+
+
           </div>
+
+          {act && activeSlot ? (
+            <div className="flex min-h-0 flex-col gap-2">
+              <PlayerPicker
+                title={slotTitle(activeSlot)}
+                onBack={() => setActiveSlot(null)}
+                onClear={
+                  act.value.studentId && !(activeSlot === "A" && !!lockedPlayerId)
+                    ? () => {
+                        act.set(empty);
+                        setActiveSlot(null);
+                      }
+                    : undefined
+                }
+                students={students}
+                accent={act.accent}
+                group={act.value.group}
+                onPick={(group, studentId) => {
+                  const just = activeSlot;
+                  act.set({ group, studentId });
+                  setActiveSlot(nextEmpty(just));
+                }}
+                thresholds={thresholds}
+                placementEnabled={placementEnabled}
+                placementGames={placementGames}
+                canAddMember={isClassOwner}
+                filter={pickerFilter}
+                onFilterChange={setPickerFilter}
+              />
+            </div>
+          ) : !allPicked ? (
+            <div className="flex min-h-[8rem] flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-border/50 bg-card/30 p-6 text-center">
+              <Users className="size-5 text-muted-foreground/70" />
+              <p className="text-xs font-bold text-muted-foreground">
+                {matchType === "double" ? "네 자리" : "두 자리"}를 모두 채우면 점수를 입력할 수 있어요.
+              </p>
+              <p className="text-[11px] text-muted-foreground/80">비어 있는 자리를 눌러 {terms.member}를 고르세요.</p>
+            </div>
+          ) : null}
 
           {/* 스크롤 위치와 무관하게 바닥에 붙여 둔다. 그냥 두 칸 아래에 두면 세로가
               짧은 화면에서 접힌 아래로 밀려 보이지 않았다. */}
           {allPicked && !act && (
             <div className="sticky bottom-0 z-20 -mx-1 rounded-xl bg-background/85 px-1 py-2 backdrop-blur">
+              <div className="mb-1.5 flex items-center justify-center gap-2 text-sm font-bold tabular-nums lg:hidden">
+                <span className="truncate text-muted-foreground">{matchType === "double" ? "팀 A" : (playerA ? playerLabel(playerA) : "선수 A")}</span>
+                <span className="font-mono text-lg text-amber-400">{scoreA}</span>
+                <span className="text-muted-foreground/60">:</span>
+                <span className="font-mono text-lg text-violet-400">{scoreB}</span>
+                <span className="truncate text-muted-foreground">{matchType === "double" ? "팀 B" : (playerB ? playerLabel(playerB) : "선수 B")}</span>
+              </div>
               <Button
               size="lg"
               onClick={submit}
@@ -1994,7 +2080,7 @@ function Slot({ accent, label, player, active, locked, onOpen, onClear, threshol
 }
 
 // 선수 선택 picker: 검색 → 레벨 칩 → 선수 목록 (한 번에 1개만 펼쳐짐)
-function PlayerPicker({ students, accent, group, onPick, thresholds, placementEnabled, placementGames, canAddMember, filter, onFilterChange, title, onBack }: {
+function PlayerPicker({ students, accent, group, onPick, thresholds, placementEnabled, placementGames, canAddMember, filter, onFilterChange, title, onBack, onClear }: {
   students: Student[]; accent: Accent; group: string | null;
   onPick: (group: string, studentId: string) => void; thresholds?: Record<string, number>;
   placementEnabled: boolean; placementGames: number; canAddMember?: boolean;
@@ -2004,6 +2090,8 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
   title?: string;
   /** 대진으로 돌아가기 */
   onBack?: () => void;
+  /** 이 자리를 비운다. 이미 선수가 들어 있을 때만 준다. */
+  onClear?: () => void;
 }) {
   const terms = useLeagueTerms();
   const isSchool = useIsSchoolLeague();
@@ -2096,6 +2184,15 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
           placeholder={terms.nameLabel}
           className="h-7 min-w-0 flex-1 rounded-lg border border-border/60 bg-surface-deep px-2.5 text-xs text-foreground placeholder:text-muted-foreground focus:border-neon-blue/60 focus:outline-none"
         />
+        {onClear && (
+          <button
+            type="button"
+            onClick={onClear}
+            className="shrink-0 rounded-lg border border-loss/40 bg-loss/10 px-2 py-1 text-[11px] font-bold text-loss transition-all hover:bg-loss/20 active:scale-95 cursor-pointer"
+          >
+            자리 비우기
+          </button>
+        )}
         {onBack && (
           <button
             type="button"
@@ -2139,20 +2236,20 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
         </div>
       )}
       {/* 명단이 길어도 이 칸 안에서만 스크롤한다(페이지가 따라 내려가지 않도록). */}
-      <div className="mt-1 grid max-h-[55vh] min-h-0 flex-1 grid-cols-[repeat(auto-fill,minmax(max(5.5rem,calc((100%_-_2rem)/5)),1fr))] gap-2 overflow-y-auto pr-1 lg:max-h-none">
+      <div className="mt-1 grid max-h-[55vh] min-h-0 flex-1 grid-cols-[repeat(auto-fill,minmax(max(5.5rem,calc((100%_-_2rem)/5)),1fr))] gap-2 overflow-y-auto pr-1 lg:max-h-[46vh] lg:grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] lg:gap-2.5">
         {roster.map((s) => (
           <button
             key={s.id}
             type="button"
             onClick={() => onPick(grp, s.id)}
-            className="relative flex min-h-[4.75rem] w-full min-w-0 flex-col items-center justify-between overflow-hidden rounded-lg border border-border/60 bg-surface-deep px-1.5 pt-6 pb-2.5 text-center transition-all hover:border-neon-blue/60 hover:bg-accent/40 cursor-pointer"
+            className="relative flex min-h-[4.75rem] w-full min-w-0 flex-col lg:min-h-[6.25rem] items-center justify-between overflow-hidden rounded-lg border border-border/60 bg-surface-deep px-1.5 pt-6 pb-2.5 text-center transition-all lg:px-2 lg:pt-8 lg:pb-3 hover:border-neon-blue/60 hover:bg-accent/40 cursor-pointer"
           >
             {(isSchool ? schoolLabelCompact(s, labelAxes) : s.group) && (
-              <span className="absolute top-1 left-1.5 max-w-[70%] truncate text-left font-mono text-[10px] text-soft">{isSchool ? schoolLabelCompact(s, labelAxes) : s.group}</span>
+              <span className="absolute top-1 left-1.5 max-w-[70%] truncate text-left font-mono text-[10px] text-soft lg:text-sm">{isSchool ? schoolLabelCompact(s, labelAxes) : s.group}</span>
             )}
-            <GenderMark gender={s.gender} className="absolute top-1 right-1.5 size-3.5 text-[9px] shrink-0" />
+            <GenderMark gender={s.gender} className="absolute top-1 right-1.5 size-3.5 text-[9px] shrink-0 lg:size-4 lg:text-[10px]" />
             <div className="flex w-full min-w-0 flex-grow items-center justify-center">
-              <span className="w-full truncate text-center text-sm font-bold text-strong">{playerLabel(s)}</span>
+              <span className="w-full truncate text-center text-sm font-bold text-strong lg:text-xl">{playerLabel(s)}</span>
             </div>
             <div className="mt-1.5 flex w-full shrink-0 justify-center"><TierBadge rp={s.rp} thresholds={thresholds} unranked={isUnranked(s, placementEnabled, placementGames)} /></div>
           </button>
@@ -2164,7 +2261,7 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
           <button
             type="button"
             onClick={() => setAddOpen(true)}
-            className="flex min-h-[4.75rem] w-full flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-neon-blue/40 bg-surface-deep px-2 py-2.5 text-center text-neon-blue transition-all hover:border-neon-blue/70 hover:bg-neon-blue/5 active:scale-95 cursor-pointer"
+            className="flex min-h-[4.75rem] w-full flex-col items-center justify-center gap-1 lg:min-h-[6.25rem] rounded-lg border border-dashed border-neon-blue/40 bg-surface-deep px-2 py-2.5 text-center text-neon-blue transition-all hover:border-neon-blue/70 hover:bg-neon-blue/5 active:scale-95 cursor-pointer"
           >
             <UserPlus className="size-5" />
             <span className="text-xs font-bold">{terms.member} 추가</span>
@@ -2220,48 +2317,116 @@ function Chip({ active, accent, onClick, children, size = "md" }: { active: bool
   );
 }
 
-function ScorePad({ name, value, onChange, accent }: { name: string; value: number; onChange: (v: number) => void; accent: "amber" | "violet" }) {
-  // 큰 점수 숫자만 팀 색(주황/보라), 가감 버튼은 모든 팀 공통: 득점=파랑, 감점=빨강
-  const colorText = accent === "amber" ? "text-amber-400" : "text-violet-400";
-  const plusCls = "border-neon-blue/50 bg-neon-blue/10 text-neon-blue hover:bg-neon-blue/20";
-  const minusCls = "border-loss/50 bg-loss/10 text-loss hover:bg-loss/20";
-  const set = (delta: number) => onChange(Math.max(0, value + delta));
-
+// 팀 한 줄 = 이름 + 그 팀 점수. 점수 숫자를 누르면 아래 숫자패드가 그 팀을 겨냥한다.
+// 이름과 점수를 한 줄에 합친 이유: 팀마다 점수판을 따로 두었더니 도구가 화면의
+// 대부분을 차지하고, 정작 누가 몇 점인지가 묻혔다.
+// 넓은 화면에는 위에 선수 카드가 그대로 있으므로 이 줄의 이름은 숨긴다.
+function ScoreRow({ title, accent, entries, value, selected, onSelect, onDigit, onBackspace, onClear }: {
+  title: string;
+  accent: Accent;
+  entries: { name: string; onEdit: () => void }[];
+  value: number;
+  selected: boolean;
+  onSelect: () => void;
+  onDigit: (d: number) => void;
+  onBackspace: () => void;
+  onClear: () => void;
+}) {
+  const a = ACCENT[accent];
+  // 숫자패드를 지금 입력 중인 팀 안에 넣는다. 팀마다 한 벌씩 두면 화면에 숫자 버튼이
+  // 24개가 되고, 가운데에 따로 두면 점수 칸이 숫자 하나만 담은 빈 상자로 남았다.
+  // 펼쳐진 쪽이 곧 "지금 입력 중"이라, 어느 팀 차례인지 따로 안내할 필요도 없다.
+  // 반대편을 누르면 이쪽이 접히므로 "입력 완료" 판정도 필요 없다.
+  //
+  // 숫자만 누를 수 있으면 표적이 너무 작다. 칸 전체를 누르면 그 팀이 선택되게 하고,
+  // 이름만 예외로 둔다(이름은 선수 교체라 목적이 다르다).
+  // <button>으로 감싸면 그 안에 이름·숫자 버튼이 들어가 버려서 div + role="button"으로 만든다.
   return (
-    <div className="min-w-0 rounded-xl border border-border/60 bg-muted/30 p-2.5 sm:p-4 text-center">
-      <div className="truncate text-xs font-semibold uppercase tracking-wider text-muted-foreground">{name}</div>
-      <div className={cn("my-2 sm:my-3 font-mono text-4xl sm:text-6xl font-black tabular-nums", colorText)}>{value}</div>
-      <div className="space-y-1.5 sm:space-y-2">
-        <div className="grid grid-cols-3 gap-1.5">
-          {[1, 5, 10].map((d) => (
-            <QuickBtn key={`p${d}`} className={plusCls} onClick={() => set(d)}>+{d}</QuickBtn>
+    <div
+      role="button"
+      tabIndex={selected ? -1 : 0}
+      aria-pressed={selected}
+      title={`${title} 점수 입력하기`}
+      onClick={selected ? undefined : onSelect}
+      onKeyDown={(e) => {
+        if (!selected && (e.key === "Enter" || e.key === " ")) {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
+      className={cn(
+        "rounded-xl border p-2 transition-all lg:p-3",
+        // 고르지 않은 쪽도 팀 색을 옅게 깔아 둔다. 회색으로 두었더니 배경에 묻혀
+        // 숫자만 허공에 뜬 것처럼 보였다. 선택은 그 위에 링으로만 얹는다.
+        selected ? cn(a.fill, "ring-2", a.ring) : cn(a.soft, "cursor-pointer hover:brightness-95"),
+      )}
+    >
+      <div className="flex items-center gap-2 lg:flex-col lg:gap-1">
+        <span className={cn("shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-black lg:text-xs", a.band)}>{title}</span>
+        {/* 이름을 누르면 그 자리를 다시 고른다 — 접혀 있어도 수정 경로는 열어 둔다.
+            칸 전체가 점수 선택이므로 이름 클릭은 위로 새어 나가지 않게 막는다. */}
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 lg:hidden">
+          {entries.map((e, i) => (
+            <span key={i} className="flex min-w-0 items-center gap-1.5">
+              {i > 0 && <span className="shrink-0 text-xs text-muted-foreground/60">·</span>}
+              <button
+                type="button"
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  e.onEdit();
+                }}
+                className="min-w-0 truncate text-sm font-bold text-strong underline decoration-dotted decoration-muted-foreground/40 underline-offset-4 transition-colors hover:text-foreground active:scale-95 cursor-pointer"
+              >
+                {e.name}
+              </button>
+            </span>
           ))}
         </div>
-        <div className="grid grid-cols-3 gap-1.5">
-          {[1, 5, 10].map((d) => (
-            <QuickBtn key={`m${d}`} className={minusCls} onClick={() => set(-d)}>-{d}</QuickBtn>
-          ))}
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onChange(0)}
-          className="mt-2.5 h-9 w-full text-xs font-black bg-muted text-muted-foreground hover:bg-accent hover:text-foreground border border-border/60 transition-all flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer"
-        >
-          <RotateCcw className="size-3.5" /> 0으로 초기화
-        </Button>
+        <span className={cn("shrink-0 px-3 font-mono text-5xl font-black leading-none tabular-nums lg:w-full lg:px-0 lg:text-center lg:text-7xl", a.text)}>
+          {value}
+        </span>
       </div>
+
+      {selected ? (
+        // 키패드 안에서의 클릭이 칸 바깥으로 새어 나가지 않게 막는다.
+        // 열 수는 화면 폭이 정한다. 좁은 화면에서 6열로 깔면 키가 41px까지 좁아져
+        // 손가락으로 누르기 어렵다(4열이면 70px). 넓은 화면은 2줄로 얕게 편다.
+        <div className="mt-2 grid grid-cols-4 gap-1.5 lg:mt-3 lg:grid-cols-6" onClick={(e) => e.stopPropagation()}>
+          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 0].map((d) => (
+            <KeyBtn key={d} onClick={() => onDigit(d)}>{d}</KeyBtn>
+          ))}
+          <KeyBtn onClick={onBackspace} muted title="한 자리 지우기">
+            <Delete className="size-5" />
+          </KeyBtn>
+          <KeyBtn onClick={onClear} muted title="0으로 초기화">
+            <RotateCcw className="size-5" />
+          </KeyBtn>
+        </div>
+      ) : (
+        // 칸 아무 데나 눌러도 열리지만, 눌린다는 걸 알려 주는 표시가 필요하다.
+        <div className="mt-1 text-center lg:mt-2">
+          <span className="inline-flex items-center gap-1 rounded-lg border border-border/60 bg-card/60 px-2 py-1 text-[11px] font-bold text-muted-foreground">
+            <Pencil className="size-3" /> 다시 입력
+          </span>
+        </div>
+      )}
     </div>
   );
 }
 
-function QuickBtn({ className, onClick, children }: { className?: string; onClick: () => void; children: React.ReactNode }) {
+function KeyBtn({ onClick, children, muted, title }: { onClick: () => void; children: React.ReactNode; muted?: boolean; title?: string }) {
   return (
     <button
+      type="button"
       onClick={onClick}
+      title={title}
       className={cn(
-        "rounded-lg border py-1.5 font-mono text-sm sm:text-base font-bold tabular-nums transition-all active:scale-95",
-        className,
+        // 손가락으로 눌러야 하니 높이를 넉넉히 준다.
+        "flex h-12 items-center justify-center rounded-lg border font-mono text-xl font-black tabular-nums transition-all active:scale-95 cursor-pointer lg:h-12",
+        muted
+          // 회색 위 회색이면 눈에 안 들어온다. 지우기·초기화는 경고색으로 구분한다.
+          ? "border-loss/40 bg-loss/10 text-loss hover:bg-loss/20"
+          : "border-border/60 bg-surface-deep text-strong hover:border-neon-blue/60 hover:bg-accent/40",
       )}
     >
       {children}
@@ -2345,3 +2510,7 @@ function GeometricRankCrest({
   );
 }
 
+
+// 점수를 넣는 동안 좁은 화면에서 대진을 한 줄로 접어 두는 띠. 선수 카드를 그대로
+// 두면 점수판 두 개가 한 화면에 안 들어와, 한쪽 점수만 넣고 등록해 버리기 쉽다.
+// 이름을 누르면 그 자리를 다시 고를 수 있어 접어도 수정 경로는 막히지 않는다.

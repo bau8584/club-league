@@ -20,8 +20,7 @@ import {
 import { useLeagueStore } from "@/lib/league-store";
 import { RecordMatch, type MatchResultData, type PlayerResult } from "./RecordMatch";
 import { MatchRecommend } from "./MatchRecommend";
-import { MatchQueue } from "./MatchQueue";
-import { SessionRoster } from "./SessionRoster";
+import { SessionCard } from "./SessionCard";
 import { getTier, type Match, type Student } from "@/lib/league-types";
 import { getTodayPlayerIds } from "@/lib/today-players";
 import { useLeagueTerms, useIsSchoolLeague } from "@/lib/league-terms";
@@ -433,11 +432,11 @@ export function MatchesTab({
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
       {/* ── 경기 결과 입력 ── school: 버튼→팝업 대신 경기장 탭에 폼을 바로 노출 */}
-      {/* ── 출석 체크(세션 명단) + 대기열 ── 경기 탭 상단.
-           지금은 학교 리그에만 (동호회는 예약 목록과 합칠 때 함께) */}
-      {isSchool && !readOnly && isClassManager && <SessionRoster />}
+      {/* ── 오늘 수업(출석 → 대진) ── 경기 탭 상단.
+           지금은 학교 리그에만 (동호회는 예약 목록과 합칠 때 함께).
+           관리자냐 아니냐는 카드 안에서 갈린다 — 학생에게는 대기열만 보인다. */}
       {isSchool && !readOnly && (
-        <MatchQueue canManage={isClassManager} onRecordRow={openQueueRow} />
+        <SessionCard canManage={isClassManager} onRecordRow={openQueueRow} />
       )}
 
       {canRecord && isSchool && (

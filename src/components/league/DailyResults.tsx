@@ -6,8 +6,10 @@ import { cn } from "@/lib/utils";
 import { useLeagueStore } from "@/lib/league-store";
 import { Calendar as DayCalendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { getTier, TIER_ORDER } from "@/lib/league-types";
+import { getTier, TIER_ORDER, classKeyOf, classLabel } from "@/lib/league-types";
 import type { Match, Student } from "@/lib/league-types";
+import { useIsSchoolLeague } from "@/lib/league-terms";
+import { FilterChip } from "./FilterChip";
 
 const displayName = (p: { name: string; nickname?: string | null }) => p.nickname || p.name;
 const sameDay = (a: Date, b: Date) =>
@@ -15,8 +17,12 @@ const sameDay = (a: Date, b: Date) =>
 
 export function DailyResults() {
   const { matches, students, tierThresholds, deletedById } = useLeagueStore();
+  const isSchool = useIsSchoolLeague();
   const [date, setDate] = useState<Date>(() => new Date());
   const [pickerOpen, setPickerOpen] = useState(false);
+  // 반 필터. 날짜를 넘겨도 유지된다 — "3반만 보는 중"이라는 맥락은 날짜와 무관하다.
+  const [filterGrade, setFilterGrade] = useState<number[]>([]);
+  const [filterClass, setFilterClass] = useState<number[]>([]);
 
   // 기록이 있는 날짜(로컬 자정 기준) 목록 — 오름차순
   const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
@@ -59,12 +65,84 @@ export function DailyResults() {
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [matches, date]);
 
+  /**
+   * 그 날 실제로 뛴 사람의 학년/반만 칩으로 낸다.
+   * 전체 명단으로 축을 잡으면 오늘 오지도 않은 반이 칩으로 떠서, 눌러도 빈 화면만 나온다.
+   * (출석부는 대기열 화면의 일이다. 여기는 경기 기록만 다룬다.)
+   */
+  const dayPlayers = useMemo(() => {
+    const out: Student[] = [];
+    const seen = new Set<string>();
+    for (const m of dayMatches) {
+      for (const pid of [m.playerAId, m.playerBId, m.playerA2Id, m.playerB2Id]) {
+        if (!pid || seen.has(pid)) continue;
+        seen.add(pid);
+        const s = byId.get(pid);
+        if (s) out.push(s);
+      }
+    }
+    return out;
+  }, [dayMatches, byId]);
+
+  const dayGrades = useMemo(
+    () => Array.from(new Set(dayPlayers.map((s) => s.grade).filter((g): g is number => g != null))).sort((a, b) => a - b),
+    [dayPlayers]
+  );
+  // 반 칩은 고른 학년 안에서만 추린다 — 5학년만 보는데 6학년의 반 번호가 뜰 이유가 없다.
+  const dayClasses = useMemo(() => {
+    const set = new Set<number>();
+    for (const s of dayPlayers) {
+      if (s.classNum == null) continue;
+      if (filterGrade.length > 0 && (s.grade == null || !filterGrade.includes(s.grade))) continue;
+      set.add(s.classNum);
+    }
+    return Array.from(set).sort((a, b) => a - b);
+  }, [dayPlayers, filterGrade]);
+
+  const showGrade = isSchool && dayGrades.length > 1;
+  const showClass = isSchool && dayClasses.length > 1;
+  const filterOn = (showGrade && filterGrade.length > 0) || (showClass && filterClass.length > 0);
+
+  /**
+   * 선택한 반 소속이 한 명이라도 낀 경기는 남긴다.
+   * 반대항 경기를 걸러내면 "우리 반이 옆 반을 이긴 판"이 통째로 사라진다 — 학교에선 그게 제일 보고 싶은 경기다.
+   */
+  const shownMatches = useMemo(() => {
+    if (!filterOn) return dayMatches;
+    const inScope = (pid?: string | null) => {
+      const s = pid ? byId.get(pid) : null;
+      if (!s) return false;
+      if (showGrade && filterGrade.length > 0 && (s.grade == null || !filterGrade.includes(s.grade))) return false;
+      if (showClass && filterClass.length > 0 && (s.classNum == null || !filterClass.includes(s.classNum))) return false;
+      return true;
+    };
+    return dayMatches.filter((m) =>
+      [m.playerAId, m.playerBId, m.playerA2Id, m.playerB2Id].some(inScope)
+    );
+  }, [dayMatches, filterOn, byId, showGrade, showClass, filterGrade, filterClass]);
+
+  const clearFilter = () => { setFilterGrade([]); setFilterClass([]); };
+  const toggleGrade = (g: number) =>
+    setFilterGrade((prev) => { setFilterClass([]); return prev.includes(g) ? prev.filter((x) => x !== g) : [...prev, g]; });
+  const toggleClass = (c: number) =>
+    setFilterClass((prev) => (prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]));
+
+  // 지금 보고 있는 범위 이름 — "3반의 하이라이트"임을 제목 줄에서 알 수 있어야 한다.
+  const scopeLabel = useMemo(() => {
+    if (!filterOn) return null;
+    const gs = showGrade ? filterGrade : [];
+    const cs = showClass ? filterClass : [];
+    if (gs.length && cs.length) return gs.flatMap((g) => cs.map((c) => `${g}-${c}반`)).join(", ");
+    if (gs.length) return gs.map((g) => `${g}학년`).join(", ");
+    return cs.map((c) => `${c}반`).join(", ");
+  }, [filterOn, showGrade, showClass, filterGrade, filterClass]);
+
   // 통계
   const stats = useMemo(() => {
     const players = new Set<string>();
     let singles = 0, doubles = 0;
     const winCount = new Map<string, number>();
-    for (const m of dayMatches) {
+    for (const m of shownMatches) {
       const isDouble = !!(m.playerA2Id || m.playerB2Id);
       isDouble ? doubles++ : singles++;
       for (const pid of [m.playerAId, m.playerBId, m.playerA2Id, m.playerB2Id]) if (pid) players.add(pid);
@@ -73,12 +151,12 @@ export function DailyResults() {
     }
     let topWinner: { id: string; wins: number } | null = null;
     for (const [id, wins] of winCount) if (!topWinner || wins > topWinner.wins) topWinner = { id, wins };
-    return { total: dayMatches.length, players: players.size, singles, doubles, topWinner };
-  }, [dayMatches]);
+    return { total: shownMatches.length, players: players.size, singles, doubles, topWinner };
+  }, [shownMatches]);
 
   // 오늘의 인물 키워드 (그날 경기 + 현재 티어만으로 계산 — 추가 쿼리 없음)
   const awards = useMemo(() => {
-    const asc = [...dayMatches].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const asc = [...shownMatches].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     const inc = (m: Map<string, number>, id?: string | null) => { if (id) m.set(id, (m.get(id) ?? 0) + 1); };
     const tierRank = (id?: string | null) => { const s = id ? byId.get(id) : null; return s ? TIER_ORDER.indexOf(getTier(s.rp, tierThresholds)) : -1; };
 
@@ -132,13 +210,13 @@ export function DailyResults() {
     const u = top(upset, 1); if (u) list.push({ emoji: "🎯", key: "대이변러", id: u.id, detail: `자기보다 높은 티어를 ${u.c}번 꺾은 대이변의 주인공.` });
     const st = top(streakMax, 2); if (st) list.push({ emoji: "🔥", key: "연승왕", id: st.id, detail: `쉬지 않고 ${st.c}연승을 내달렸어요.` });
     const n = top(nail, 1); if (n) list.push({ emoji: "😤", key: "진땀승 장인", id: n.id, detail: `1~3점 차 손에 땀 쥐는 승부를 ${n.c}번 잡아냈어요.` });
-    const at = top(attend, 1); if (at) list.push({ emoji: "🏃", key: "개근왕", id: at.id, detail: `오늘 ${at.c}경기, 끝까지 코트를 지킨 출석왕.` });
+    const at = top(attend, 1); if (at) list.push({ emoji: "🏃", key: "최다 출전", id: at.id, detail: `오늘 ${at.c}경기, 코트를 가장 오래 지켰어요.` });
     if (topDuo) list.push({ emoji: "🤝", key: "환상의 복식조", ids: topDuo.ids, detail: `복식에서 ${topDuo.w}번 함께 이긴 환상의 짝꿍.` });
     // 패자 격려 — 위로/응원 카테고리
     const nl = top(nailLoss, 1); if (nl) list.push({ emoji: "💪", key: "근성상", id: nl.id, detail: `1~3점 차로 ${nl.c}번 아깝게 놓쳤어요. 다음 판은 당신 겁니다!` });
     const lc = top(lossCount, 2); if (lc && lc.id !== st?.id) list.push({ emoji: "🌱", key: "성장 중", id: lc.id, detail: `오늘 ${lc.c}패, 누구보다 많이 부딪히며 성장하는 중!` });
     return list;
-  }, [dayMatches, byId, tierThresholds]);
+  }, [shownMatches, byId, tierThresholds]);
 
   const isToday = sameDay(date, new Date());
   const dateLabel = date.toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "short" });
@@ -153,7 +231,9 @@ export function DailyResults() {
             <Calendar className="size-5" />
           </div>
           <div>
-            <h2 className="text-lg font-black tracking-tight text-foreground">하이라이트</h2>
+            <h2 className="text-lg font-black tracking-tight text-foreground">
+              하이라이트{scopeLabel && <span className="ml-1.5 text-neon-blue">· {scopeLabel}</span>}
+            </h2>
             <p className="text-[11px] text-muted-foreground">{dateLabel}{isToday && " · 오늘"}</p>
           </div>
         </div>
@@ -176,6 +256,38 @@ export function DailyResults() {
           </Button>
         </div>
       </div>
+
+      {/* 반 필터 — 학교 리그에서 그 날 두 반 이상이 뛰었을 때만 */}
+      {(showGrade || showClass) && (
+        <div className="space-y-1.5 rounded-xl border border-border/40 bg-card/30 px-3 py-2.5">
+          {showGrade && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="w-11 shrink-0 text-[10px] font-bold text-muted-foreground">학년</span>
+              <FilterChip active={filterGrade.length === 0} onClick={() => { setFilterGrade([]); setFilterClass([]); }}>전체 학년</FilterChip>
+              {dayGrades.map((g) => (
+                <FilterChip key={g} active={filterGrade.includes(g)} onClick={() => toggleGrade(g)}>{g}학년</FilterChip>
+              ))}
+            </div>
+          )}
+          {showClass && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="w-11 shrink-0 text-[10px] font-bold text-muted-foreground">반</span>
+              <FilterChip active={filterClass.length === 0} onClick={() => setFilterClass([])}>전체 반</FilterChip>
+              {dayClasses.map((c) => (
+                <FilterChip key={c} active={filterClass.includes(c)} onClick={() => toggleClass(c)}>{c}반</FilterChip>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 고른 반이 이 날엔 안 뛴 경우 — 빈 화면만 보여주고 끝내지 않는다 */}
+      {filterOn && shownMatches.length === 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/40 bg-card/30 px-3 py-2.5">
+          <span className="text-xs text-muted-foreground">이 날 {scopeLabel} 경기 기록이 없습니다.</span>
+          <Button variant="outline" size="sm" className="h-7 border-border/50 text-xs font-bold" onClick={clearFilter}>전체 보기</Button>
+        </div>
+      )}
 
       {/* 경기 요약 */}
       <div className="space-y-2">
@@ -223,11 +335,13 @@ export function DailyResults() {
       <div className="space-y-2">
         <span className="flex items-center gap-1.5 text-sm font-black text-foreground">🏸 경기 기록</span>
         <Card className="border border-border/40 bg-card/50 p-4 backdrop-blur shadow-lg">
-          {dayMatches.length === 0 ? (
-            <p className="py-10 text-center text-xs text-muted-foreground">이 날에 기록된 경기가 없습니다.</p>
+          {shownMatches.length === 0 ? (
+            <p className="py-10 text-center text-xs text-muted-foreground">
+              {filterOn ? `이 날 ${scopeLabel} 경기가 없습니다.` : "이 날에 기록된 경기가 없습니다."}
+            </p>
           ) : (
             <div className="grid grid-cols-1 gap-1.5 lg:grid-cols-2">
-              {dayMatches.map((m) => <MatchRow key={m.id} m={m} byId={byId} />)}
+              {shownMatches.map((m) => <MatchRow key={m.id} m={m} byId={byId} markCrossClass={isSchool} />)}
             </div>
           )}
         </Card>
@@ -248,8 +362,22 @@ function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string
   );
 }
 
-function MatchRow({ m, byId }: { m: Match; byId: Map<string, Student> }) {
+function MatchRow({ m, byId, markCrossClass }: { m: Match; byId: Map<string, Student>; markCrossClass?: boolean }) {
   const get = (id?: string | null) => (id ? byId.get(id) : null);
+  /**
+   * 참가자 반이 둘 이상이면 반대항. 반 필터로 좁혀 봐도 "옆 반과 붙은 판"임을 알 수 있어야 한다.
+   * 반 정보가 없는 명단에서는 키가 전부 ""이라 뱃지가 뜨지 않는다.
+   */
+  const crossClass = (() => {
+    if (!markCrossClass) return null;
+    const keys = new Set<string>();
+    for (const pid of [m.playerAId, m.playerBId, m.playerA2Id, m.playerB2Id]) {
+      const s = get(pid);
+      if (s) keys.add(classKeyOf(s));
+    }
+    if (keys.size < 2) return null;
+    return Array.from(keys).map(classLabel).join(" vs ");
+  })();
   const pA = get(m.playerAId) ?? { name: "알 수 없음", nickname: null };
   const pB = get(m.playerBId) ?? { name: "알 수 없음", nickname: null };
   const pA2 = get(m.playerA2Id);
@@ -262,6 +390,9 @@ function MatchRow({ m, byId }: { m: Match; byId: Map<string, Student> }) {
   return (
     <div className="flex items-center gap-2 rounded-lg border border-border/30 bg-input/40 px-2.5 py-2">
       <span className="w-[38px] shrink-0 text-[9px] leading-tight text-muted-foreground sm:w-[46px] sm:text-[10px]">{time}</span>
+      {crossClass && (
+        <span className="shrink-0 rounded bg-muted/60 px-1 py-0.5 text-[9px] font-bold text-muted-foreground" title={crossClass}>반대항</span>
+      )}
       <div className="flex min-w-0 flex-1 items-center justify-center gap-2 text-xs">
         <span className={cn("min-w-0 flex-1 truncate text-right font-bold", aWon ? "text-neon-blue" : "text-foreground")} title={teamA}>{teamA}</span>
         <span className="shrink-0 select-none rounded bg-muted/60 px-2 py-0.5 font-mono text-[13px] font-bold">

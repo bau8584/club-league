@@ -7,6 +7,7 @@ import { TierBadge } from "@/components/league/TierBadge";
 import { GenderMark } from "@/components/league/GenderMark";
 import { TitleBadge } from "@/components/league/TitleBadge";
 import { PlayerDetailSheet } from "@/components/league/PlayerDetailSheet";
+import { FilterChip } from "@/components/league/FilterChip";
 import { cn } from "@/lib/utils";
 import { Search, SlidersHorizontal, ChevronDown, X } from "lucide-react";
 import { getTier, isUnranked, schoolAxesOf, TIER_ORDER, TIER_STYLES, type TierName, type Student } from "@/lib/league-types";
@@ -400,27 +401,6 @@ const LeaderboardRow = memo(function LeaderboardRow({
     </tr>
   );
 });
-
-export function FilterChip({
-  active, onClick, children, tone,
-}: { active: boolean; onClick: () => void; children: React.ReactNode; tone?: string }) {
-  return (
-    <Button
-      type="button"
-      size="sm"
-      variant="ghost"
-      onClick={onClick}
-      className={cn(
-        "h-8 rounded-full border px-3 text-xs font-semibold transition-all",
-        active
-          ? "border-neon-blue/60 bg-neon-blue/15 text-neon-blue glow-primary"
-          : cn("border-border/60 bg-card/40 hover:text-foreground", tone ?? "text-muted-foreground"),
-      )}
-    >
-      {children}
-    </Button>
-  );
-}
 
 function RankBadge({ rank }: { rank: number }) {
   if (rank === 1) return <span className="text-glow-gold text-gold">#{rank}</span>;
