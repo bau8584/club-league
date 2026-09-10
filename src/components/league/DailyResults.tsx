@@ -96,10 +96,21 @@ export function DailyResults() {
     () => new Set(dayPlayers.map((s) => s.grade).filter((g): g is number => g != null)),
     [dayPlayers]
   );
-  const dayClasses = useMemo(
-    () => new Set(dayPlayers.map((s) => s.classNum).filter((c): c is number => c != null)),
-    [dayPlayers]
-  );
+  /**
+   * 반 칩은 **고른 학년 안에서** 그 날 경기가 있었는지로 정한다.
+   *
+   * 학년을 무시하고 반 번호만 모으면, 6-7반이 수업한 날 5학년을 골라도 `7반`이 멀쩡히
+   * 활성으로 뜬다. 눌러 보면 빈 화면이다 — 5-7반은 오늘 수업을 안 했으니까.
+   */
+  const dayClasses = useMemo(() => {
+    const set = new Set<number>();
+    for (const s of dayPlayers) {
+      if (s.classNum == null) continue;
+      if (filterGrade != null && s.grade !== filterGrade) continue;
+      set.add(s.classNum);
+    }
+    return set;
+  }, [dayPlayers, filterGrade]);
 
   /**
    * 칩 목록은 명단 전체에서 뽑는다 — 그 날 뛴 반만 내면, 한 반만 수업한 날에는 필터 줄이
@@ -249,9 +260,9 @@ export function DailyResults() {
   const topWinnerLabel = (() => {
     const t = day.topWinners;
     if (!t) return "—";
-    const shown = t.playerIds.slice(0, 2).map(nameOf).join("·");
-    const rest = t.playerIds.length - 2;
-    return `${shown}${rest > 0 ? ` 외 ${rest}명` : ""} (${t.wins})`;
+    // 셋 이상이 공동 1위면 이름 두 개만 적어 봐야 잘리고, 나머지를 지우는 셈이 된다.
+    if (t.playerIds.length > 2) return `${t.playerIds.length}명 공동 (${t.wins}승)`;
+    return `${t.playerIds.map(nameOf).join("·")} (${t.wins}승)`;
   })();
 
   const isToday = sameDay(date, new Date());

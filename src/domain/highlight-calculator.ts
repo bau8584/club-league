@@ -589,12 +589,41 @@ const AWARDS: AwardSpec[] = [
 /** 카드로 낼 수 없을 만큼 해당자가 많은 기준. 이 수부터는 목록으로 내린다. */
 const LIST_THRESHOLD = 3;
 
+/**
+ * 목록으로도 낼 수 없을 만큼 해당자가 많은 기준. 이 수를 넘으면 그 지표를 아예 내지 않는다.
+ *
+ * 27명이 뛴 날 21명이 `친구 넓히기`, 19명이 `최다 출전`이면 그건 하이라이트가 아니라
+ * 출석부다. 이름이 여섯을 넘어 `외 N명`으로 접히기 시작하는 순간 이미 목록이 아니라
+ * 명단이고, 명단은 아무것도 구별해 주지 않는다.
+ *
+ * 상한을 넘긴 지표는 그 날 흔한 일이었다는 뜻이다. 흔한 일에는 상을 주지 않는다.
+ */
+const LIST_MAX = 6;
+
 export function computeAwards(day: DayStats, players: HighlightPlayer[] = []): HighlightAwards {
   const byId = new Map(players.map((p) => [p.id, p]));
   const cards: HighlightCard[] = [];
   const lists: HighlightList[] = [];
   const labeled = new Set<string>();
   const stats = Array.from(day.perPlayer.values());
+
+  /** 목록 한 줄. 해당자가 상한을 넘으면 조용히 버린다 — 침묵이 명단보다 낫다. */
+  const pushList = (
+    key: string,
+    emoji: string,
+    who: PlayerDayStat[],
+    value: number,
+    detail: string,
+  ) => {
+    if (who.length === 0 || who.length > LIST_MAX) return;
+    lists.push({
+      key,
+      emoji,
+      playerIds: [...who].sort((a, b) => tiebreak(a, b, byId)).map((s) => s.id),
+      value,
+      detail,
+    });
+  };
 
   for (const spec of AWARDS) {
     if (spec.enabled && !spec.enabled(day)) continue;
@@ -614,15 +643,7 @@ export function computeAwards(day: DayStats, players: HighlightPlayer[] = []): H
     if (tied.length >= LIST_THRESHOLD) {
       // 동점자가 셋 이상. 한 명을 뽑으면 나머지가 지워진다.
       // 부정 계열은 목록조차 내지 않는다 — 반 전체가 보는 화면에 "오늘 많이 진 사람" 명단이 된다.
-      if (!spec.negative) {
-        lists.push({
-          key: spec.key,
-          emoji: spec.emoji,
-          playerIds: [...tied].sort((a, b) => tiebreak(a, b, byId)).map((s) => s.id),
-          value: best,
-          detail: spec.detail(best),
-        });
-      }
+      if (!spec.negative) pushList(spec.key, spec.emoji, tied, best, spec.detail(best));
       continue;
     }
 
@@ -640,15 +661,7 @@ export function computeAwards(day: DayStats, players: HighlightPlayer[] = []): H
   // 연승 카드가 안 나온 날의 전승자들. "2연승 한 명"이라는 거짓 대신 이름을 다 적는다.
   if (day.maxStreak === 2) {
     const sweepers = stats.filter((s) => s.losses === 0 && s.wins >= 2);
-    if (sweepers.length > 0) {
-      lists.push({
-        key: "전승",
-        emoji: "✨",
-        playerIds: [...sweepers].sort((a, b) => tiebreak(a, b, byId)).map((s) => s.id),
-        value: 2,
-        detail: "오늘 한 판도 지지 않았어요.",
-      });
-    }
+    pushList("전승", "✨", sweepers, 2, "오늘 한 판도 지지 않았어요.");
   }
 
   /**
@@ -676,14 +689,7 @@ export function computeAwards(day: DayStats, players: HighlightPlayer[] = []): H
     ];
   for (const [key, emoji, pick, detail] of facts) {
     const who = stats.filter(pick);
-    if (who.length === 0) continue;
-    lists.push({
-      key,
-      emoji,
-      playerIds: [...who].sort((a, b) => tiebreak(a, b, byId)).map((s) => s.id),
-      value: who.length,
-      detail,
-    });
+    pushList(key, emoji, who, who.length, detail);
   }
 
   const duo = day.hasDoubles ? (day.duos.find((d) => d.wins >= 2) ?? null) : null;

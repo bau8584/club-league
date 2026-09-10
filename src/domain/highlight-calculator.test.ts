@@ -11,15 +11,15 @@ import {
  * 경기 한 건. 배열에 넣은 순서대로 1분씩 뒤로 밀린다 — 연승은 시간 순서를 타므로
  * 픽스처에서 "먼저 뛴 판"이 눈에 보여야 한다.
  */
-const day = (
-  rows: [
-    winners: string[],
-    losers: string[],
-    scoreWin: number,
-    scoreLose: number,
-    type?: "single" | "double",
-  ][],
-): HighlightMatch[] =>
+type Row = [
+  winners: string[],
+  losers: string[],
+  scoreWin: number,
+  scoreLose: number,
+  type?: "single" | "double",
+];
+
+const day = (rows: Row[]): HighlightMatch[] =>
   rows.map(([winnerIds, loserIds, scoreWin, scoreLose, matchType], i) => ({
     id: `m${i + 1}`,
     date: `2026-09-10T09:${String(i).padStart(2, "0")}:00.000Z`,
@@ -409,6 +409,43 @@ describe("computeAwards — 학교용 지표", () => {
     // a는 지난 수업보다 나빠졌다. 반 전체가 보는 화면에 그런 목록은 없다.
     expect(listFor(awards.lists, "나아진 학생")?.playerIds).toEqual(["b"]);
     expect(awards.lists.some((l) => l.key.includes("나빠"))).toBe(false);
+  });
+});
+
+describe("computeAwards — 흔한 일에는 상을 주지 않는다", () => {
+  /** n명의 신입이 각각 기존 학생 한 명을 이기는 날. 데뷔가 정확히 n명이 된다. */
+  const debutDay = (n: number) => ({
+    matches: day(Array.from({ length: n }, (_, i): Row => [[`n${i}`], [`old${i}`], 2, 1])),
+    priorMatches: day(
+      Array.from({ length: n }, (_, i): Row => [[`old${i}`], [`old${(i + 1) % n}`], 2, 1]),
+    ),
+  });
+
+  it("해당자가 여섯 명을 넘으면 목록으로도 내지 않는다", () => {
+    // 일곱 명이 오늘 처음 뛰었다. 이름을 다 적으면 하이라이트가 아니라 출석부다.
+    const { awards } = computeHighlights(debutDay(7));
+
+    expect(listFor(awards.lists, "리그 데뷔")).toBeNull();
+  });
+
+  it("여섯 명까지는 목록으로 낸다", () => {
+    const { awards } = computeHighlights(debutDay(6));
+
+    expect(listFor(awards.lists, "리그 데뷔")?.playerIds).toHaveLength(6);
+  });
+
+  it("동점자가 너무 많으면 카드도 목록도 되지 않는다", () => {
+    // 열 명이 나란히 접전 1승씩. 한 명을 뽑으면 거짓이고, 열 명을 적으면 명단이다.
+    const matches = day([
+      ...Array.from({ length: 10 }, (_, i): Row => [[`w${i}`], [`l${i}`], 21, 20]),
+      // 점수차 분포를 만들어 접전 기준이 성립하게 한다.
+      [["big1"], ["big2"], 21, 5],
+      [["big3"], ["big4"], 21, 3],
+    ]);
+    const { awards } = computeHighlights({ matches });
+
+    expect(cardFor(awards.cards, "접전 승부사")).toBeNull();
+    expect(listFor(awards.lists, "접전 승부사")).toBeNull();
   });
 });
 
