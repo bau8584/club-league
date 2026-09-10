@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Calendar, Trophy, Swords, Users, ChevronLeft, ChevronRight } from "lucide-react";
+import { Calendar, Trophy, Swords, Users, UsersRound, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLeagueStore } from "@/lib/league-store";
 import { Calendar as DayCalendar } from "@/components/ui/calendar";
@@ -385,7 +385,8 @@ export function DailyResults() {
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
         <StatCard icon={<Swords className="size-4" />} label="총 경기" value={`${day.total}`} />
         <StatCard icon={<Users className="size-4" />} label="참여 인원" value={`${day.playerCount}`} />
-        <StatCard icon={<span className="text-[11px] font-black">단·복</span>} label="단식 / 복식" value={`${day.singles} / ${day.doubles}`} />
+        {/* 아이콘 자리에 `단·복`을 넣어 라벨과 같은 말을 두 번 적고 있었다. */}
+        <StatCard icon={<UsersRound className="size-4" />} label="단식 / 복식" value={`${day.singles} / ${day.doubles}`} />
         <StatCard icon={<Trophy className="size-4" />} label="최다승" value={topWinnerLabel} />
         </div>
       </div>
@@ -523,7 +524,7 @@ function AwardCard({ name, emoji, label, detail, about }: { name: string; emoji:
       {/* 상 이름표(누르면 규칙) + 닉네임을 한 줄에. 이름표가 왼쪽, 사람이 오른쪽. */}
       <div className="flex w-full items-center gap-2">
         <AwardLabel emoji={emoji} label={label} about={about} />
-        <span className="min-w-0 flex-1 truncate text-lg font-black leading-tight text-foreground" title={name}>{name}</span>
+        <span className="min-w-0 flex-1 truncate text-right text-lg font-black leading-tight text-foreground" title={name}>{name}</span>
       </div>
       {/* 오늘 무슨 일이 있었나 */}
       <span className="text-[11px] leading-snug text-muted-foreground">{detail}</span>
