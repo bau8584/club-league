@@ -577,8 +577,8 @@ const AWARDS: AwardSpec[] = [
     value: (s) => s.newOpponents,
     min: 2,
     enabled: (d) => d.hasHistory,
-    detail: (v) => `오늘 처음 만난 상대가 ${v}명. 늘 하던 애들끼리를 깼어요.`,
-    about: "오늘 처음 만난 상대가 가장 많은 사람이 받아요. 이기고 지는 것과는 상관없어요.",
+    detail: (v) => `오늘 처음 만난 상대 ${v}명.`,
+    about: "오늘 처음 만난 상대가 가장 많은 사람이 받는다.",
   },
   {
     key: "깜짝 승리",
@@ -587,16 +587,16 @@ const AWARDS: AwardSpec[] = [
     // 구별되지 않지만, 차이는 사람마다 갈린다. 최소 20은 "실수로 이긴 게 아니다"의 선.
     value: (s) => s.bestUpsetGap,
     min: 20,
-    detail: (v) => `나보다 RP가 ${Math.round(v)} 높은 상대를 꺾었어요.`,
-    about: "나보다 RP가 높은 상대를 이기면 받아요. RP 차이가 클수록 더 큰 깜짝 승리예요.",
+    detail: (v) => `나보다 RP ${Math.round(v)} 높은 상대를 꺾음.`,
+    about: "나보다 RP가 높은 상대를 이기면 받는다. 차이가 클수록 큰 깜짝 승리.",
   },
   {
     key: "퍼펙트",
     emoji: "💯",
     value: (s) => s.shutoutWins,
     min: 1,
-    detail: (v) => `상대에게 한 점도 주지 않은 판이 ${v}번.`,
-    about: "상대에게 한 점도 주지 않고 이기면 받아요.",
+    detail: (v) => `한 점도 내주지 않은 판 ${v}번.`,
+    about: "상대에게 한 점도 주지 않고 이기면 받는다.",
   },
   {
     key: "연승왕",
@@ -606,8 +606,8 @@ const AWARDS: AwardSpec[] = [
     value: (s) => s.maxStreak,
     min: 3,
     enabled: (d) => d.maxStreak >= 3,
-    detail: (v) => `쉬지 않고 ${v}연승을 내달렸어요.`,
-    about: "쉬지 않고 세 판 넘게 이기면 받아요. 그 날 아무도 3연승을 못 하면 이 상은 없어요.",
+    detail: (v) => `쉬지 않고 ${v}연승.`,
+    about: "쉬지 않고 세 판 넘게 이기면 받는다.",
   },
   {
     key: "RP 상승",
@@ -616,8 +616,8 @@ const AWARDS: AwardSpec[] = [
     // 연속값이다. 다만 승패와 강하게 붙어 있으므로 승패 무관 상들보다 아래에 둔다.
     value: (s) => s.rpToday,
     min: 1,
-    detail: (v) => `오늘 RP를 +${Math.round(v)} 올렸어요.`,
-    about: "오늘 하루 동안 RP를 가장 많이 올린 사람이 받아요.",
+    detail: (v) => `오늘 RP +${Math.round(v)}.`,
+    about: "오늘 하루 RP를 가장 많이 올린 사람이 받는다.",
   },
   {
     key: "아슬아슬",
@@ -627,8 +627,8 @@ const AWARDS: AwardSpec[] = [
     value: (s) => s.closeWins,
     min: 1,
     enabled: (d) => d.closeThreshold != null,
-    detail: (v) => `아슬아슬한 승부를 ${v}번 잡아냈어요.`,
-    about: "그 날 경기 중에서 점수 차가 가장 적었던 판을 이기면 받아요.",
+    detail: (v) => `아슬아슬한 승부를 ${v}번 잡아냄.`,
+    about: "그날 경기 중 점수 차가 가장 적었던 판을 이기면 받는다.",
   },
   {
     key: "강한 상대",
@@ -639,8 +639,8 @@ const AWARDS: AwardSpec[] = [
     min: 1,
     floor: (d) => d.avgPlayerRp,
     enabled: (d) => d.avgPlayerRp != null,
-    detail: (v) => `오늘 만난 상대 평균 RP가 ${Math.round(v)}. 센 상대와 붙었어요.`,
-    about: "오늘 만난 상대가 그 날 평균보다 센 사람이 받아요. 이겼는지 졌는지는 보지 않아요.",
+    detail: (v) => `오늘 만난 상대 평균 RP ${Math.round(v)}.`,
+    about: "그날 평균보다 센 상대를 만나면 받는다. 승패는 보지 않음.",
   },
   {
     key: "최다 출전",
@@ -648,8 +648,8 @@ const AWARDS: AwardSpec[] = [
     value: (s) => s.appearances,
     min: 1,
     floor: (d) => d.avgAppearances,
-    detail: (v) => `오늘 ${v}경기, 코트를 오래 지켰어요.`,
-    about: "그 날 평균보다 많은 경기를 뛴 사람이 받아요.",
+    detail: (v) => `오늘 ${v}경기.`,
+    about: "그날 평균보다 많이 뛴 사람이 받는다.",
   },
   {
     key: "다음엔 내가",
@@ -658,8 +658,8 @@ const AWARDS: AwardSpec[] = [
     min: 1,
     enabled: (d) => d.closeThreshold != null,
     negative: true,
-    detail: (v) => `${v}번을 아깝게 놓쳤어요. 다음 판은 당신 겁니다!`,
-    about: "아슬아슬하게 진 판이 많은 사람에게 가요. 조금만 더 하면 이길 수 있어요.",
+    detail: (v) => `아깝게 놓친 판 ${v}번. 다음 판은 내 것.`,
+    about: "아슬아슬하게 진 판이 많은 사람에게 간다.",
   },
 ];
 
@@ -745,8 +745,8 @@ export function computeAwards(day: DayStats, players: HighlightPlayer[] = []): H
       "✨",
       sweepers,
       2,
-      "오늘 한 판도 지지 않았어요.",
-      "오늘 뛴 경기를 한 판도 지지 않으면 여기 이름이 올라가요.",
+      "오늘 한 판도 지지 않음.",
+      "오늘 뛴 경기를 전부 이긴 사람들.",
     );
   }
 
@@ -771,30 +771,30 @@ export function computeAwards(day: DayStats, players: HighlightPlayer[] = []): H
       key: "리그 데뷔",
       emoji: "🐣",
       pick: (s) => s.isDebut,
-      detail: "오늘 처음 코트에 섰어요.",
-      about: "이 리그에서 오늘 처음으로 경기를 뛴 사람이에요.",
+      detail: "오늘 처음 코트에 섬.",
+      about: "이 리그에서 오늘 처음 경기를 뛴 사람.",
     },
     {
       key: "첫 승",
       emoji: "🎉",
       pick: (s) => s.isFirstWin,
-      detail: "한 번도 못 이기다가 오늘 첫 승을 거뒀어요.",
-      about: "지금까지 한 번도 못 이기다가 오늘 처음 이긴 사람이에요.",
+      detail: "한 번도 못 이기다가 오늘 첫 승.",
+      about: "지금까지 한 번도 못 이기다가 오늘 처음 이긴 사람.",
     },
     {
       key: "티어 승급",
       emoji: "⬆️",
       pick: (s) => s.isPromoted,
-      detail: "오늘 경기로 티어가 올라갔어요.",
-      about: "오늘 경기로 RP가 올라서 티어가 한 단계 올라간 사람이에요.",
+      detail: "오늘 경기로 티어가 올라감.",
+      about: "오늘 경기로 RP가 올라 티어가 한 단계 올라간 사람.",
     },
     // 승급한 학생은 여기 다시 적지 않는다 — 승급이 더 큰 사실이다.
     {
-      key: "나아진 학생",
+      key: "나아진 선수",
       emoji: "📈",
       pick: (s) => s.isRebound && !s.isPromoted,
-      detail: "지난 수업엔 RP가 줄었는데 오늘은 올렸어요.",
-      about: "지난 시간엔 RP가 내려갔는데 오늘은 올린 사람이에요. 이기고 진 횟수는 보지 않아요.",
+      detail: "지난번엔 RP가 줄었는데 오늘은 올림.",
+      about: "마지막으로 뛴 날 RP가 내려갔다가 오늘 올린 사람.",
     },
   ];
   for (const f of facts) {

@@ -12,6 +12,7 @@ import { useIsSchoolLeague } from "@/lib/league-terms";
 import { computeHighlights } from "@/domain/highlight-calculator";
 import type { HighlightMatch, HighlightPlayer } from "@/domain/highlight-calculator";
 import { FilterChip } from "./FilterChip";
+import { useSeedFromSession } from "@/lib/use-session-scope";
 
 const displayName = (p: { name: string; nickname?: string | null }) => p.nickname || p.name;
 const sameDay = (a: Date, b: Date) =>
@@ -31,6 +32,19 @@ export function DailyResults() {
    */
   const [filterGrade, setFilterGrade] = useState<number | null>(null);
   const [filterClass, setFilterClass] = useState<number | null>(null);
+
+  // 수업이 시작되면 그 반을 미리 골라 둔다. 이 화면은 학년·반을 **둘 다** 골라야
+  // 내용이 나오는데(아래 ready), 수업을 마치고 열 때마다 매번 두 번을 다시 눌러야 했다.
+  // 세션이 곧 답을 알고 있으니 대신 골라 준다.
+  //
+  // 날짜와는 무관하게 적용한다 — "우리 반을 보는 중"은 어느 날짜를 보든 유지되는 것이
+  // 자연스럽고, 교사가 보통 찾는 것도 "우리 반의 지난 금요일"이다.
+  //
+  // 세션 id가 바뀔 때만(=새 수업) 한 번 끌어온다. 그 뒤 다른 반을 보러 가면 그대로 둔다.
+  useSeedFromSession("highlight", true, (scope) => {
+    setFilterGrade(scope.grade);
+    setFilterClass(scope.classNum);
+  });
 
   // 기록이 있는 날짜(로컬 자정 기준) 목록 — 오름차순
   const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
@@ -391,18 +405,18 @@ export function DailyResults() {
                 name={duo.playerIds.map(nameOf).join("·")}
                 emoji="🤝"
                 label="단짝"
-                detail={`복식에서 ${duo.wins}번 함께 이긴 짝꿍.`}
-                about="복식에서 두 번 넘게 같이 이긴 짝이 받아요."
+                detail={`복식에서 ${duo.wins}번 함께 이긴 짝.`}
+                about="복식에서 두 번 넘게 같이 이긴 짝이 받는다."
               />
             )}
           </div>
         </div>
       )}
 
-      {/* 오늘 이런 학생들 — 해당자가 여럿인 지표. 한 명을 뽑으면 나머지가 지워진다. */}
+      {/* 오늘 이런 선수들 — 해당자가 여럿인 지표. 한 명을 뽑으면 나머지가 지워진다. */}
       {lists.length > 0 && (
         <div className="space-y-2">
-          <span className="flex items-center gap-1.5 text-sm font-black text-foreground">🙌 오늘 이런 학생들</span>
+          <span className="flex items-center gap-1.5 text-sm font-black text-foreground">🙌 오늘 이런 선수들</span>
           <div className="space-y-1.5 rounded-xl border border-border/40 bg-card/50 px-3 py-2.5">
             {lists.map((l) => {
               // 이름은 6명까지. 스무 명이 전승한 날에도 한 줄을 넘기지 않는다.

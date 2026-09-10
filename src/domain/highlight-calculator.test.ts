@@ -363,7 +363,7 @@ describe("computeAwards — 학교용 지표", () => {
     expect(listFor(awards.lists, "티어 승급")?.playerIds).toEqual(["a"]);
   });
 
-  it("지난 수업엔 RP가 줄었는데 오늘 올린 학생만 나아진 학생으로 낸다", () => {
+  it("지난번엔 RP가 줄었는데 오늘 올린 선수만 나아진 선수로 낸다", () => {
     const priorRp: HighlightMatch[] = [
       // 지난 수업(09-03): a는 -20, b는 +20
       {
@@ -384,7 +384,7 @@ describe("computeAwards — 학교용 지표", () => {
 
     const { awards } = computeHighlights({ matches, priorMatches: priorRp });
 
-    expect(listFor(awards.lists, "나아진 학생")?.playerIds).toEqual(["a"]);
+    expect(listFor(awards.lists, "나아진 선수")?.playerIds).toEqual(["a"]);
   });
 
   it("나빠진 학생은 내지 않는다", () => {
@@ -408,7 +408,7 @@ describe("computeAwards — 학교용 지표", () => {
     const { awards } = computeHighlights({ matches, priorMatches: priorRp });
 
     // a는 지난 수업보다 나빠졌다. 반 전체가 보는 화면에 그런 목록은 없다.
-    expect(listFor(awards.lists, "나아진 학생")?.playerIds).toEqual(["b"]);
+    expect(listFor(awards.lists, "나아진 선수")?.playerIds).toEqual(["b"]);
     expect(awards.lists.some((l) => l.key.includes("나빠"))).toBe(false);
   });
 });
