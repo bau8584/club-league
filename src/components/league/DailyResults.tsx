@@ -501,7 +501,7 @@ function AwardLabel({ emoji, label, about }: { emoji: string; label: string; abo
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="flex items-center gap-1.5 rounded-md bg-neon-blue/15 px-1.5 py-0.5 text-left text-neon-blue transition-colors hover:bg-neon-blue/25 data-[state=open]:bg-neon-blue/25"
+          className="flex shrink-0 items-center gap-1.5 rounded-md bg-neon-blue/15 px-1.5 py-0.5 text-left text-neon-blue transition-colors hover:bg-neon-blue/25 data-[state=open]:bg-neon-blue/25"
           title="어떻게 받는 상인지 보기"
         >
           <span className="text-[13px] leading-none">{emoji}</span>
@@ -519,11 +519,12 @@ function AwardLabel({ emoji, label, about }: { emoji: string; label: string; abo
 
 function AwardCard({ name, emoji, label, detail, about }: { name: string; emoji: string; label: string; detail: string; about: string }) {
   return (
-    <div className="flex flex-col items-start gap-1 rounded-xl border border-border/40 bg-card/50 px-3 py-2.5">
-      {/* 닉네임 (강조·상단) */}
-      <span className="w-full truncate text-xl font-black leading-tight text-foreground" title={name}>{name}</span>
-      {/* 이모지 + 키워드 — 누르면 규칙이 펼쳐진다 */}
-      <AwardLabel emoji={emoji} label={label} about={about} />
+    <div className="flex flex-col items-start gap-1.5 rounded-xl border border-border/40 bg-card/50 px-3 py-2.5">
+      {/* 상 이름표(누르면 규칙) + 닉네임을 한 줄에. 이름표가 왼쪽, 사람이 오른쪽. */}
+      <div className="flex w-full items-center gap-2">
+        <AwardLabel emoji={emoji} label={label} about={about} />
+        <span className="min-w-0 flex-1 truncate text-lg font-black leading-tight text-foreground" title={name}>{name}</span>
+      </div>
       {/* 오늘 무슨 일이 있었나 */}
       <span className="text-[11px] leading-snug text-muted-foreground">{detail}</span>
     </div>
