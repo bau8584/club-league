@@ -146,7 +146,16 @@ export type HighlightCard = {
   emoji: string;
   playerId: string;
   value: number;
+  /** 오늘 무슨 일이 있었나. 값이 들어간 한 문장. */
   detail: string;
+  /**
+   * 이 상은 어떻게 받나 — 규칙 자체의 설명. 눌러서 펼쳐 보는 글이다.
+   *
+   * `detail`과 나누는 이유는 둘이 다른 질문에 답하기 때문이다. "쟤는 왜 받았지"는
+   * detail이 답하고, "이건 뭐 하면 받는 거지"는 about이 답한다. 뒤쪽을 모르면
+   * 상 이름은 그냥 어른들이 붙인 딱지로 남는다.
+   */
+  about: string;
 };
 
 /** 해당자가 여럿인 지표. 카드로 한 명을 뽑으면 거짓이 되므로 이름 목록으로 낸다. */
@@ -156,6 +165,7 @@ export type HighlightList = {
   playerIds: string[];
   value: number;
   detail: string;
+  about: string;
 };
 
 export type HighlightAwards = {
@@ -551,6 +561,8 @@ type AwardSpec = {
   /** 그 날 분포가 이 상을 성립시키는가. 아니면 후보를 보기도 전에 건너뛴다. */
   enabled?: (d: DayStats) => boolean;
   detail: (value: number) => string;
+  /** 규칙 설명. 값이 아니라 "어떻게 받는가"를 적는다. */
+  about: string;
   /** 부정 계열(진 이야기). 하루 최대 1개, 동점자가 많으면 목록으로도 내지 않는다. */
   negative?: boolean;
 };
@@ -566,22 +578,25 @@ const AWARDS: AwardSpec[] = [
     min: 2,
     enabled: (d) => d.hasHistory,
     detail: (v) => `오늘 처음 만난 상대가 ${v}명. 늘 하던 애들끼리를 깼어요.`,
+    about: "오늘 처음 만난 상대가 가장 많은 사람이 받아요. 이기고 지는 것과는 상관없어요.",
   },
   {
-    key: "대이변러",
+    key: "깜짝 승리",
     emoji: "🎯",
     // 횟수가 아니라 RP 차. 하루 1~2경기 리그에서 "몇 번 꺾었나"는 전원이 1이라 아무도
     // 구별되지 않지만, 차이는 사람마다 갈린다. 최소 20은 "실수로 이긴 게 아니다"의 선.
     value: (s) => s.bestUpsetGap,
     min: 20,
     detail: (v) => `나보다 RP가 ${Math.round(v)} 높은 상대를 꺾었어요.`,
+    about: "나보다 RP가 높은 상대를 이기면 받아요. RP 차이가 클수록 더 큰 깜짝 승리예요.",
   },
   {
-    key: "완봉승",
-    emoji: "🧱",
+    key: "퍼펙트",
+    emoji: "💯",
     value: (s) => s.shutoutWins,
     min: 1,
     detail: (v) => `상대에게 한 점도 주지 않은 판이 ${v}번.`,
+    about: "상대에게 한 점도 주지 않고 이기면 받아요.",
   },
   {
     key: "연승왕",
@@ -592,6 +607,7 @@ const AWARDS: AwardSpec[] = [
     min: 3,
     enabled: (d) => d.maxStreak >= 3,
     detail: (v) => `쉬지 않고 ${v}연승을 내달렸어요.`,
+    about: "쉬지 않고 세 판 넘게 이기면 받아요. 그 날 아무도 3연승을 못 하면 이 상은 없어요.",
   },
   {
     key: "RP 상승",
@@ -601,16 +617,18 @@ const AWARDS: AwardSpec[] = [
     value: (s) => s.rpToday,
     min: 1,
     detail: (v) => `오늘 RP를 +${Math.round(v)} 올렸어요.`,
+    about: "오늘 하루 동안 RP를 가장 많이 올린 사람이 받아요.",
   },
   {
-    key: "접전 승부사",
+    key: "아슬아슬",
     emoji: "😤",
     // 문서의 `1점차 승부사` 자리. 2점제에서 1점차는 가장 흔한 결과라 고정값을 쓰지 않고
     // 그 날 점수차 하위 25%를 접전으로 본다.
     value: (s) => s.closeWins,
     min: 1,
     enabled: (d) => d.closeThreshold != null,
-    detail: (v) => `손에 땀 쥐는 접전을 ${v}번 잡아냈어요.`,
+    detail: (v) => `아슬아슬한 승부를 ${v}번 잡아냈어요.`,
+    about: "그 날 경기 중에서 점수 차가 가장 적었던 판을 이기면 받아요.",
   },
   {
     key: "강한 상대",
@@ -622,6 +640,7 @@ const AWARDS: AwardSpec[] = [
     floor: (d) => d.avgPlayerRp,
     enabled: (d) => d.avgPlayerRp != null,
     detail: (v) => `오늘 만난 상대 평균 RP가 ${Math.round(v)}. 센 상대와 붙었어요.`,
+    about: "오늘 만난 상대가 그 날 평균보다 센 사람이 받아요. 이겼는지 졌는지는 보지 않아요.",
   },
   {
     key: "최다 출전",
@@ -630,15 +649,17 @@ const AWARDS: AwardSpec[] = [
     min: 1,
     floor: (d) => d.avgAppearances,
     detail: (v) => `오늘 ${v}경기, 코트를 오래 지켰어요.`,
+    about: "그 날 평균보다 많은 경기를 뛴 사람이 받아요.",
   },
   {
-    key: "근성상",
+    key: "다음엔 내가",
     emoji: "💪",
     value: (s) => s.closeLosses,
     min: 1,
     enabled: (d) => d.closeThreshold != null,
     negative: true,
     detail: (v) => `${v}번을 아깝게 놓쳤어요. 다음 판은 당신 겁니다!`,
+    about: "아슬아슬하게 진 판이 많은 사람에게 가요. 조금만 더 하면 이길 수 있어요.",
   },
 ];
 
@@ -670,6 +691,7 @@ export function computeAwards(day: DayStats, players: HighlightPlayer[] = []): H
     who: PlayerDayStat[],
     value: number,
     detail: string,
+    about: string,
   ) => {
     if (who.length === 0 || who.length > LIST_MAX) return;
     lists.push({
@@ -678,6 +700,7 @@ export function computeAwards(day: DayStats, players: HighlightPlayer[] = []): H
       playerIds: [...who].sort((a, b) => tiebreak(a, b, byId)).map((s) => s.id),
       value,
       detail,
+      about,
     });
   };
 
@@ -698,7 +721,7 @@ export function computeAwards(day: DayStats, players: HighlightPlayer[] = []): H
     if (tied.length >= LIST_THRESHOLD) {
       // 동점자가 셋 이상. 한 명을 뽑으면 나머지가 지워진다.
       // 부정 계열은 목록조차 내지 않는다 — 반 전체가 보는 화면에 "오늘 많이 진 사람" 명단이 된다.
-      if (!spec.negative) pushList(spec.key, spec.emoji, tied, best, spec.detail(best));
+      if (!spec.negative) pushList(spec.key, spec.emoji, tied, best, spec.detail(best), spec.about);
       continue;
     }
 
@@ -710,13 +733,21 @@ export function computeAwards(day: DayStats, players: HighlightPlayer[] = []): H
       playerId: winner.id,
       value: best,
       detail: spec.detail(best),
+      about: spec.about,
     });
   }
 
   // 연승 카드가 안 나온 날의 전승자들. "2연승 한 명"이라는 거짓 대신 이름을 다 적는다.
   if (day.maxStreak === 2) {
     const sweepers = stats.filter((s) => s.losses === 0 && s.wins >= 2);
-    pushList("전승", "✨", sweepers, 2, "오늘 한 판도 지지 않았어요.");
+    pushList(
+      "전승",
+      "✨",
+      sweepers,
+      2,
+      "오늘 한 판도 지지 않았어요.",
+      "오늘 뛴 경기를 한 판도 지지 않으면 여기 이름이 올라가요.",
+    );
   }
 
   /**
@@ -729,22 +760,46 @@ export function computeAwards(day: DayStats, players: HighlightPlayer[] = []): H
    * 나빠진 학생은 내지 않는다. 51명을 다 계산해 "나아짐 / 나빠짐"을 붙이면
    * 하이라이트가 아니라 성적표가 된다.
    */
-  const facts: [key: string, emoji: string, pick: (s: PlayerDayStat) => boolean, detail: string][] =
-    [
-      ["리그 데뷔", "🐣", (s) => s.isDebut, "오늘 처음 코트에 섰어요."],
-      ["첫 승", "🎉", (s) => s.isFirstWin, "한 번도 못 이기다가 오늘 첫 승을 거뒀어요."],
-      ["티어 승급", "⬆️", (s) => s.isPromoted, "오늘 경기로 티어가 올라갔어요."],
-      // 승급한 학생은 여기 다시 적지 않는다 — 승급이 더 큰 사실이다.
-      [
-        "나아진 학생",
-        "📈",
-        (s) => s.isRebound && !s.isPromoted,
-        "지난 수업엔 RP가 줄었는데 오늘은 올렸어요.",
-      ],
-    ];
-  for (const [key, emoji, pick, detail] of facts) {
-    const who = stats.filter(pick);
-    pushList(key, emoji, who, who.length, detail);
+  const facts: {
+    key: string;
+    emoji: string;
+    pick: (s: PlayerDayStat) => boolean;
+    detail: string;
+    about: string;
+  }[] = [
+    {
+      key: "리그 데뷔",
+      emoji: "🐣",
+      pick: (s) => s.isDebut,
+      detail: "오늘 처음 코트에 섰어요.",
+      about: "이 리그에서 오늘 처음으로 경기를 뛴 사람이에요.",
+    },
+    {
+      key: "첫 승",
+      emoji: "🎉",
+      pick: (s) => s.isFirstWin,
+      detail: "한 번도 못 이기다가 오늘 첫 승을 거뒀어요.",
+      about: "지금까지 한 번도 못 이기다가 오늘 처음 이긴 사람이에요.",
+    },
+    {
+      key: "티어 승급",
+      emoji: "⬆️",
+      pick: (s) => s.isPromoted,
+      detail: "오늘 경기로 티어가 올라갔어요.",
+      about: "오늘 경기로 RP가 올라서 티어가 한 단계 올라간 사람이에요.",
+    },
+    // 승급한 학생은 여기 다시 적지 않는다 — 승급이 더 큰 사실이다.
+    {
+      key: "나아진 학생",
+      emoji: "📈",
+      pick: (s) => s.isRebound && !s.isPromoted,
+      detail: "지난 수업엔 RP가 줄었는데 오늘은 올렸어요.",
+      about: "지난 시간엔 RP가 내려갔는데 오늘은 올린 사람이에요. 이기고 진 횟수는 보지 않아요.",
+    },
+  ];
+  for (const f of facts) {
+    const who = stats.filter(f.pick);
+    pushList(f.key, f.emoji, who, who.length, f.detail, f.about);
   }
 
   const duo = day.hasDoubles ? (day.duos.find((d) => d.wins >= 2) ?? null) : null;

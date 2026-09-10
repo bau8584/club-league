@@ -62,7 +62,7 @@ describe("computeAwards — 동점과 배정", () => {
     ]);
     const { awards } = computeHighlights({ matches });
 
-    expect(cardFor(awards.cards, "완봉승")?.playerId).toBe("p2");
+    expect(cardFor(awards.cards, "퍼펙트")?.playerId).toBe("p2");
   });
 
   it("출전 수까지 같으면 학년·반·번호 순으로 갈린다", () => {
@@ -79,7 +79,7 @@ describe("computeAwards — 동점과 배정", () => {
     const { awards } = computeHighlights({ matches, players });
 
     // 출전 2경기 · 완봉 1번으로 완전히 같다. 5학년이 먼저다.
-    expect(cardFor(awards.cards, "완봉승")?.playerId).toBe("p2");
+    expect(cardFor(awards.cards, "퍼펙트")?.playerId).toBe("p2");
   });
 
   it("같은 입력을 두 번 넣으면 항상 같은 결과가 나온다 (입력 순서에 의존하지 않는다)", () => {
@@ -132,7 +132,7 @@ describe("computeAwards — 동점과 배정", () => {
     ];
     const { awards } = computeHighlights({ matches, players });
 
-    expect(cardFor(awards.cards, "대이변러")?.playerId).toBe("u");
+    expect(cardFor(awards.cards, "깜짝 승리")?.playerId).toBe("u");
     expect(cardFor(awards.cards, "최다 출전")?.playerId).not.toBe("u");
   });
 
@@ -432,7 +432,7 @@ describe("computeAwards — 하루 한두 경기에서도 갈리는 축", () => 
       ],
     });
 
-    const upset = cardFor(awards.cards, "대이변러");
+    const upset = cardFor(awards.cards, "깜짝 승리");
     expect(upset?.playerId).toBe("b");
     expect(upset?.value).toBe(250);
   });
@@ -524,7 +524,7 @@ describe("computeAwards — 하루 한두 경기에서도 갈리는 축", () => 
       ]),
     });
 
-    expect(cardFor(awards.cards, "대이변러")).toBeNull();
+    expect(cardFor(awards.cards, "깜짝 승리")).toBeNull();
     expect(cardFor(awards.cards, "RP 상승")).toBeNull();
     expect(cardFor(awards.cards, "강한 상대")).toBeNull();
   });
@@ -562,8 +562,8 @@ describe("computeAwards — 흔한 일에는 상을 주지 않는다", () => {
     ]);
     const { awards } = computeHighlights({ matches });
 
-    expect(cardFor(awards.cards, "접전 승부사")).toBeNull();
-    expect(listFor(awards.lists, "접전 승부사")).toBeNull();
+    expect(cardFor(awards.cards, "아슬아슬")).toBeNull();
+    expect(listFor(awards.lists, "아슬아슬")).toBeNull();
   });
 });
 
@@ -702,6 +702,6 @@ describe("computeAwards — 경계값", () => {
 
     // 명단 순서를 뒤집어도 같은 사람이 나온다 — 마지막 축(id)까지 결정적이다.
     expect(computeAwards(stats, players)).toEqual(computeAwards(stats, [...players].reverse()));
-    expect(cardFor(computeAwards(stats, players).cards, "완봉승")?.playerId).toBe("p1");
+    expect(cardFor(computeAwards(stats, players).cards, "퍼펙트")?.playerId).toBe("p1");
   });
 });

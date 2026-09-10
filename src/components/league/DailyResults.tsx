@@ -383,15 +383,16 @@ export function DailyResults() {
           <span className="flex items-center gap-1.5 text-sm font-black text-foreground">🏅 오늘의 인물</span>
           <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
             {cards.map((a) => (
-              <AwardCard key={a.key} name={nameOf(a.playerId)} emoji={a.emoji} label={a.key} detail={a.detail} />
+              <AwardCard key={a.key} name={nameOf(a.playerId)} emoji={a.emoji} label={a.key} detail={a.detail} about={a.about} />
             ))}
             {duo && (
               <AwardCard
-                key="환상의 복식조"
+                key="단짝"
                 name={duo.playerIds.map(nameOf).join("·")}
                 emoji="🤝"
-                label="환상의 복식조"
+                label="단짝"
                 detail={`복식에서 ${duo.wins}번 함께 이긴 짝꿍.`}
+                about="복식에서 두 번 넘게 같이 이긴 짝이 받아요."
               />
             )}
           </div>
@@ -408,9 +409,8 @@ export function DailyResults() {
               const shown = l.playerIds.slice(0, 6).map(nameOf).join(", ");
               const rest = l.playerIds.length - 6;
               return (
-                <div key={l.key} className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
-                  <span className="shrink-0 text-sm">{l.emoji}</span>
-                  <span className="shrink-0 rounded-md bg-neon-blue/15 px-1.5 py-0.5 text-[11px] font-black text-neon-blue">{l.key}</span>
+                <div key={l.key} className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                  <AwardLabel emoji={l.emoji} label={l.key} about={l.about} />
                   <span className="min-w-0 text-xs font-bold text-foreground">
                     {shown}
                     {rest > 0 && <span className="text-muted-foreground"> 외 {rest}명</span>}
@@ -474,17 +474,43 @@ export function DailyResults() {
   );
 }
 
-function AwardCard({ name, emoji, label, detail }: { name: string; emoji: string; label: string; detail: string }) {
+/**
+ * 상 이름표. 누르면 "이건 뭐 하면 받는 거지"가 펼쳐진다.
+ *
+ * 아이들에게 `퍼펙트`는 이름만 봐서는 어른들이 붙인 딱지다. 규칙을 알아야 다음 시간에
+ * 노려볼 수 있고, 그때부터 상이 목표가 된다. 그래서 설명을 툴팁(마우스 전용)이 아니라
+ * 눌러서 펼치는 글로 둔다 — 이 화면은 태블릿과 휴대폰에서 본다.
+ */
+function AwardLabel({ emoji, label, about }: { emoji: string; label: string; about: string }) {
   return (
-    <div className="flex flex-col gap-1 rounded-xl border border-border/40 bg-card/50 px-3 py-2.5">
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-1.5 rounded-md bg-neon-blue/15 px-1.5 py-0.5 text-left text-neon-blue transition-colors hover:bg-neon-blue/25 data-[state=open]:bg-neon-blue/25"
+          title="어떻게 받는 상인지 보기"
+        >
+          <span className="text-[13px] leading-none">{emoji}</span>
+          <span className="text-[11px] font-black">{label}</span>
+          <span className="text-[10px] font-black opacity-60">?</span>
+        </button>
+      </PopoverTrigger>
+      {/* 말풍선으로 띄운다 — 펼쳐서 밀어내면 목록 줄이 흔들리고 이름이 밀린다. */}
+      <PopoverContent side="top" align="start" sideOffset={6} className="w-60 p-2.5">
+        <p className="text-[11px] font-medium leading-snug text-foreground">{about}</p>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function AwardCard({ name, emoji, label, detail, about }: { name: string; emoji: string; label: string; detail: string; about: string }) {
+  return (
+    <div className="flex flex-col items-start gap-1 rounded-xl border border-border/40 bg-card/50 px-3 py-2.5">
       {/* 닉네임 (강조·상단) */}
-      <span className="truncate text-xl font-black leading-tight text-foreground" title={name}>{name}</span>
-      {/* 이모지 + 키워드 */}
-      <div className="flex items-center gap-1.5">
-        <span className="text-base">{emoji}</span>
-        <span className="rounded-md bg-neon-blue/15 px-1.5 py-0.5 text-[11px] font-black text-neon-blue">{label}</span>
-      </div>
-      {/* 설명 */}
+      <span className="w-full truncate text-xl font-black leading-tight text-foreground" title={name}>{name}</span>
+      {/* 이모지 + 키워드 — 누르면 규칙이 펼쳐진다 */}
+      <AwardLabel emoji={emoji} label={label} about={about} />
+      {/* 오늘 무슨 일이 있었나 */}
       <span className="text-[11px] leading-snug text-muted-foreground">{detail}</span>
     </div>
   );
