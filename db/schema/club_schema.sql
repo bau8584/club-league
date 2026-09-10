@@ -857,15 +857,38 @@ grant execute on function public.apply_dormancy_decay(uuid, text, jsonb) to auth
 -- ============================================================
 -- 배정 세션 — 큐를 소유하는 단위는 "반"이 아니라 "지금 모인 명단 한 벌"
 -- ============================================================
+--
+-- 세션의 소유자는 리그 타입이 정한다. 학교는 교사 한 명당 하나(owner_id = 교사 계정),
+-- 동호회는 리그당 하나(owner_id IS NULL). 학교 리그는 여러 개의 독립된 모임을 담지만,
+-- 동호회 리그는 하나의 모임 그 자체다.
+--
+-- owner_id 를 PK 에 직접 넣지 않는다. Postgres 에서 NULL 은 서로 같지 않게 취급되어
+-- 동호회 행의 유일성이 보장되지 않는다. PK 는 surrogate id, 유일성은 부분 인덱스로 건다.
 create table if not exists public.assignment_sessions (
-  league_id    uuid primary key references public.leagues(id) on delete cascade,
+  id           uuid primary key default gen_random_uuid(),
+  league_id    uuid not null references public.leagues(id) on delete cascade,
+  owner_id     uuid references auth.users(id) on delete cascade, -- 학교만 채운다
   player_ids   uuid[] not null default '{}',      -- 오늘 참석자(출석 체크 결과)
   match_type   text not null default 'double',    -- single | double (세션의 종목)
+  next_seq     int not null default 1,            -- 대진 고유번호 발급기(alloc_match_seq 가 원자적으로 발급)
   started_at   timestamptz not null default now(),
   updated_by   uuid default auth.uid(),
   updated_at   timestamptz not null default now()
 );
+create unique index if not exists uniq_session_league_shared
+  on public.assignment_sessions (league_id) where owner_id is null;
+create unique index if not exists uniq_session_league_owner
+  on public.assignment_sessions (league_id, owner_id) where owner_id is not null;
+create index if not exists idx_session_league_owner
+  on public.assignment_sessions (league_id, owner_id);
 alter table public.assignment_sessions enable row level security;
+
+-- 어느 세션의 줄인가. NULL 은 세션 밖의 줄(도전장·회원 예약)이다.
+-- scheduled_matches 가 먼저 정의되므로 FK 는 여기서 뒤늦게 건다.
+alter table public.scheduled_matches
+  add column if not exists session_id uuid references public.assignment_sessions(id) on delete set null,
+  add column if not exists seq int;                -- 줄의 고정 번호(1번이 끝나도 2번은 2번)
+create index if not exists idx_sched_session on public.scheduled_matches (session_id, seq);
 
 drop policy if exists "recorders read session" on public.assignment_sessions;
 create policy "recorders read session" on public.assignment_sessions for select to authenticated
