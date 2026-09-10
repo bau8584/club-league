@@ -16,6 +16,16 @@ type Selection = { group: string | null; studentId: string | null };
 // 레벨 "전체" 탭이 기본으로 열려 있도록 group을 ALL("__ALL__")로 초기화
 const empty: Selection = { group: "__ALL__", studentId: null };
 
+/** 폼의 "지금 상태"를 한 줄로 — 프리필이 채운 값과 그대로인지 비교하는 데만 쓴다. */
+const slotSig = (
+  a?: string | null,
+  a2?: string | null,
+  b?: string | null,
+  b2?: string | null,
+  sa?: number,
+  sb?: number,
+) => [a || "", a2 || "", b || "", b2 || "", sa || 0, sb || 0].join("|");
+
 // 선수 표시 이름: 별명 우선, 없으면 이름
 function playerLabel(s: Student): string {
   return s.nickname || s.name;
@@ -80,6 +90,7 @@ export function RecordMatch({
   lockedPlayerId,
   presetResult,
   onCloseResult,
+  onDirtyChange,
 }: {
   students: Student[];
   lockedPlayerId?: string | null; // 설정 시 슬롯 A를 이 선수로 고정(일반회원 본인 경기 기록)
@@ -106,6 +117,11 @@ export function RecordMatch({
   thresholds?: Record<string, number>;
   rpVariables?: { winDelta: number; loseDelta: number };
   onUpdateGender?: (studentId: string, gender: "M" | "F" | "U") => void;
+  /**
+   * 사람이 직접 손댄 입력이 폼에 남아 있는지 알린다.
+   * 부모가 대기열 줄로 폼을 덮어쓰기 전에 물어볼 수 있어야 해서 밖으로 흘린다.
+   */
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const { isSyncing, placementEnabled, placementGames, isClassOwner, saveMatchBreakdown, currentClassId } = useLeagueStore();
   const terms = useLeagueTerms();
@@ -131,6 +147,8 @@ export function RecordMatch({
   lockedMatchTypeRef.current = lockedMatchType;
   const [scoreA, setScoreA] = useState(0);
   const [scoreB, setScoreB] = useState(0);
+  // 마지막으로 프리필이 채워 넣은 상태. 지금 폼이 이것과 같으면 "사람이 손대지 않았다".
+  const appliedSigRef = useRef<string>("");
   // 점수는 실시간 집계가 아니라 경기가 끝난 뒤 최종 점수를 넣는다. 그래서 가감 버튼
   // 대신 숫자패드 한 벌을 두 팀이 함께 쓴다(팀마다 도구를 두면 화면의 대부분이
   // 도구로 차고, 같은 버튼이 두 번 나와 어느 쪽을 누르는지 헷갈렸다).
@@ -563,10 +581,62 @@ export function RecordMatch({
         }
         setScoreA(0);
         setScoreB(0);
+        appliedSigRef.current = slotSig(
+          initials.playerAId,
+          type === "double" ? initials.playerA2Id : undefined,
+          initials.playerBId,
+          type === "double" ? initials.playerB2Id : undefined,
+          0,
+          0,
+        );
+        setPendingScroll(true);
       }
       onClearInitials?.();
     }
   }, [initials, students, onClearInitials, setLockedMatchType]);
+
+  // 대기열에서 [결과 입력]을 누르면 이 폼으로 화면을 옮겨 준다.
+  //
+  // 스크롤을 부모(대기열)에서 하면 안 된다. 부모는 프리필을 예약한 직후
+  // requestAnimationFrame 으로 스크롤했는데, 그 시점의 폼은 아직 비어 있다.
+  // 채워지면서 폼이 길어져도 스크롤은 이미 정해둔 좌표로 가버리니, 어떨 땐
+  // 키패드까지 내려가고 어떨 땐 이름에서 멈췄다. 그래서 프리필이 화면에 반영된
+  // 뒤에 이 컴포넌트가 직접 옮긴다.
+  //
+  // 목표는 "폼 맨 위"가 아니라 "대진과 점수 묶음"이다. 폼 맨 위(block:"start")는
+  // 페이지가 그만큼 길지 않아 애초에 도달할 수 없었고(142px 모자랐다), 그래서
+  // 착지점이 페이지 높이에 따라 들쭉날쭉했다. block:"nearest" 는 이미 보이면
+  // 움직이지 않고, 안 보이면 최소한만 움직여 선수 이름과 키패드를 함께 남긴다.
+  const [pendingScroll, setPendingScroll] = useState(false);
+  const matchupRef = useRef<HTMLDivElement>(null);
+  const readyToScore =
+    !!a.studentId && !!b.studentId &&
+    (matchType !== "double" || (!!a2.studentId && !!b2.studentId));
+  useEffect(() => {
+    if (!pendingScroll || !readyToScore) return;
+    const el = matchupRef.current;
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    setPendingScroll(false);
+  }, [pendingScroll, readyToScore]);
+
+  // 프리필로 채워진 상태 그대로인지, 사람이 손을 댔는지 가른다.
+  // 부모(대기열)가 이 폼을 덮어쓰기 전에 물어봐야 해서 밖으로 알린다.
+  useEffect(() => {
+    if (!onDirtyChange) return;
+    const sig = slotSig(a.studentId, a2.studentId, b.studentId, b2.studentId, scoreA, scoreB);
+    // 슬롯 A가 본인으로 고정된 경우(일반회원 본인 경기)는 사람이 고른 게 아니다.
+    const onlyLocked =
+      !!lockedPlayerId &&
+      a.studentId === lockedPlayerId &&
+      !a2.studentId &&
+      !b.studentId &&
+      !b2.studentId &&
+      !scoreA &&
+      !scoreB;
+    const touched = !!(a.studentId || a2.studentId || b.studentId || b2.studentId || scoreA || scoreB);
+    onDirtyChange(touched && !onlyLocked && sig !== appliedSigRef.current);
+  }, [a.studentId, a2.studentId, b.studentId, b2.studentId, scoreA, scoreB, lockedPlayerId, onDirtyChange]);
 
   // 일반회원 본인 경기: 슬롯 A를 항상 본인으로 고정
   useEffect(() => {
@@ -1211,7 +1281,13 @@ export function RecordMatch({
         return (
           <div className="space-y-3">
           <div
+            ref={matchupRef}
             className={cn(
+              // scroll-mb: 등록 버튼이 화면 아래에 붙어 떠 있는데(sticky) scrollIntoView 는
+              // 그걸 모르고 화면 끝까지만 계산한다. 그대로 두면 숫자패드 마지막 줄이
+              // 버튼 뒤에 가려진다. 바 높이(데스크톱 72px, 모바일은 요약줄까지 더 큼)에
+              // 여유를 더해 그만큼 더 올라오게 한다.
+              "scroll-mb-28 lg:scroll-mb-24",
               "space-y-3 lg:grid lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:items-start lg:gap-x-4 lg:gap-y-3 lg:space-y-0",
               act && "hidden lg:grid",
             )}
@@ -2389,18 +2465,28 @@ function ScoreRow({ title, accent, entries, value, selected, onSelect, onDigit, 
 
       {selected ? (
         // 키패드 안에서의 클릭이 칸 바깥으로 새어 나가지 않게 막는다.
-        // 열 수는 화면 폭이 정한다. 좁은 화면에서 6열로 깔면 키가 41px까지 좁아져
-        // 손가락으로 누르기 어렵다(4열이면 70px). 넓은 화면은 2줄로 얕게 편다.
-        <div className="mt-2 grid grid-cols-4 gap-1.5 lg:mt-3 lg:grid-cols-6" onClick={(e) => e.stopPropagation()}>
-          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 0].map((d) => (
+        // 1~9는 3×3으로 둔다. 전화기·계산기·키보드 넘버패드가 모두 이 배열이라
+        // 찾지 않고 손이 기억한 자리로 누를 수 있다. 한 줄에 4개씩 끊어 놓았더니
+        // 어디에도 없는 배열이 되어 매번 눈으로 훑어야 했다.
+        // 0은 1~9 다음에 오는 마지막 숫자이자 가장 자주 누르는 키라 엄지가 닿기 쉬운
+        // 오른쪽 아래에 둔다. 반대로 지우기·초기화는 잘못 눌리면 곤란하니 위로 보낸다.
+        // 화면 폭에 따라 배열을 바꾸지 않는다 — 태블릿과 폰을 오가도 손가락 기억이 남는다.
+        <div className="mt-2 grid grid-cols-4 gap-1.5 lg:mt-3" onClick={(e) => e.stopPropagation()}>
+          {[1, 2, 3].map((d) => (
             <KeyBtn key={d} onClick={() => onDigit(d)}>{d}</KeyBtn>
           ))}
           <KeyBtn onClick={onBackspace} muted title="한 자리 지우기">
             <Delete className="size-5" />
           </KeyBtn>
+          {[4, 5, 6].map((d) => (
+            <KeyBtn key={d} onClick={() => onDigit(d)}>{d}</KeyBtn>
+          ))}
           <KeyBtn onClick={onClear} muted title="0으로 초기화">
             <RotateCcw className="size-5" />
           </KeyBtn>
+          {[7, 8, 9, 0].map((d) => (
+            <KeyBtn key={d} onClick={() => onDigit(d)}>{d}</KeyBtn>
+          ))}
         </div>
       ) : (
         // 칸 아무 데나 눌러도 열리지만, 눌린다는 걸 알려 주는 표시가 필요하다.

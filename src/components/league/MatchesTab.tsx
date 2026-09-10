@@ -244,18 +244,26 @@ export function MatchesTab({
 
   // 큐 줄의 [결과 입력]. school 은 결과 입력 폼이 같은 화면에 이미 있으므로 모달을 띄우지
   // 않고 그 폼을 채운다 — "경기 끝남 → 결과 등록 → 다음이 올라옴"이 한 화면에서 돌아야 한다.
-  const recordFormRef = useRef<HTMLDivElement>(null);
-  const openQueueRow = (row: (typeof scheduledMatches)[number]) => {
+  // 아래 폼에 사람이 직접 고른 선수·점수가 남아 있는지. 남아 있는데 큐 줄을 누르면
+  // 프리필이 그걸 말없이 지운다 — 선택 도중 [결과 입력]을 누른 사람이 겪던 충돌이다.
+  const [formDirty, setFormDirty] = useState(false);
+  // 덮어쓰기 확인을 기다리는 큐 줄.
+  const [pendingRow, setPendingRow] = useState<(typeof scheduledMatches)[number] | null>(null);
+
+  const applyQueueRow = (row: (typeof scheduledMatches)[number]) => {
     setActiveReservation(row);
     setDirectInitials(null);
     setPrefillNonce((n) => n + 1);
-    if (isSchool) {
-      requestAnimationFrame(() =>
-        recordFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
-      );
-    } else {
-      setRecordOpen(true);
-    }
+    // 화면을 폼으로 옮기는 일은 RecordMatch 가 직접 한다. 여기서 옮기면
+    // 프리필이 반영되기 전(빈 폼)을 기준으로 좌표가 잡혀 어떨 땐 키패드까지,
+    // 어떨 땐 이름에서 멈추는 문제가 있었다.
+    if (!isSchool) setRecordOpen(true);
+  };
+
+  const openQueueRow = (row: (typeof scheduledMatches)[number]) => {
+    // 같은 화면에 폼이 떠 있는 school 에서만 덮어쓸 것이 있다. 모달을 쓰는 쪽은 그대로.
+    if (isSchool && formDirty) return setPendingRow(row);
+    applyQueueRow(row);
   };
 
   // 매치 추천에서 넘어온 프리필이 있으면 결과 입력 창을 그 대진으로 연다
@@ -286,7 +294,14 @@ export function MatchesTab({
     type?: "single" | "double",
   ): Match | undefined => {
     const m = recordMatch(a, b, sa, sb, a2, b2, type);
-    if (m && activeReservation) {
+    // 폼에서 선수를 갈아끼웠다면 이건 그 줄의 경기가 아니다. 엉뚱한 줄을 지우고
+    // 엉뚱한 사람에게 결과 알림을 보내는 대신, 그냥 일반 기록으로 남긴다.
+    const played = new Set([a, a2, b, b2].filter(Boolean) as string[]);
+    const sameMatch =
+      !!activeReservation &&
+      participantsOf(activeReservation).length === played.size &&
+      participantsOf(activeReservation).every((id) => played.has(id));
+    if (m && activeReservation && sameMatch) {
       const winners = [a, a2]
         .filter(Boolean)
         .map((id) => dn(byId.get(id as string)))
@@ -296,6 +311,10 @@ export function MatchesTab({
       linkReservationResult(activeReservation.id, m.id, parts, summary);
       // 큐에서 온 경기는 여기서 끝난다. 다음 입력이 이미 사라진 줄에 다시 연결되면 안 된다.
       setActiveReservation(null);
+    } else if (m && activeReservation) {
+      // 다른 사람들로 기록했다 → 그 줄은 대기열에 그대로 두고 연결만 끊는다.
+      setActiveReservation(null);
+      toast.info("선수가 대기열의 대진과 달라 그 줄은 남겨 두었어요.");
     }
     return m;
   };
@@ -440,10 +459,7 @@ export function MatchesTab({
       )}
 
       {canRecord && isSchool && (
-        <Card
-          ref={recordFormRef}
-          className="border border-border/40 bg-card/50 p-5 shadow-lg backdrop-blur"
-        >
+        <Card className="border border-border/40 bg-card/50 p-5 shadow-lg backdrop-blur">
           <div className="mb-3 flex items-center gap-2.5">
             <div className="flex size-9 items-center justify-center rounded-xl bg-neon-blue/15 text-neon-blue">
               <Trophy className="size-5" />
@@ -461,8 +477,51 @@ export function MatchesTab({
             rpVariables={rpVariables}
             onUpdateGender={updateStudentGender}
             lockedPlayerId={lockedPlayerId}
+            onDirtyChange={setFormDirty}
           />
         </Card>
+      )}
+
+      {/* 대기열 줄로 폼을 덮어쓰기 전 확인 — 선택 중에 [결과 입력]을 눌러 입력이
+          통째로 날아가던 자리다. */}
+      {pendingRow && (
+        <div
+          className="fixed inset-0 z-[85] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-in fade-in duration-150"
+          onClick={() => setPendingRow(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl border border-border/50 bg-background p-5 shadow-2xl animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-black text-foreground">입력 중인 내용을 바꿀까요?</h3>
+            <p className="mt-1.5 truncate text-xs font-bold text-muted-foreground">
+              {participantsOf(pendingRow)
+                .map((id) => dn(byId.get(id)))
+                .join(" · ")}
+            </p>
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+              아래 폼에 고르던 선수와 점수가 이 대진으로 덮어써져요.
+            </p>
+            <div className="mt-4 flex flex-col gap-2">
+              <Button
+                onClick={() => {
+                  applyQueueRow(pendingRow);
+                  setPendingRow(null);
+                }}
+                className="h-11 w-full rounded-xl bg-neon-blue text-sm font-black text-primary-foreground hover:bg-neon-blue/90"
+              >
+                이 대진으로 바꾸기
+              </Button>
+              <Button
+                onClick={() => setPendingRow(null)}
+                variant="outline"
+                className="h-11 w-full rounded-xl border-border/50 text-sm font-black"
+              >
+                입력 중인 내용 유지
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
       {canRecord && !isSchool && (
         <Button
