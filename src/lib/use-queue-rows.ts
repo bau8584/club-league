@@ -18,12 +18,25 @@ export const teamsOf = (r: ScheduledMatch) => ({
 export function useQueueRows() {
   const { scheduledMatches, myPlayerId } = useLeagueStore();
 
-  // 큐는 만든 순서대로다. 위에서부터 코트에 들어간다.
+  /**
+   * 큐는 번호순이다. 위에서부터 코트에 들어간다.
+   *
+   * 만든 시각으로 정렬하지 않는다. 그 시각은 뽑은 기기의 시계라, 폰과 태블릿의 시계가
+   * 어긋나 있으면 순서가 흔들린다. 번호는 서버가 매기므로 흔들리지 않는다.
+   *
+   * 번호 없는 줄(회원 예약, 고유번호 도입 이전에 뽑아둔 줄)은 뒤로 보내고 자기들끼리
+   * 만든 순서로 둔다. 번호가 곧 순서인 목록에 번호 없는 줄을 끼워 넣을 자리가 없다.
+   */
   const queue = useMemo(
     () =>
       scheduledMatches
         .filter((m) => m.status === "waiting" || m.status === "called")
-        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()),
+        .sort((a, b) => {
+          const sa = a.seq ?? Number.POSITIVE_INFINITY;
+          const sb = b.seq ?? Number.POSITIVE_INFINITY;
+          if (sa !== sb) return sa - sb;
+          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        }),
     [scheduledMatches],
   );
 

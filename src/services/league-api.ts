@@ -209,6 +209,14 @@ export async function apiUpsertAssignmentSession(payload: {
 }
 
 /**
+ * 대진 번호 `n`개를 발급받아 첫 번호를 돌려준다.
+ * 서버에서 원자적으로 더한다 — 폰과 태블릿이 동시에 채우면 #7 이 두 개 생기기 때문이다.
+ */
+export async function apiAllocMatchSeq(sessionId: string, n: number) {
+  return supabase.rpc("alloc_match_seq", { p_session_id: sessionId, p_n: n });
+}
+
+/**
  * 세션 경계에서 미소화 큐를 비운다. 날짜로는 못 자른다 — 같은 날 3교시와 4교시는 날짜가 같다.
  *
  * `sessionId`를 주면 그 세션의 줄만 지운다. 여기가 옆 반 대기열이 통째로 날아가던 자리다.

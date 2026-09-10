@@ -65,6 +65,7 @@ import {
   apiFetchAssignmentSession,
   apiUpsertAssignmentSession,
   apiClearQueue,
+  apiAllocMatchSeq,
   apiUpdateScheduledStatus,
   apiDeleteScheduledMatch,
   apiCreateReservation,
@@ -3193,12 +3194,26 @@ function useLeagueStoreInternal() {
 
     // 큐 맨 뒤에 붙인다. 기존 마지막 행보다 뒤 시각이어야 순서가 유지된다.
     const lastAt = queue.reduce((acc, m) => Math.max(acc, new Date(m.created_at).getTime()), 0);
+
+    // 줄 번호는 서버에서 한 번에 받아 온다. 여기서 세어 붙이면 폰과 태블릿이 같은 값을
+    // 읽어 #7 이 두 개 생긴다 — 번호가 아이들이 부르는 이름이 된 뒤엔 고치기 곤란하다.
+    // 발급이 실패해도 배정 자체는 막지 않는다. 번호 없는 줄로 들어가고, 잃은 번호는
+    // 빈자리로 남는다(은행 번호표와 같다).
+    const sid = assignmentSessionRef.current?.id ?? null;
+    let startSeq: number | null = null;
+    if (sid) {
+      const { data: seqStart, error: seqError } = await apiAllocMatchSeq(sid, out.matches.length);
+      if (seqError) console.warn("대진 번호 발급 실패:", seqError.message);
+      else if (typeof seqStart === "number") startSeq = seqStart;
+    }
+
     const { error } = await apiBulkCreateAssignedMatches({
       classId: cid,
       matches: out.matches.map((m) => ({ teamA: m.teamA, teamB: m.teamB })),
       matchType: teamSize === 1 ? "single" : "double",
       baseTimeMs: Math.max(Date.now(), lastAt + 1),
-      sessionId: assignmentSessionRef.current?.id ?? null,
+      sessionId: sid,
+      startSeq,
     });
     if (error) { toast.error("배정 실패: " + error.message); return 0; }
 

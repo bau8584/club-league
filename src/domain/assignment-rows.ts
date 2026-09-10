@@ -13,6 +13,8 @@ export interface AssignedMatchInput {
   baseTimeMs?: number;
   /** 어느 수업의 줄인가. 없으면 세션 밖의 줄이 된다(세션을 쓰지 않는 리그). */
   sessionId?: string | null;
+  /** 첫 줄에 붙일 고정 번호. 서버가 발급한 값이다. 없으면 번호 없는 줄이 된다. */
+  startSeq?: number | null;
 }
 
 /** 배정 결과 → scheduled_matches 행. 네트워크와 분리해 두어 그대로 테스트한다. */
@@ -25,6 +27,7 @@ export function buildAssignedMatchRows(payload: AssignedMatchInput) {
       .map((m, i) => ({
         league_id: payload.classId,
         session_id: payload.sessionId ?? null,
+        seq: payload.startSeq == null ? null : payload.startSeq + i,
         match_type: payload.matchType ?? (m.teamA.length > 1 ? "double" : "single"),
         player_a_id: m.teamA[0],
         player_b_id: m.teamB[0],

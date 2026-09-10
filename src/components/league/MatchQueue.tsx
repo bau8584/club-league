@@ -9,9 +9,16 @@ import type { AssignmentPreset } from "@/domain/assignment-calculator";
 
 const dn = (s?: Student | null) => (s ? s.nickname || s.name : "?");
 
-/** ①②③… 20까지는 원문자, 그 뒤는 그냥 숫자. 순서가 곧 "몇 번째 차례냐"다. */
-function orderMark(i: number): string {
-  return i < 20 ? String.fromCharCode(0x2460 + i) : `${i + 1}.`;
+/**
+ * 줄의 고정 번호. #7 은 앞줄이 빠져도 계속 #7 이라, 아이가 "우리 7번"만 기억하면 된다.
+ *
+ * ①②③ 원문자를 쓰지 않는다. 20까지만 원문자고 그 뒤는 모양이 무너지는데, 고정 번호는
+ * 한 수업에 쉽게 20을 넘는다.
+ *
+ * 번호 없는 줄(회원 예약 등)은 자리만 비워 둔다. 없는 번호를 지어내면 그 번호로 부른다.
+ */
+function seqMark(seq?: number | null): string {
+  return seq == null ? "" : `#${seq}`;
 }
 
 const PRESETS: { value: AssignmentPreset; label: string; hint: string }[] = [
@@ -99,7 +106,7 @@ export function MatchQueue({
           [한 바퀴 채우기] 버튼이 이미 하는 말이고, 그 안내에 화면 절반을 쓸 이유가 없다. */}
       {queue.length > 0 && (
         <div className="space-y-2">
-          {queue.map((r, i) => {
+          {queue.map((r) => {
             const { teamA, teamB, pool } = teamsOf(r);
             const confirmed = teamA.length > 0 && teamB.length > 0;
             const mine = !!myPlayerId && [...teamA, ...teamB, ...pool].includes(myPlayerId);
@@ -112,8 +119,8 @@ export function MatchQueue({
                   mine ? "border-neon-blue/40 bg-neon-blue/5" : "border-border/30 bg-input/40",
                 )}
               >
-                <span className="w-5 shrink-0 text-center text-sm font-black text-muted-foreground">
-                  {orderMark(i)}
+                <span className="w-9 shrink-0 text-center text-sm font-black tabular-nums text-muted-foreground">
+                  {seqMark(r.seq)}
                 </span>
                 <span className="min-w-0 flex-1 truncate text-sm font-bold text-foreground">
                   {confirmed ? (
