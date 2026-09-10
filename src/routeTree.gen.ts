@@ -15,7 +15,7 @@ import { Route as SchoolIndexRouteImport } from './routes/school.index'
 import { Route as SchoolClassIdRouteImport } from './routes/school.$classId'
 import { Route as RankingClassIdRouteImport } from './routes/ranking.$classId'
 import { Route as ClassClassIdRouteImport } from './routes/class.$classId'
-import { Route as RankingClassIdOwnerIdRouteImport } from './routes/ranking.$classId.$ownerId'
+import { Route as RankingClassIdOwnerIdRouteImport } from './routes/ranking.$classId_.$ownerId'
 
 const JoinRoute = JoinRouteImport.update({
   id: '/join',
@@ -48,16 +48,16 @@ const ClassClassIdRoute = ClassClassIdRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 const RankingClassIdOwnerIdRoute = RankingClassIdOwnerIdRouteImport.update({
-  id: '/$ownerId',
-  path: '/$ownerId',
-  getParentRoute: () => RankingClassIdRoute,
+  id: '/ranking/$classId_/$ownerId',
+  path: '/ranking/$classId/$ownerId',
+  getParentRoute: () => rootRouteImport,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/join': typeof JoinRoute
   '/class/$classId': typeof ClassClassIdRoute
-  '/ranking/$classId': typeof RankingClassIdRouteWithChildren
+  '/ranking/$classId': typeof RankingClassIdRoute
   '/school/$classId': typeof SchoolClassIdRoute
   '/school/': typeof SchoolIndexRoute
   '/ranking/$classId/$ownerId': typeof RankingClassIdOwnerIdRoute
@@ -66,7 +66,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/join': typeof JoinRoute
   '/class/$classId': typeof ClassClassIdRoute
-  '/ranking/$classId': typeof RankingClassIdRouteWithChildren
+  '/ranking/$classId': typeof RankingClassIdRoute
   '/school/$classId': typeof SchoolClassIdRoute
   '/school': typeof SchoolIndexRoute
   '/ranking/$classId/$ownerId': typeof RankingClassIdOwnerIdRoute
@@ -76,10 +76,10 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/join': typeof JoinRoute
   '/class/$classId': typeof ClassClassIdRoute
-  '/ranking/$classId': typeof RankingClassIdRouteWithChildren
+  '/ranking/$classId': typeof RankingClassIdRoute
   '/school/$classId': typeof SchoolClassIdRoute
   '/school/': typeof SchoolIndexRoute
-  '/ranking/$classId/$ownerId': typeof RankingClassIdOwnerIdRoute
+  '/ranking/$classId_/$ownerId': typeof RankingClassIdOwnerIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -108,16 +108,17 @@ export interface FileRouteTypes {
     | '/ranking/$classId'
     | '/school/$classId'
     | '/school/'
-    | '/ranking/$classId/$ownerId'
+    | '/ranking/$classId_/$ownerId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   JoinRoute: typeof JoinRoute
   ClassClassIdRoute: typeof ClassClassIdRoute
-  RankingClassIdRoute: typeof RankingClassIdRouteWithChildren
+  RankingClassIdRoute: typeof RankingClassIdRoute
   SchoolClassIdRoute: typeof SchoolClassIdRoute
   SchoolIndexRoute: typeof SchoolIndexRoute
+  RankingClassIdOwnerIdRoute: typeof RankingClassIdOwnerIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -164,35 +165,24 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ClassClassIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/ranking/$classId/$ownerId': {
-      id: '/ranking/$classId/$ownerId'
-      path: '/$ownerId'
+    '/ranking/$classId_/$ownerId': {
+      id: '/ranking/$classId_/$ownerId'
+      path: '/ranking/$classId/$ownerId'
       fullPath: '/ranking/$classId/$ownerId'
       preLoaderRoute: typeof RankingClassIdOwnerIdRouteImport
-      parentRoute: typeof RankingClassIdRoute
+      parentRoute: typeof rootRouteImport
     }
   }
 }
-
-interface RankingClassIdRouteChildren {
-  RankingClassIdOwnerIdRoute: typeof RankingClassIdOwnerIdRoute
-}
-
-const RankingClassIdRouteChildren: RankingClassIdRouteChildren = {
-  RankingClassIdOwnerIdRoute: RankingClassIdOwnerIdRoute,
-}
-
-const RankingClassIdRouteWithChildren = RankingClassIdRoute._addFileChildren(
-  RankingClassIdRouteChildren,
-)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   JoinRoute: JoinRoute,
   ClassClassIdRoute: ClassClassIdRoute,
-  RankingClassIdRoute: RankingClassIdRouteWithChildren,
+  RankingClassIdRoute: RankingClassIdRoute,
   SchoolClassIdRoute: SchoolClassIdRoute,
   SchoolIndexRoute: SchoolIndexRoute,
+  RankingClassIdOwnerIdRoute: RankingClassIdOwnerIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -248,6 +248,10 @@ function TierGroups({
   const { groups, unranked } = useMemo(() => {
     const g = new Map<TierName, ViewPlayer[]>();
     const un: ViewPlayer[] = [];
+    // 묶음 안은 번호순이다. 점수순으로 놓으면 등급으로 묶은 의미가 없어지고, 아이가
+    // 자기 줄을 찾는 단서도 번호다. 번호가 없는 리그는 서버가 준 가나다순 그대로 둔다.
+    const byNumber = (a: ViewPlayer, b: ViewPlayer) =>
+      (a.student_no ?? Number.MAX_SAFE_INTEGER) - (b.student_no ?? Number.MAX_SAFE_INTEGER);
     for (const p of players) {
       if (isUnranked({ wins: p.wins, losses: p.losses }, placementEnabled, placementGames)) {
         un.push(p);
@@ -258,6 +262,8 @@ function TierGroups({
       list.push(p);
       g.set(t, list);
     }
+    for (const list of g.values()) list.sort(byNumber);
+    un.sort(byNumber);
     return { groups: g, unranked: un };
   }, [players, thresholds, placementEnabled, placementGames]);
 
@@ -313,6 +319,7 @@ function TierGroups({
                     "flex items-center gap-2 rounded-lg px-3 py-2",
                     isMe(p) ? "bg-neon-blue/10 ring-1 ring-neon-blue/40" : "bg-input/30",
                   )}>
+                  <NumberMark no={p.student_no} />
                   <span className="min-w-0 flex-1 truncate text-sm font-bold text-foreground">{p.name || "?"}</span>
                   <span className="shrink-0 text-[11px] font-bold text-muted-foreground">
                     {placementEnabled && left > 0 ? `${left}판 더 하면 등급이 정해져요` : "아직 경기 전이에요"}
@@ -334,12 +341,28 @@ function TierGroups({
   );
 }
 
+/**
+ * 번호는 이름 앞에 붙인다. 가린 이름만으로는 한 반에 김○○ 이 셋이라 누군지 알 수 없다 —
+ * 번호가 있어야 아이가 자기 줄을, 교사가 그 아이를 찾는다.
+ *
+ * 순위처럼 읽히지 않게 흐린 색으로 둔다. 목록이 번호순이라 위에서부터 1, 2, 3 이 되는데,
+ * 이게 순위로 보이면 등급 묶음을 만든 이유가 사라진다.
+ */
+function NumberMark({ no }: { no: number | null }) {
+  return (
+    <span className="w-6 shrink-0 text-right text-xs font-bold tabular-nums text-muted-foreground/60">
+      {no ?? ""}
+    </span>
+  );
+}
+
 function PlayerRow({ p, mine, gap }: { p: ViewPlayer; mine: boolean; gap: number | null }) {
   return (
     <div className={cn(
       "flex items-center gap-2 rounded-lg px-3 py-2",
       mine ? "bg-neon-blue/10 ring-1 ring-neon-blue/40" : "bg-input/30",
     )}>
+      <NumberMark no={p.student_no} />
       <span className="min-w-0 flex-1 truncate text-sm font-bold text-foreground">{p.name || "?"}</span>
       {p.today_plays > 0 && (
         <span className="shrink-0 text-[11px] font-bold tabular-nums text-muted-foreground">
