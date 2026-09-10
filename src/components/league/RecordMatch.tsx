@@ -2516,31 +2516,39 @@ function ScoreRow({ title, accent, entries, value, selected, onSelect, onDigit, 
       }}
       className={cn(
         "rounded-xl border p-2 transition-all lg:p-3",
-        // 고르지 않은 쪽도 팀 색을 옅게 깔아 둔다. 회색으로 두었더니 배경에 묻혀
-        // 숫자만 허공에 뜬 것처럼 보였다. 선택은 그 위에 링으로만 얹는다.
-        selected ? cn(a.fill, "ring-2", a.ring) : cn(a.soft, "cursor-pointer hover:brightness-95"),
+        // 두 팀은 대등한 한 쌍으로 보여야 한다. 고르지 않은 쪽 테두리를 30%로
+        // 두었더니 상자가 배경에 묻혀 숫자만 허공에 뜬 것처럼 보였다. 테두리는
+        // 양쪽 다 세우고, "지금 입력 중"은 링과 배경 농도로만 가른다.
+        selected ? cn(a.fill, "ring-2", a.ring) : cn(a.border, "bg-transparent cursor-pointer hover:brightness-95"),
       )}
     >
       <div className="flex items-center gap-2 lg:flex-col lg:gap-1">
         <span className={cn("shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-black lg:text-xs", a.band)}>{title}</span>
         {/* 이름을 누르면 그 자리를 다시 고른다 — 접혀 있어도 수정 경로는 열어 둔다.
-            칸 전체가 점수 선택이므로 이름 클릭은 위로 새어 나가지 않게 막는다. */}
+            칸 전체가 점수 선택이므로 이름 클릭은 위로 새어 나가지 않게 막는다.
+            (넓은 화면은 위에 선수 카드가 그대로 있어 이 줄이 필요 없다.)
+
+            이름을 한 줄에 나란히 두면 48px 숫자가 폭을 먼저 가져가 이름 하나당
+            80px밖에 안 남아 잘렸다. 세로로 쌓으면 두 배를 쓰므로 안 잘린다.
+            밑줄(점선)은 "누를 수 있음"이 아니라 주석처럼 읽혀 이름을 격하시켰다 —
+            빼고, 수정 가능하다는 신호는 연필 아이콘 하나로 모은다. */}
         <div className="flex min-w-0 flex-1 items-center gap-1.5 lg:hidden">
-          {entries.map((e, i) => (
-            <span key={i} className="flex min-w-0 items-center gap-1.5">
-              {i > 0 && <span className="shrink-0 text-xs text-muted-foreground/60">·</span>}
+          <div className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
+            {entries.map((e, i) => (
               <button
+                key={i}
                 type="button"
                 onClick={(ev) => {
                   ev.stopPropagation();
                   e.onEdit();
                 }}
-                className="min-w-0 truncate text-sm font-bold text-strong underline decoration-dotted decoration-muted-foreground/40 underline-offset-4 transition-colors hover:text-foreground active:scale-95 cursor-pointer"
+                className="min-w-0 max-w-full truncate text-lg font-bold leading-tight text-foreground transition-opacity active:scale-95 active:opacity-70 cursor-pointer"
               >
                 {e.name}
               </button>
-            </span>
-          ))}
+            ))}
+          </div>
+          <Pencil className="size-3.5 shrink-0 text-muted-foreground/70" />
         </div>
         <span className={cn("shrink-0 px-3 font-mono text-5xl font-black leading-none tabular-nums lg:w-full lg:px-0 lg:text-center lg:text-7xl", a.text)}>
           {value}
@@ -2555,7 +2563,11 @@ function ScoreRow({ title, accent, entries, value, selected, onSelect, onDigit, 
         // 0은 1~9 다음에 오는 마지막 숫자이자 가장 자주 누르는 키라 엄지가 닿기 쉬운
         // 오른쪽 아래에 둔다. 반대로 지우기·초기화는 잘못 눌리면 곤란하니 위로 보낸다.
         // 화면 폭에 따라 배열을 바꾸지 않는다 — 태블릿과 폰을 오가도 손가락 기억이 남는다.
-        <div className="mt-2 grid grid-cols-4 gap-1.5 lg:mt-3" onClick={(e) => e.stopPropagation()}>
+        // 넓은 화면에서 폭을 안 막으면 키가 161×48(3.35:1)까지 늘어나 숫자패드가
+        // 아니라 버튼 열두 개로 보인다. 3×3 배열을 고른 이유가 "전화기와 같은 모양이라
+        // 손이 기억한다"였으니 모양이 깨지면 그 이득이 사라진다. 상한을 두면 키가
+        // 약 74×48이 되어 모바일(67×48)과 사실상 같은 모양이 된다.
+        <div className="mt-2 grid grid-cols-4 gap-1.5 lg:mx-auto lg:mt-3 lg:max-w-[20rem]" onClick={(e) => e.stopPropagation()}>
           {[1, 2, 3].map((d) => (
             <KeyBtn key={d} onClick={() => onDigit(d)}>{d}</KeyBtn>
           ))}

@@ -22,9 +22,15 @@ export function DailyResults() {
   const isSchool = useIsSchoolLeague();
   const [date, setDate] = useState<Date>(() => new Date());
   const [pickerOpen, setPickerOpen] = useState(false);
-  // 반 필터. 날짜를 넘겨도 유지된다 — "3반만 보는 중"이라는 맥락은 날짜와 무관하다.
-  const [filterGrade, setFilterGrade] = useState<number[]>([]);
-  const [filterClass, setFilterClass] = useState<number[]>([]);
+  /**
+   * 반 필터 — 학년 하나, 반 하나. 날짜를 넘겨도 유지된다("3반을 보는 중"은 날짜와 무관하다).
+   *
+   * 여러 개를 고를 수 있게 두면 5·6학년에 4·7반처럼 있지도 않은 조합이 만들어지고,
+   * 화면은 "무엇을 보고 있는지" 한 줄로 말할 수 없게 된다. 수업은 한 번에 한 반이다.
+   * `전체`도 두지 않는다 — 51명이 한 덩어리로 뜨는 화면이 바로 이 필터가 생긴 이유다.
+   */
+  const [filterGrade, setFilterGrade] = useState<number | null>(null);
+  const [filterClass, setFilterClass] = useState<number | null>(null);
 
   // 기록이 있는 날짜(로컬 자정 기준) 목록 — 오름차순
   const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
@@ -101,63 +107,81 @@ export function DailyResults() {
    * "오늘은 이 반만 했다"까지 한눈에 보이게 한다.
    */
   const axes = useMemo(() => schoolAxesOf(students), [students]);
-  // 반 칩은 고른 학년 안에서만 추린다 — 5학년만 보는데 6학년의 반 번호가 뜰 이유가 없다.
+  /**
+   * 반 칩은 **고른 학년 안에서만** 추린다. 학년을 고르기 전에는 아무것도 내지 않는다 —
+   * 학년 모르는 채 "4반"만 고르면 5-4반과 6-4반이 한 화면에 섞인다. 순서가 곧 규칙이다.
+   */
+  const showGrade = isSchool && axes.grades.length > 1;
   const chipClasses = useMemo(() => {
+    // 학년을 묻는 리그에서는 학년을 고르기 전까지 반을 내지 않는다.
+    if (showGrade && filterGrade == null) return [];
     const set = new Set<number>();
     for (const s of students) {
       if (s.classNum == null) continue;
-      if (filterGrade.length > 0 && (s.grade == null || !filterGrade.includes(s.grade))) continue;
+      if (filterGrade != null && s.grade !== filterGrade) continue;
       set.add(s.classNum);
     }
     return Array.from(set).sort((a, b) => a - b);
-  }, [students, filterGrade]);
+  }, [students, showGrade, filterGrade]);
 
-  const showGrade = isSchool && axes.grades.length > 1;
+  // 고를 것이 하나뿐이면 묻지 않는다 — 6학년만 있는 리그, 반이 하나뿐인 학년.
   const showClass = isSchool && chipClasses.length > 1;
-  const filterOn = (showGrade && filterGrade.length > 0) || (showClass && filterClass.length > 0);
+
+  /**
+   * 볼 준비가 됐는가. **물어본 축은 다 골라야** 하이라이트가 나온다.
+   *
+   * 묻지 않은 축은 기다리지 않는다. 학년이 하나뿐인 리그는 반부터 고르고,
+   * 반이 하나뿐인 학년은 학년만 고르면 끝이며, 동호회 리그는 둘 다 묻지 않아 전부 보인다.
+   */
+  const ready = (!showGrade || filterGrade != null) && (!showClass || filterClass != null);
+  const filterOn = filterGrade != null || filterClass != null;
 
   /** 고른 학년·반에 드는 학생인가. 경기를 남길지도, 범위 이름도 전부 이 하나로 정해진다. */
   const inScope = useMemo(() => {
     return (s?: Student | null) => {
       if (!s) return false;
-      if (showGrade && filterGrade.length > 0 && (s.grade == null || !filterGrade.includes(s.grade))) return false;
-      if (showClass && filterClass.length > 0 && (s.classNum == null || !filterClass.includes(s.classNum))) return false;
+      if (filterGrade != null && s.grade !== filterGrade) return false;
+      if (filterClass != null && s.classNum !== filterClass) return false;
       return true;
     };
-  }, [showGrade, showClass, filterGrade, filterClass]);
+  }, [filterGrade, filterClass]);
 
   /**
    * 선택한 반 소속이 한 명이라도 낀 경기는 남긴다.
    * 반대항 경기를 걸러내면 "우리 반이 옆 반을 이긴 판"이 통째로 사라진다 — 학교에선 그게 제일 보고 싶은 경기다.
    */
   const shownMatches = useMemo(() => {
+    if (!ready) return [];
     if (!filterOn) return dayMatches;
     return dayMatches.filter((m) =>
       [m.playerAId, m.playerBId, m.playerA2Id, m.playerB2Id].some((pid) => inScope(pid ? byId.get(pid) : null))
     );
-  }, [dayMatches, filterOn, byId, inScope]);
+  }, [dayMatches, ready, filterOn, byId, inScope]);
 
-  const clearFilter = () => { setFilterGrade([]); setFilterClass([]); };
-  const toggleGrade = (g: number) =>
-    setFilterGrade((prev) => { setFilterClass([]); return prev.includes(g) ? prev.filter((x) => x !== g) : [...prev, g]; });
-  const toggleClass = (c: number) =>
-    setFilterClass((prev) => (prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]));
+  const clearFilter = () => { setFilterGrade(null); setFilterClass(null); };
+  // 학년을 바꾸면 반 선택은 버린다 — 5-4반을 보다 6학년을 누르면 6-4반이 아니라 6학년 선택 화면이다.
+  const pickGrade = (g: number) => {
+    setFilterClass(null);
+    setFilterGrade((prev) => (prev === g ? null : g));
+  };
+  const pickClass = (c: number) => setFilterClass((prev) => (prev === c ? null : c));
 
   /**
    * 지금 보고 있는 범위 이름 — "6-7반의 하이라이트"임을 제목 줄에서 알 수 있어야 한다.
    *
-   * 고른 학년과 반을 곱해서 짓지 않는다. 5·6학년에 4·7반을 고르면 6-4반, 5-7반처럼
-   * 있지도 않은 반이 이름에 끼어든다. 그 날 실제로 걸린 학생들의 반만 모은다.
+   * 고른 값으로 이름을 짓지 않고 그 날 실제로 걸린 학생들의 반을 모은다. 그래야
+   * 명단에 없는 조합("6-4반")이 제목에 끼어들지 않는다. 아직 안 뛴 반이면 고른 값으로 적는다.
    */
   const scopeLabel = useMemo(() => {
     if (!filterOn) return null;
     const keys = new Set<string>();
     for (const s of dayPlayers) if (inScope(s)) keys.add(classKeyOf(s));
-    // 반 정보가 없는 명단이면 붙일 이름이 없다 → 고른 학년으로 대신한다.
     const labels = Array.from(keys).filter((k) => k !== "").sort().map(classLabel);
     if (labels.length > 0) return labels.join(", ");
-    return filterGrade.map((g) => `${g}학년`).join(", ") || null;
-  }, [filterOn, dayPlayers, inScope, filterGrade]);
+    if (filterGrade != null && filterClass != null) return `${filterGrade}-${filterClass}반`;
+    if (filterClass != null) return `${filterClass}반`;
+    return filterGrade != null ? `${filterGrade}학년` : null;
+  }, [filterOn, dayPlayers, inScope, filterGrade, filterClass]);
 
   /**
    * 통계와 상 — 규칙은 전부 `src/domain/highlight-calculator.ts`에 있다.
@@ -275,14 +299,13 @@ export function DailyResults() {
           {showGrade && (
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="w-11 shrink-0 text-[10px] font-bold text-muted-foreground">학년</span>
-              <FilterChip active={filterGrade.length === 0} onClick={() => { setFilterGrade([]); setFilterClass([]); }}>전체 학년</FilterChip>
               {axes.grades.map((g) => (
                 <FilterChip
                   key={g}
-                  active={filterGrade.includes(g)}
+                  active={filterGrade === g}
                   disabled={!dayGrades.has(g)}
                   title={dayGrades.has(g) ? undefined : "이 날 경기가 없습니다"}
-                  onClick={() => toggleGrade(g)}
+                  onClick={() => pickGrade(g)}
                 >
                   {g}학년
                 </FilterChip>
@@ -292,14 +315,13 @@ export function DailyResults() {
           {showClass && (
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="w-11 shrink-0 text-[10px] font-bold text-muted-foreground">반</span>
-              <FilterChip active={filterClass.length === 0} onClick={() => setFilterClass([])}>전체 반</FilterChip>
               {chipClasses.map((c) => (
                 <FilterChip
                   key={c}
-                  active={filterClass.includes(c)}
+                  active={filterClass === c}
                   disabled={!dayClasses.has(c)}
                   title={dayClasses.has(c) ? undefined : "이 날 경기가 없습니다"}
-                  onClick={() => toggleClass(c)}
+                  onClick={() => pickClass(c)}
                 >
                   {c}반
                 </FilterChip>
@@ -309,15 +331,30 @@ export function DailyResults() {
         </div>
       )}
 
-      {/* 고른 반이 이 날엔 안 뛴 경우 — 빈 화면만 보여주고 끝내지 않는다 */}
-      {filterOn && shownMatches.length === 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/40 bg-card/30 px-3 py-2.5">
-          <span className="text-xs text-muted-foreground">이 날 {scopeLabel} 경기 기록이 없습니다.</span>
-          <Button variant="outline" size="sm" className="h-7 border-border/50 text-xs font-bold" onClick={clearFilter}>전체 보기</Button>
+      {/* 아직 고르는 중 — 빈 화면 대신 다음에 누를 것을 말해 준다 */}
+      {!ready && (
+        <div className="rounded-xl border border-dashed border-border/50 bg-card/20 px-3 py-8 text-center">
+          <p className="text-xs font-bold text-foreground">
+            {showGrade && filterGrade == null ? "학년을 고르세요." : "반을 고르세요."}
+          </p>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            {showGrade && filterGrade == null
+              ? "학년을 고르면 그 학년의 반이 나옵니다."
+              : `${filterGrade != null ? `${filterGrade}학년의 ` : ""}반을 고르면 그 반의 하이라이트가 나옵니다.`}
+          </p>
         </div>
       )}
 
-      {/* 경기 요약 */}
+      {/* 고른 반이 이 날엔 안 뛴 경우 — 빈 화면만 보여주고 끝내지 않는다 */}
+      {ready && filterOn && shownMatches.length === 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/40 bg-card/30 px-3 py-2.5">
+          <span className="text-xs text-muted-foreground">이 날 {scopeLabel} 경기 기록이 없습니다.</span>
+          <Button variant="outline" size="sm" className="h-7 border-border/50 text-xs font-bold" onClick={clearFilter}>다시 고르기</Button>
+        </div>
+      )}
+
+      {/* 경기 요약 — 고르기 전에는 내지 않는다. 아래 블록들은 경기가 0건이면 스스로 숨는다. */}
+      {ready && (
       <div className="space-y-2">
         <span className="flex items-center gap-1.5 text-sm font-black text-foreground">📊 경기 요약</span>
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
@@ -327,6 +364,7 @@ export function DailyResults() {
         <StatCard icon={<Trophy className="size-4" />} label="최다승" value={topWinnerLabel} />
         </div>
       </div>
+      )}
 
       {/* 오늘의 인물 — 카드는 드문 일에만. 억지로 채우지 않는다(두 장이면 두 장). */}
       {(cards.length > 0 || duo) && (
@@ -405,6 +443,7 @@ export function DailyResults() {
       )}
 
       {/* 경기 기록 */}
+      {ready && (
       <div className="space-y-2">
         <span className="flex items-center gap-1.5 text-sm font-black text-foreground">🏸 경기 기록</span>
         <Card className="border border-border/40 bg-card/50 p-4 backdrop-blur shadow-lg">
@@ -419,6 +458,7 @@ export function DailyResults() {
           )}
         </Card>
       </div>
+      )}
     </div>
   );
 }

@@ -63,6 +63,8 @@ export function MatchQueue({
   );
   const [filling, setFilling] = useState(false);
   const [presetOpen, setPresetOpen] = useState(false);
+  // 줄에서 빼기 확인 팝업 대상. 삭제는 되돌릴 수 없으므로 한 번 묻는다.
+  const [confirmRemove, setConfirmRemove] = useState<ScheduledMatch | null>(null);
 
   const byId = useMemo(() => {
     const m = new Map<string, Student>();
@@ -111,18 +113,12 @@ export function MatchQueue({
             const confirmed = teamA.length > 0 && teamB.length > 0;
             const mine = !!myPlayerId && [...teamA, ...teamB, ...pool].includes(myPlayerId);
             const nameOf = (id: string) => dn(byId.get(id));
-            return (
-              <div
-                key={r.id}
-                className={cn(
-                  "flex items-center gap-2 rounded-xl border px-3 py-2.5",
-                  mine ? "border-neon-blue/40 bg-neon-blue/5" : "border-border/30 bg-input/40",
-                )}
-              >
+            const names = (
+              <>
                 <span className="w-9 shrink-0 text-center text-sm font-black tabular-nums text-muted-foreground">
                   {seqMark(r.seq)}
                 </span>
-                <span className="min-w-0 flex-1 truncate text-sm font-bold text-foreground">
+                <span className="min-w-0 flex-1 truncate text-left text-sm font-bold text-foreground">
                   {confirmed ? (
                     <>
                       {teamA.map(nameOf).join("·")}
@@ -135,25 +131,51 @@ export function MatchQueue({
                     pool.map(nameOf).join(" · ")
                   )}
                 </span>
-                {canManage && (
-                  <>
-                    <Button
-                      onClick={() => onRecordRow(r)}
-                      size="sm"
-                      className="h-7 shrink-0 rounded-lg bg-neon-blue px-2.5 text-[10px] font-black text-primary-foreground hover:bg-neon-blue/90"
-                    >
-                      결과 입력
-                    </Button>
-                    <button
-                      type="button"
-                      onClick={() => removeScheduledMatch(r.id)}
-                      aria-label="대기열에서 빼기"
-                      className="shrink-0 rounded-lg p-1 text-muted-foreground transition-colors hover:text-destructive"
-                    >
-                      <X className="size-4" />
-                    </button>
-                  </>
-                )}
+              </>
+            );
+            const rowStyle = cn(
+              "flex w-full items-center gap-2 rounded-xl border px-3 py-2.5",
+              mine ? "border-neon-blue/40 bg-neon-blue/5" : "border-border/30 bg-input/40",
+            );
+
+            // 볼 수만 있는 사람에게는 목록일 뿐이다. 누를 것이 없으니 버튼으로 만들지 않는다.
+            if (!canManage) {
+              return (
+                <div key={r.id} className={rowStyle}>
+                  {names}
+                </div>
+              );
+            }
+
+            return (
+              <div key={r.id} className="flex items-center gap-1">
+                {/*
+                  행 전체가 [결과 입력] 버튼이다. 예전의 작은 버튼은 28px 로 권장치 44px 에
+                  한참 못 미쳤는데, 행 자체는 이미 48px 였다 — 알맞은 타깃이 이미 있는데
+                  눌리지 않을 뿐이었다. 사람들이 이름을 누르는 건 실수가 아니다.
+                  잘못 눌러도 폼이 열릴 뿐이라 되돌리는 비용이 0이다.
+                */}
+                <button
+                  type="button"
+                  onClick={() => onRecordRow(r)}
+                  className={cn(rowStyle, "min-w-0 flex-1 text-left transition-colors hover:border-neon-blue/50")}
+                >
+                  {names}
+                  {/* 버튼이 아니라 글자로 남긴다 — 누를 곳을 가리키는 게 아니라 무엇이 일어날지 알린다. */}
+                  <span className="shrink-0 text-[10px] font-black text-neon-blue">결과 입력</span>
+                </button>
+                {/*
+                  되돌릴 수 없는 동작만 조준을 요구한다. 행이 큰 타깃이 되면서 × 와 붙으므로
+                  확인을 거친다 — 예전에는 정확히 반대였다(작은 × 가 확인 없이 즉시 삭제).
+                */}
+                <button
+                  type="button"
+                  onClick={() => setConfirmRemove(r)}
+                  aria-label={`${seqMark(r.seq) || "이 대진"} 대기열에서 빼기`}
+                  className="flex size-11 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                >
+                  <X className="size-5" />
+                </button>
               </div>
             );
           })}
@@ -234,6 +256,54 @@ export function MatchQueue({
           </div>
         </div>
       )}
+
+      {/* 줄에서 빼기 확인 — MatchesTab 의 예약 정리 팝업과 같은 모양이다. */}
+      {confirmRemove &&
+        (() => {
+          const r = confirmRemove;
+          const { teamA, teamB, pool } = teamsOf(r);
+          // 팀이 갈린 줄은 양 팀을, 아직 안 갈린 줄(인원 소집 예약)은 모인 사람을 보여준다.
+          const who = (teamA.length && teamB.length ? [...teamA, ...teamB] : pool)
+            .map((id) => dn(byId.get(id)))
+            .join(" · ");
+          return (
+            <div
+              className="fixed inset-0 z-[85] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-in fade-in duration-150"
+              onClick={() => setConfirmRemove(null)}
+            >
+              <div
+                className="w-full max-w-sm rounded-2xl border border-border/50 bg-background p-5 shadow-2xl animate-in zoom-in-95 duration-150"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <h3 className="text-base font-black text-foreground">
+                  {seqMark(r.seq) ? `${seqMark(r.seq)} 줄을 뺄까요?` : "이 줄을 뺄까요?"}
+                </h3>
+                <p className="mt-1.5 truncate text-xs font-bold text-muted-foreground">{who}</p>
+                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                  경기 기록은 남지 않아요. 결과를 넣으려면 줄을 눌러 결과 입력으로 가세요.
+                </p>
+                <div className="mt-4 flex flex-col gap-2">
+                  <Button
+                    onClick={async () => {
+                      await removeScheduledMatch(r.id);
+                      setConfirmRemove(null);
+                    }}
+                    className="h-10 rounded-xl bg-destructive text-sm font-black text-white hover:bg-destructive/90"
+                  >
+                    줄에서 뺄게요
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmRemove(null)}
+                    className="mt-0.5 rounded-lg py-2 text-xs font-bold text-muted-foreground hover:text-foreground"
+                  >
+                    그대로 둘게요
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
     </div>
   );
 }
