@@ -412,6 +412,99 @@ describe("computeAwards — 학교용 지표", () => {
   });
 });
 
+describe("computeDayStats — 명경기와 반 집계", () => {
+  const classes: HighlightPlayer[] = [
+    { id: "a1", classKey: "5-4" },
+    { id: "a2", classKey: "5-4" },
+    { id: "a3", classKey: "5-4" },
+    { id: "b1", classKey: "5-7" },
+    { id: "b2", classKey: "5-7" },
+  ];
+
+  it("명경기는 접전 중 총득점이 가장 높은 판이다", () => {
+    const stats = computeDayStats({
+      matches: day([
+        [["a"], ["b"], 21, 3], // 총득점은 낮지만 학살
+        [["c"], ["d"], 30, 29], // 접전이면서 가장 오래 주고받았다
+        [["e"], ["f"], 15, 14], // 접전이지만 총득점이 낮다
+      ]),
+    });
+
+    expect(stats.bestMatch?.matchId).toBe("m2");
+    expect(stats.bestMatch?.totalScore).toBe(59);
+  });
+
+  it("접전 기준이 없는 날에는 명경기도 없다", () => {
+    const stats = computeDayStats({ matches: day([[["a"], ["b"], 21, 19]]) });
+
+    expect(stats.closeThreshold).toBeNull();
+    expect(stats.bestMatch).toBeNull();
+  });
+
+  it("반 집계는 순위가 아니라 집계다 — 안 뛴 반은 목록에 없다", () => {
+    const stats = computeDayStats({
+      matches: day([
+        [["a1"], ["a2"], 2, 1],
+        [["a1"], ["a3"], 2, 0],
+        [["b1"], ["b2"], 2, 1],
+      ]),
+      // 5-9반 학생은 명단에 있지만 오늘 안 뛰었다.
+      players: [...classes, { id: "c1", classKey: "5-9" }],
+    });
+
+    expect(stats.classSummary).toEqual([
+      { classKey: "5-4", matches: 2, players: 3 },
+      { classKey: "5-7", matches: 1, players: 2 },
+    ]);
+  });
+
+  it("반 정보가 없는 명단에서는 반 집계가 통째로 비어 있다", () => {
+    const stats = computeDayStats({
+      matches: day([[["a"], ["b"], 2, 1]]),
+      players: [{ id: "a" }, { id: "b", classKey: null }],
+    });
+
+    expect(stats.classSummary).toEqual([]);
+    expect(stats.crossClass).toEqual([]);
+  });
+
+  it("반대항 경기가 없으면 반대항 집계도 없다", () => {
+    const stats = computeDayStats({
+      matches: day([
+        [["a1"], ["a2"], 2, 1],
+        [["b1"], ["b2"], 2, 1],
+      ]),
+      players: classes,
+    });
+
+    expect(stats.crossClass).toEqual([]);
+  });
+
+  it("반대항 경기는 반끼리의 승패로 센다", () => {
+    const stats = computeDayStats({
+      matches: day([
+        [["a1"], ["b1"], 2, 1],
+        [["a2"], ["b2"], 2, 0],
+        [["b1"], ["a3"], 2, 1],
+      ]),
+      players: classes,
+    });
+
+    expect(stats.crossClass).toEqual([{ a: "5-4", b: "5-7", winsA: 2, winsB: 1 }]);
+    // 반대항 경기도 양쪽 반의 경기 수에 들어간다.
+    expect(stats.classSummary.map((c) => c.matches)).toEqual([3, 3]);
+  });
+
+  it("반이 섞인 복식 팀은 어느 반의 승리인지 말할 수 없으므로 반대항이 아니다", () => {
+    const stats = computeDayStats({
+      matches: day([[["a1", "b1"], ["a2", "b2"], 2, 1]]),
+      players: classes,
+    });
+
+    expect(stats.crossClass).toEqual([]);
+  });
+});
+
 describe("computeAwards — 경계값", () => {
   it("그 날 경기가 0건이면 빈 결과를 돌려준다", () => {
     const { day: stats, awards } = computeHighlights({ matches: [] });

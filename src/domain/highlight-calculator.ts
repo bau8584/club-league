@@ -45,6 +45,11 @@ export type HighlightMatch = {
 export type HighlightPlayer = {
   id: string;
   rp?: number | null;
+  /**
+   * 반을 묶는 키. 이 파일은 "5-4반"이라고 적을 줄 모른다 — 묶기만 하고 이름은 호출부가 짓는다.
+   * 빈 문자열이나 없음은 "반 없음"이고, 반 집계에서 통째로 빠진다(동호회 리그가 그렇다).
+   */
+  classKey?: string | null;
   grade?: number | null;
   classNum?: number | null;
   studentNo?: number | null;
@@ -102,6 +107,28 @@ export type DayStats = {
   duos: { playerIds: string[]; wins: number }[];
   /** 지난 기록을 받았는가. 아니면 `친구 넓히기`·`첫 승`·`리그 데뷔`를 아예 내지 않는다. */
   hasHistory: boolean;
+  /** 반 전체가 기억할 한 판 — 접전 중 총득점이 가장 높은 경기. 접전이 없으면 null. */
+  bestMatch: BestMatch | null;
+  /**
+   * 반별 집계. **순위표가 아니다.**
+   *
+   * 반 내부 경기의 승률은 정의상 항상 50%라 막대를 그리면 아무것도 측정하지 않는 그래프가
+   * 되고, 1교시 반은 20경기·5교시 반은 0경기라 시점도 어긋난다. 그래서 센 것만 적는다.
+   * **안 뛴 반은 목록에 없다.**
+   */
+  classSummary: { classKey: string; matches: number; players: number }[];
+  /** 반대항 경기의 승패. 거의 일어나지 않으므로, 없으면 빈 배열이고 블록 자체를 내지 않는다. */
+  crossClass: { a: string; b: string; winsA: number; winsB: number }[];
+};
+
+export type BestMatch = {
+  matchId: string;
+  winnerIds: string[];
+  loserIds: string[];
+  scoreWin: number;
+  scoreLose: number;
+  /** 양 팀 득점 합. 접전 중에서 이 값이 가장 큰 판을 고른다. */
+  totalScore: number;
 };
 
 /** 한 명에게 붙는 카드. */
@@ -347,6 +374,62 @@ export function computeDayStats({
     }
   }
 
+  /**
+   * 오늘의 명경기 — 접전 중 총득점이 가장 높은 판.
+   *
+   * 점수차만 보면 2점제의 2:1이 전부 동률이고, 총득점만 보면 21:3 학살이 뽑힌다.
+   * 접전으로 후보를 거르고 그 안에서 오래 주고받은 판을 고른다.
+   * 접전 기준이 없는 날(경기 1건, 점수차가 전부 같은 날)은 명경기도 없다.
+   */
+  let bestMatch: BestMatch | null = null;
+  if (closeThreshold != null) {
+    for (const m of asc) {
+      if (Math.abs(m.scoreWin - m.scoreLose) > closeThreshold) continue;
+      const totalScore = m.scoreWin + m.scoreLose;
+      // 동점이면 먼저 뛴 판. asc가 결정적이므로 결과도 결정적이다.
+      if (bestMatch && totalScore <= bestMatch.totalScore) continue;
+      bestMatch = {
+        matchId: m.id,
+        winnerIds: m.winnerIds,
+        loserIds: m.loserIds,
+        scoreWin: m.scoreWin,
+        scoreLose: m.scoreLose,
+        totalScore,
+      };
+    }
+  }
+
+  // 반 집계 — 순위가 아니라 집계다. 안 뛴 반은 애초에 여기 들어오지 않는다.
+  const classAgg = new Map<string, { matches: number; players: Set<string> }>();
+  const crossAgg = new Map<string, { a: string; b: string; winsA: number; winsB: number }>();
+  const classOf = (id: string) => byId.get(id)?.classKey || "";
+  for (const m of asc) {
+    const keys = new Set<string>();
+    for (const id of everyone(m)) {
+      const k = classOf(id);
+      if (!k) continue;
+      keys.add(k);
+      let agg = classAgg.get(k);
+      if (!agg) classAgg.set(k, (agg = { matches: 0, players: new Set() }));
+      agg.players.add(id);
+    }
+    // 반이 섞인 경기는 양쪽 반 모두에서 1경기로 센다 — 그 반 학생이 실제로 뛴 판이다.
+    for (const k of keys) classAgg.get(k)!.matches++;
+
+    // 반대항은 "한 반 대 한 반"일 때만 센다. 반이 섞인 팀은 어느 반의 승리인지 말할 수 없다.
+    const wk = new Set(m.winnerIds.map(classOf));
+    const lk = new Set(m.loserIds.map(classOf));
+    if (keys.size !== 2 || wk.size !== 1 || lk.size !== 1) continue;
+    const [w] = [...wk];
+    const [l] = [...lk];
+    if (!w || !l || w === l) continue;
+    const [a, b] = [w, l].sort();
+    let pair = crossAgg.get(`${a}|${b}`);
+    if (!pair) crossAgg.set(`${a}|${b}`, (pair = { a, b, winsA: 0, winsB: 0 }));
+    if (w === a) pair.winsA++;
+    else pair.winsB++;
+  }
+
   let maxWins = 0;
   let slots = 0;
   let maxStreak = 0;
@@ -383,6 +466,14 @@ export function computeDayStats({
       (a, b) => b.wins - a.wins || (a.playerIds.join() < b.playerIds.join() ? -1 : 1),
     ),
     hasHistory,
+    bestMatch,
+    // 많이 뛴 반부터. 같으면 반 키 순 — 새로고침마다 순서가 바뀌면 안 된다.
+    classSummary: Array.from(classAgg.entries())
+      .map(([classKey, v]) => ({ classKey, matches: v.matches, players: v.players.size }))
+      .sort((x, y) => y.matches - x.matches || (x.classKey < y.classKey ? -1 : 1)),
+    crossClass: Array.from(crossAgg.values()).sort((x, y) =>
+      x.a !== y.a ? (x.a < y.a ? -1 : 1) : x.b < y.b ? -1 : 1,
+    ),
   };
 }
 

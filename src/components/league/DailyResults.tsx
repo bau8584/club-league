@@ -189,6 +189,7 @@ export function DailyResults() {
     const hPlayers: HighlightPlayer[] = dayPlayers.map((s) => ({
       id: s.id,
       rp: s.rp,
+      classKey: classKeyOf(s),
       grade: s.grade ?? null,
       classNum: s.classNum ?? null,
       studentNo: s.studentNo ?? null,
@@ -215,6 +216,10 @@ export function DailyResults() {
   const nameOf = (id: string) => displayName(byId.get(id) ?? { name: "알 수 없음" });
   const day = highlight.day;
   const { cards, lists, duo } = highlight.awards;
+
+  /** 명경기는 원본 경기 줄 그대로 보여준다 — 경기 기록과 같은 모양이어야 "그 판"임을 안다. */
+  const bestMatchId = day.bestMatch?.matchId;
+  const bestMatch = bestMatchId ? (shownMatches.find((m) => m.id === bestMatchId) ?? null) : null;
 
   /** 최다승은 동점자를 지우지 않는다 — 사실 자체가 유일해야 하는 지표라 한 명을 뽑으면 거짓이 된다. */
   const topWinnerLabel = (() => {
@@ -364,6 +369,37 @@ export function DailyResults() {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* 오늘의 명경기 — 반 전체가 기억할 한 판 */}
+      {bestMatch && (
+        <div className="space-y-2">
+          <span className="flex items-center gap-1.5 text-sm font-black text-foreground">⚡ 오늘의 명경기</span>
+          <MatchRow m={bestMatch} byId={byId} markCrossClass={isSchool} />
+        </div>
+      )}
+
+      {/* 반 집계 — 순위표가 아니다. 반 내부 경기의 승률은 정의상 언제나 50%다. */}
+      {isSchool && day.classSummary.length > 1 && (
+        <div className="space-y-2">
+          <span className="flex items-center gap-1.5 text-sm font-black text-foreground">🏫 반별 기록</span>
+          <div className="space-y-1 rounded-xl border border-border/40 bg-card/50 px-3 py-2.5">
+            {day.classSummary.map((c) => (
+              <div key={c.classKey} className="flex items-baseline gap-2 text-xs">
+                <span className="w-16 shrink-0 font-black text-foreground">{classLabel(c.classKey)}</span>
+                <span className="text-muted-foreground">{c.matches}경기 · {c.players}명 참여</span>
+              </div>
+            ))}
+            {day.crossClass.map((x) => (
+              <div key={`${x.a}|${x.b}`} className="flex items-baseline gap-2 pt-1 text-xs">
+                <span className="shrink-0 rounded bg-muted/60 px-1 py-0.5 text-[9px] font-bold text-muted-foreground">반대항</span>
+                <span className="font-bold text-foreground">
+                  {classLabel(x.a)} <span className="font-mono">{x.winsA} : {x.winsB}</span> {classLabel(x.b)}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
       )}
