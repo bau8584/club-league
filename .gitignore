@@ -39,3 +39,6 @@ dist-ssr
 # Local tooling / scratch
 .claude/
 scratch/
+
+# supabase CLI 캐시 — 버전 확인만 해도 생긴다. 저장소에 들어갈 것이 아니다.
+supabase/.temp/
