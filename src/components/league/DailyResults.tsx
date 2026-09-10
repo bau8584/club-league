@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { useLeagueStore } from "@/lib/league-store";
 import { Calendar as DayCalendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { getTier, TIER_ORDER, classKeyOf, classLabel } from "@/lib/league-types";
+import { getTier, TIER_ORDER, classKeyOf, classLabel, schoolAxesOf } from "@/lib/league-types";
 import type { Match, Student } from "@/lib/league-types";
 import { useIsSchoolLeague } from "@/lib/league-terms";
 import { FilterChip } from "./FilterChip";
@@ -66,9 +66,8 @@ export function DailyResults() {
   }, [matches, date]);
 
   /**
-   * 그 날 실제로 뛴 사람의 학년/반만 칩으로 낸다.
-   * 전체 명단으로 축을 잡으면 오늘 오지도 않은 반이 칩으로 떠서, 눌러도 빈 화면만 나온다.
-   * (출석부는 대기열 화면의 일이다. 여기는 경기 기록만 다룬다.)
+   * 그 날 실제로 뛴 사람들. 어느 반을 고를 수 있는지, 지금 보는 범위가 무슨 반인지가 여기서 나온다.
+   * (출석부는 대기열 화면의 일이다. 여기는 경기 기록만 다룬다 — 안 온 학생은 등장하지 않는다.)
    */
   const dayPlayers = useMemo(() => {
     const out: Student[] = [];
@@ -84,24 +83,46 @@ export function DailyResults() {
     return out;
   }, [dayMatches, byId]);
 
+  /** 그 날 경기가 있었던 학년/반. 칩을 고를 수 있는지는 이것으로 정해진다. */
   const dayGrades = useMemo(
-    () => Array.from(new Set(dayPlayers.map((s) => s.grade).filter((g): g is number => g != null))).sort((a, b) => a - b),
+    () => new Set(dayPlayers.map((s) => s.grade).filter((g): g is number => g != null)),
     [dayPlayers]
   );
+  const dayClasses = useMemo(
+    () => new Set(dayPlayers.map((s) => s.classNum).filter((c): c is number => c != null)),
+    [dayPlayers]
+  );
+
+  /**
+   * 칩 목록은 명단 전체에서 뽑는다 — 그 날 뛴 반만 내면, 한 반만 수업한 날에는 필터 줄이
+   * 통째로 사라져서 그런 기능이 있는 줄도 모르게 된다. 경기가 없던 반은 흐리게 남겨
+   * "오늘은 이 반만 했다"까지 한눈에 보이게 한다.
+   */
+  const axes = useMemo(() => schoolAxesOf(students), [students]);
   // 반 칩은 고른 학년 안에서만 추린다 — 5학년만 보는데 6학년의 반 번호가 뜰 이유가 없다.
-  const dayClasses = useMemo(() => {
+  const chipClasses = useMemo(() => {
     const set = new Set<number>();
-    for (const s of dayPlayers) {
+    for (const s of students) {
       if (s.classNum == null) continue;
       if (filterGrade.length > 0 && (s.grade == null || !filterGrade.includes(s.grade))) continue;
       set.add(s.classNum);
     }
     return Array.from(set).sort((a, b) => a - b);
-  }, [dayPlayers, filterGrade]);
+  }, [students, filterGrade]);
 
-  const showGrade = isSchool && dayGrades.length > 1;
-  const showClass = isSchool && dayClasses.length > 1;
+  const showGrade = isSchool && axes.grades.length > 1;
+  const showClass = isSchool && chipClasses.length > 1;
   const filterOn = (showGrade && filterGrade.length > 0) || (showClass && filterClass.length > 0);
+
+  /** 고른 학년·반에 드는 학생인가. 경기를 남길지도, 범위 이름도 전부 이 하나로 정해진다. */
+  const inScope = useMemo(() => {
+    return (s?: Student | null) => {
+      if (!s) return false;
+      if (showGrade && filterGrade.length > 0 && (s.grade == null || !filterGrade.includes(s.grade))) return false;
+      if (showClass && filterClass.length > 0 && (s.classNum == null || !filterClass.includes(s.classNum))) return false;
+      return true;
+    };
+  }, [showGrade, showClass, filterGrade, filterClass]);
 
   /**
    * 선택한 반 소속이 한 명이라도 낀 경기는 남긴다.
@@ -109,17 +130,10 @@ export function DailyResults() {
    */
   const shownMatches = useMemo(() => {
     if (!filterOn) return dayMatches;
-    const inScope = (pid?: string | null) => {
-      const s = pid ? byId.get(pid) : null;
-      if (!s) return false;
-      if (showGrade && filterGrade.length > 0 && (s.grade == null || !filterGrade.includes(s.grade))) return false;
-      if (showClass && filterClass.length > 0 && (s.classNum == null || !filterClass.includes(s.classNum))) return false;
-      return true;
-    };
     return dayMatches.filter((m) =>
-      [m.playerAId, m.playerBId, m.playerA2Id, m.playerB2Id].some(inScope)
+      [m.playerAId, m.playerBId, m.playerA2Id, m.playerB2Id].some((pid) => inScope(pid ? byId.get(pid) : null))
     );
-  }, [dayMatches, filterOn, byId, showGrade, showClass, filterGrade, filterClass]);
+  }, [dayMatches, filterOn, byId, inScope]);
 
   const clearFilter = () => { setFilterGrade([]); setFilterClass([]); };
   const toggleGrade = (g: number) =>
@@ -127,15 +141,21 @@ export function DailyResults() {
   const toggleClass = (c: number) =>
     setFilterClass((prev) => (prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]));
 
-  // 지금 보고 있는 범위 이름 — "3반의 하이라이트"임을 제목 줄에서 알 수 있어야 한다.
+  /**
+   * 지금 보고 있는 범위 이름 — "6-7반의 하이라이트"임을 제목 줄에서 알 수 있어야 한다.
+   *
+   * 고른 학년과 반을 곱해서 짓지 않는다. 5·6학년에 4·7반을 고르면 6-4반, 5-7반처럼
+   * 있지도 않은 반이 이름에 끼어든다. 그 날 실제로 걸린 학생들의 반만 모은다.
+   */
   const scopeLabel = useMemo(() => {
     if (!filterOn) return null;
-    const gs = showGrade ? filterGrade : [];
-    const cs = showClass ? filterClass : [];
-    if (gs.length && cs.length) return gs.flatMap((g) => cs.map((c) => `${g}-${c}반`)).join(", ");
-    if (gs.length) return gs.map((g) => `${g}학년`).join(", ");
-    return cs.map((c) => `${c}반`).join(", ");
-  }, [filterOn, showGrade, showClass, filterGrade, filterClass]);
+    const keys = new Set<string>();
+    for (const s of dayPlayers) if (inScope(s)) keys.add(classKeyOf(s));
+    // 반 정보가 없는 명단이면 붙일 이름이 없다 → 고른 학년으로 대신한다.
+    const labels = Array.from(keys).filter((k) => k !== "").sort().map(classLabel);
+    if (labels.length > 0) return labels.join(", ");
+    return filterGrade.map((g) => `${g}학년`).join(", ") || null;
+  }, [filterOn, dayPlayers, inScope, filterGrade]);
 
   // 통계
   const stats = useMemo(() => {
@@ -264,8 +284,16 @@ export function DailyResults() {
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="w-11 shrink-0 text-[10px] font-bold text-muted-foreground">학년</span>
               <FilterChip active={filterGrade.length === 0} onClick={() => { setFilterGrade([]); setFilterClass([]); }}>전체 학년</FilterChip>
-              {dayGrades.map((g) => (
-                <FilterChip key={g} active={filterGrade.includes(g)} onClick={() => toggleGrade(g)}>{g}학년</FilterChip>
+              {axes.grades.map((g) => (
+                <FilterChip
+                  key={g}
+                  active={filterGrade.includes(g)}
+                  disabled={!dayGrades.has(g)}
+                  title={dayGrades.has(g) ? undefined : "이 날 경기가 없습니다"}
+                  onClick={() => toggleGrade(g)}
+                >
+                  {g}학년
+                </FilterChip>
               ))}
             </div>
           )}
@@ -273,8 +301,16 @@ export function DailyResults() {
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="w-11 shrink-0 text-[10px] font-bold text-muted-foreground">반</span>
               <FilterChip active={filterClass.length === 0} onClick={() => setFilterClass([])}>전체 반</FilterChip>
-              {dayClasses.map((c) => (
-                <FilterChip key={c} active={filterClass.includes(c)} onClick={() => toggleClass(c)}>{c}반</FilterChip>
+              {chipClasses.map((c) => (
+                <FilterChip
+                  key={c}
+                  active={filterClass.includes(c)}
+                  disabled={!dayClasses.has(c)}
+                  title={dayClasses.has(c) ? undefined : "이 날 경기가 없습니다"}
+                  onClick={() => toggleClass(c)}
+                >
+                  {c}반
+                </FilterChip>
               ))}
             </div>
           )}
