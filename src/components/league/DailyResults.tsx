@@ -9,6 +9,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { getTier, TIER_ORDER, classKeyOf, classLabel, schoolAxesOf } from "@/lib/league-types";
 import type { Match, Student } from "@/lib/league-types";
 import { useIsSchoolLeague } from "@/lib/league-terms";
+import { computeHighlights } from "@/domain/highlight-calculator";
+import type { HighlightMatch, HighlightPlayer } from "@/domain/highlight-calculator";
 import { FilterChip } from "./FilterChip";
 
 const displayName = (p: { name: string; nickname?: string | null }) => p.nickname || p.name;
@@ -157,86 +159,53 @@ export function DailyResults() {
     return filterGrade.map((g) => `${g}학년`).join(", ") || null;
   }, [filterOn, dayPlayers, inScope, filterGrade]);
 
-  // 통계
-  const stats = useMemo(() => {
-    const players = new Set<string>();
-    let singles = 0, doubles = 0;
-    const winCount = new Map<string, number>();
-    for (const m of shownMatches) {
-      const isDouble = !!(m.playerA2Id || m.playerB2Id);
-      isDouble ? doubles++ : singles++;
-      for (const pid of [m.playerAId, m.playerBId, m.playerA2Id, m.playerB2Id]) if (pid) players.add(pid);
-      // 승자 = A팀(playerAId가 승자 ID 규약)
-      for (const pid of [m.playerAId, m.playerA2Id]) if (pid) winCount.set(pid, (winCount.get(pid) ?? 0) + 1);
-    }
-    let topWinner: { id: string; wins: number } | null = null;
-    for (const [id, wins] of winCount) if (!topWinner || wins > topWinner.wins) topWinner = { id, wins };
-    return { total: shownMatches.length, players: players.size, singles, doubles, topWinner };
-  }, [shownMatches]);
+  /**
+   * 통계와 상 — 규칙은 전부 `src/domain/highlight-calculator.ts`에 있다.
+   *
+   * 이 화면이 하는 일은 두 방향의 번역뿐이다. 들어갈 때는 Match/Student를 계산기가 아는
+   * 모양으로 펴고(승자/패자 배열, 티어를 숫자로), 나올 때는 id를 이름으로 바꾼다.
+   * 상대값 기준·1인 1라벨·타이브레이커가 화면 안에 있으면 검증할 방법이 없다(→ docs/PLAN-testing.md).
+   */
+  const highlight = useMemo(() => {
+    // 티어를 숫자로 편다. TIER_ORDER는 Diamond가 0이므로 뒤집어야 "클수록 강함"이 된다.
+    const strengthOf = (s: Student) =>
+      TIER_ORDER.length - 1 - TIER_ORDER.indexOf(getTier(s.rp, tierThresholds));
 
-  // 오늘의 인물 키워드 (그날 경기 + 현재 티어만으로 계산 — 추가 쿼리 없음)
-  const awards = useMemo(() => {
-    const asc = [...shownMatches].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    const inc = (m: Map<string, number>, id?: string | null) => { if (id) m.set(id, (m.get(id) ?? 0) + 1); };
-    const tierRank = (id?: string | null) => { const s = id ? byId.get(id) : null; return s ? TIER_ORDER.indexOf(getTier(s.rp, tierThresholds)) : -1; };
+    const hMatches: HighlightMatch[] = shownMatches.map((m) => ({
+      id: m.id,
+      date: m.date,
+      winnerIds: [m.playerAId, m.playerA2Id].filter((v): v is string => !!v),
+      loserIds: [m.playerBId, m.playerB2Id].filter((v): v is string => !!v),
+      scoreWin: m.scoreA,
+      scoreLose: m.scoreB,
+      matchType: m.matchType ?? null,
+    }));
 
-    const butcher = new Map<string, number>();   // 점수차 5+ 압승
-    const upset = new Map<string, number>();      // 상위 티어 격파
-    const nail = new Map<string, number>();       // 1~3점차 진땀승
-    const nailLoss = new Map<string, number>();   // 1~3점차 아쉬운 패배
-    const lossCount = new Map<string, number>();  // 패배 수
-    const attend = new Map<string, number>();     // 출전
-    const streakCur = new Map<string, number>();
-    const streakMax = new Map<string, number>();
-    const duo = new Map<string, { ids: string[]; w: number }>();
+    // 삭제된 학생은 여기 없다. 계산기는 id만으로 끝까지 돌고, 이름만 "알 수 없음"이 된다.
+    const hPlayers: HighlightPlayer[] = dayPlayers.map((s) => ({
+      id: s.id,
+      strength: strengthOf(s),
+      grade: s.grade ?? null,
+      classNum: s.classNum ?? null,
+      studentNo: s.studentNo ?? null,
+      name: s.name,
+    }));
 
-    for (const m of asc) {
-      const margin = Math.abs(m.scoreA - m.scoreB);
-      const winners = [m.playerAId, m.playerA2Id].filter(Boolean) as string[];
-      const losers = [m.playerBId, m.playerB2Id].filter(Boolean) as string[];
-      [...winners, ...losers].forEach((id) => inc(attend, id));
-      const loserRank = Math.max(-1, ...losers.map(tierRank));
-      for (const w of winners) {
-        if (margin >= 5) inc(butcher, w);
-        if (margin >= 1 && margin <= 3) inc(nail, w);
-        if (tierRank(w) >= 0 && loserRank > tierRank(w)) inc(upset, w);
-        const c = (streakCur.get(w) ?? 0) + 1;
-        streakCur.set(w, c);
-        streakMax.set(w, Math.max(streakMax.get(w) ?? 0, c));
-      }
-      for (const l of losers) {
-        streakCur.set(l, 0);
-        inc(lossCount, l);
-        if (margin >= 1 && margin <= 3) inc(nailLoss, l);
-      }
-      if (m.matchType === "double" && m.playerA2Id) {
-        const ids = [m.playerAId, m.playerA2Id].sort();
-        const key = ids.join("|");
-        const cur = duo.get(key) ?? { ids, w: 0 };
-        cur.w++; duo.set(key, cur);
-      }
-    }
+    return computeHighlights({ matches: hMatches, players: hPlayers });
+  }, [shownMatches, dayPlayers, tierThresholds]);
 
-    const top = (mp: Map<string, number>, min: number) => {
-      let best: { id: string; c: number } | null = null;
-      for (const [id, c] of mp) if (c >= min && (!best || c > best.c)) best = { id, c };
-      return best;
-    };
-    let topDuo: { ids: string[]; w: number } | null = null;
-    for (const v of duo.values()) if (v.w >= 2 && (!topDuo || v.w > topDuo.w)) topDuo = v;
+  const nameOf = (id: string) => displayName(byId.get(id) ?? { name: "알 수 없음" });
+  const day = highlight.day;
+  const { cards, lists, duo } = highlight.awards;
 
-    const list: { emoji: string; key: string; id?: string; ids?: string[]; detail: string }[] = [];
-    const b = top(butcher, 1); if (b) list.push({ emoji: "🔪", key: "학살자", id: b.id, detail: `5점차 이상으로 ${b.c}번이나 상대를 완파했어요.` });
-    const u = top(upset, 1); if (u) list.push({ emoji: "🎯", key: "대이변러", id: u.id, detail: `자기보다 높은 티어를 ${u.c}번 꺾은 대이변의 주인공.` });
-    const st = top(streakMax, 2); if (st) list.push({ emoji: "🔥", key: "연승왕", id: st.id, detail: `쉬지 않고 ${st.c}연승을 내달렸어요.` });
-    const n = top(nail, 1); if (n) list.push({ emoji: "😤", key: "진땀승 장인", id: n.id, detail: `1~3점 차 손에 땀 쥐는 승부를 ${n.c}번 잡아냈어요.` });
-    const at = top(attend, 1); if (at) list.push({ emoji: "🏃", key: "최다 출전", id: at.id, detail: `오늘 ${at.c}경기, 코트를 가장 오래 지켰어요.` });
-    if (topDuo) list.push({ emoji: "🤝", key: "환상의 복식조", ids: topDuo.ids, detail: `복식에서 ${topDuo.w}번 함께 이긴 환상의 짝꿍.` });
-    // 패자 격려 — 위로/응원 카테고리
-    const nl = top(nailLoss, 1); if (nl) list.push({ emoji: "💪", key: "근성상", id: nl.id, detail: `1~3점 차로 ${nl.c}번 아깝게 놓쳤어요. 다음 판은 당신 겁니다!` });
-    const lc = top(lossCount, 2); if (lc && lc.id !== st?.id) list.push({ emoji: "🌱", key: "성장 중", id: lc.id, detail: `오늘 ${lc.c}패, 누구보다 많이 부딪히며 성장하는 중!` });
-    return list;
-  }, [shownMatches, byId, tierThresholds]);
+  /** 최다승은 동점자를 지우지 않는다 — 사실 자체가 유일해야 하는 지표라 한 명을 뽑으면 거짓이 된다. */
+  const topWinnerLabel = (() => {
+    const t = day.topWinners;
+    if (!t) return "—";
+    const shown = t.playerIds.slice(0, 2).map(nameOf).join("·");
+    const rest = t.playerIds.length - 2;
+    return `${shown}${rest > 0 ? ` 외 ${rest}명` : ""} (${t.wins})`;
+  })();
 
   const isToday = sameDay(date, new Date());
   const dateLabel = date.toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "short" });
@@ -329,37 +298,51 @@ export function DailyResults() {
       <div className="space-y-2">
         <span className="flex items-center gap-1.5 text-sm font-black text-foreground">📊 경기 요약</span>
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-        <StatCard icon={<Swords className="size-4" />} label="총 경기" value={`${stats.total}`} />
-        <StatCard icon={<Users className="size-4" />} label="참여 인원" value={`${stats.players}`} />
-        <StatCard icon={<span className="text-[11px] font-black">단·복</span>} label="단식 / 복식" value={`${stats.singles} / ${stats.doubles}`} />
-        <StatCard
-          icon={<Trophy className="size-4" />}
-          label="최다승"
-          value={stats.topWinner ? `${displayName(byId.get(stats.topWinner.id) ?? { name: "?" })} (${stats.topWinner.wins})` : "—"}
-        />
+        <StatCard icon={<Swords className="size-4" />} label="총 경기" value={`${day.total}`} />
+        <StatCard icon={<Users className="size-4" />} label="참여 인원" value={`${day.playerCount}`} />
+        <StatCard icon={<span className="text-[11px] font-black">단·복</span>} label="단식 / 복식" value={`${day.singles} / ${day.doubles}`} />
+        <StatCard icon={<Trophy className="size-4" />} label="최다승" value={topWinnerLabel} />
         </div>
       </div>
 
-      {/* 오늘의 인물 — 키워드 부여 */}
-      {awards.length > 0 && (
+      {/* 오늘의 인물 — 카드는 드문 일에만. 억지로 채우지 않는다(두 장이면 두 장). */}
+      {(cards.length > 0 || duo) && (
         <div className="space-y-2">
           <span className="flex items-center gap-1.5 text-sm font-black text-foreground">🏅 오늘의 인물</span>
           <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
-            {awards.map((a) => {
-              const name = a.ids
-                ? a.ids.map((id) => displayName(byId.get(id) ?? { name: "?" })).join("·")
-                : displayName(byId.get(a.id!) ?? { name: "?" });
+            {cards.map((a) => (
+              <AwardCard key={a.key} name={nameOf(a.playerId)} emoji={a.emoji} label={a.key} detail={a.detail} />
+            ))}
+            {duo && (
+              <AwardCard
+                key="환상의 복식조"
+                name={duo.playerIds.map(nameOf).join("·")}
+                emoji="🤝"
+                label="환상의 복식조"
+                detail={`복식에서 ${duo.wins}번 함께 이긴 짝꿍.`}
+              />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 오늘 이런 학생들 — 해당자가 여럿인 지표. 한 명을 뽑으면 나머지가 지워진다. */}
+      {lists.length > 0 && (
+        <div className="space-y-2">
+          <span className="flex items-center gap-1.5 text-sm font-black text-foreground">🙌 오늘 이런 학생들</span>
+          <div className="space-y-1.5 rounded-xl border border-border/40 bg-card/50 px-3 py-2.5">
+            {lists.map((l) => {
+              // 이름은 6명까지. 스무 명이 전승한 날에도 한 줄을 넘기지 않는다.
+              const shown = l.playerIds.slice(0, 6).map(nameOf).join(", ");
+              const rest = l.playerIds.length - 6;
               return (
-                <div key={a.key} className="flex flex-col gap-1 rounded-xl border border-border/40 bg-card/50 px-3 py-2.5">
-                  {/* 닉네임 (강조·상단) */}
-                  <span className="truncate text-xl font-black leading-tight text-foreground">{name}</span>
-                  {/* 이모지 + 키워드 */}
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-base">{a.emoji}</span>
-                    <span className="rounded-md bg-neon-blue/15 px-1.5 py-0.5 text-[11px] font-black text-neon-blue">{a.key}</span>
-                  </div>
-                  {/* 설명 */}
-                  <span className="text-[11px] leading-snug text-muted-foreground">{a.detail}</span>
+                <div key={l.key} className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+                  <span className="shrink-0 text-sm">{l.emoji}</span>
+                  <span className="shrink-0 rounded-md bg-neon-blue/15 px-1.5 py-0.5 text-[11px] font-black text-neon-blue">{l.key}</span>
+                  <span className="min-w-0 text-xs font-bold text-foreground">
+                    {shown}
+                    {rest > 0 && <span className="text-muted-foreground"> 외 {rest}명</span>}
+                  </span>
                 </div>
               );
             })}
@@ -382,6 +365,22 @@ export function DailyResults() {
           )}
         </Card>
       </div>
+    </div>
+  );
+}
+
+function AwardCard({ name, emoji, label, detail }: { name: string; emoji: string; label: string; detail: string }) {
+  return (
+    <div className="flex flex-col gap-1 rounded-xl border border-border/40 bg-card/50 px-3 py-2.5">
+      {/* 닉네임 (강조·상단) */}
+      <span className="truncate text-xl font-black leading-tight text-foreground" title={name}>{name}</span>
+      {/* 이모지 + 키워드 */}
+      <div className="flex items-center gap-1.5">
+        <span className="text-base">{emoji}</span>
+        <span className="rounded-md bg-neon-blue/15 px-1.5 py-0.5 text-[11px] font-black text-neon-blue">{label}</span>
+      </div>
+      {/* 설명 */}
+      <span className="text-[11px] leading-snug text-muted-foreground">{detail}</span>
     </div>
   );
 }
