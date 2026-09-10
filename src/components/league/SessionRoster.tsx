@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { ChevronDown } from "lucide-react";
 import { useLeagueStore } from "@/lib/league-store";
 import { classKeyOf, classLabel, sortStudentsForRoster, type Student } from "@/lib/league-types";
+import { sessionClassKeys } from "@/domain/session-scope";
 
 const dn = (s?: Student | null) => (s ? s.nickname || s.name : "?");
 
@@ -99,15 +100,9 @@ export function SessionRoster() {
   /** 세션이 없으면 접을 것이 없다 — 명단을 정하는 것이 지금 할 일이다. */
   const collapsed = hasSession && !open;
 
-  /** 현재 세션이 어느 반으로 돌아가고 있는지. 반이 바뀌면 그것이 곧 새 수업이다. */
-  const sessionClasses = useMemo(() => {
-    const set = new Set<string>();
-    for (const id of present) {
-      const s = students.find((x) => x.id === id);
-      if (s) set.add(classKeyOf(s));
-    }
-    return Array.from(set).sort();
-  }, [present, students]);
+  /** 현재 세션이 어느 반으로 돌아가고 있는지. 반이 바뀌면 그것이 곧 새 수업이다.
+      경기 결과 입력·랭킹·하이라이트도 같은 답을 필요로 해서 공용 함수로 빼 두었다. */
+  const sessionClasses = useMemo(() => sessionClassKeys(present, students), [present, students]);
 
   // 열려 있는 세션이 있으면 그 반을 골라 둔 상태로 시작한다.
   useEffect(() => {

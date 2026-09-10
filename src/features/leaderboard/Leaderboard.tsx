@@ -13,6 +13,8 @@ import { Search, SlidersHorizontal, ChevronDown, X } from "lucide-react";
 import { getTier, isUnranked, schoolAxesOf, TIER_ORDER, TIER_STYLES, type TierName, type Student } from "@/lib/league-types";
 import type { TitleDef } from "@/lib/title-calculator";
 import { useIsSchoolLeague } from "@/lib/league-terms";
+import { useSeedFromSession } from "@/lib/use-session-scope";
+import { useStickyState } from "@/lib/use-sticky-state";
 
 type GenderFilter = "all" | "M" | "F";
 
@@ -37,8 +39,10 @@ export function Leaderboard({
   thresholds?: Record<TierName, number>;
 }) {
   const [group, setGroup] = useState<string[]>([]);   // 다중 선택 (빈 배열 = 전체)
-  const [grade, setGrade] = useState<number[]>([]);    // school 전용 학년 (빈 배열 = 전체)
-  const [classNum, setClassNum] = useState<number[]>([]); // school 전용 반 (빈 배열 = 전체)
+  // 학년·반은 탭을 옮겨도 유지한다. 수업 반으로 맞춰 둔 값이든 손으로 고른 값이든,
+  // 돌아올 때마다 전체로 풀리면 매번 다시 골라야 한다.
+  const [grade, setGrade] = useStickyState<number[]>("lb:grade", []);    // 빈 배열 = 전체
+  const [classNum, setClassNum] = useStickyState<number[]>("lb:class", []); // 빈 배열 = 전체
   const [tier, setTier] = useState<TierName[]>([]);    // 다중 선택 (빈 배열 = 전체)
   const [gender, setGender] = useState<GenderFilter>("all");
   const [query, setQuery] = useState("");
@@ -46,6 +50,15 @@ export function Leaderboard({
   const [detailStudent, setDetailStudent] = useState<Student | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [limit, setLimit] = useState(PAGE_SIZE);
+
+  // 수업이 시작되면 순위표도 그 반을 향한다. 20개 반을 담은 리그에서 "전체 순위"는
+  // 수업 중에 볼 일이 거의 없다 — 매번 학년·반을 다시 고르게 하던 자리다.
+  // 세션 id가 바뀔 때만(=새 수업) 한 번 끌어오고, 그 뒤 교사가 전체나 다른 반으로
+  // 바꾸면 그대로 둔다. 학생 계정에는 세션이 없어 이 효과가 돌지 않는다.
+  useSeedFromSession("leaderboard", true, (scope) => {
+    setGrade(scope.grade == null ? [] : [scope.grade]);
+    setClassNum(scope.classNum == null ? [] : [scope.classNum]);
+  });
 
   const openDetail = useCallback((s: Student) => {
     setDetailStudent(s);

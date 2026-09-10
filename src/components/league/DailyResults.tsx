@@ -13,6 +13,7 @@ import { computeHighlights } from "@/domain/highlight-calculator";
 import type { HighlightMatch, HighlightPlayer } from "@/domain/highlight-calculator";
 import { FilterChip } from "./FilterChip";
 import { useSeedFromSession } from "@/lib/use-session-scope";
+import { useStickyState } from "@/lib/use-sticky-state";
 
 const displayName = (p: { name: string; nickname?: string | null }) => p.nickname || p.name;
 const sameDay = (a: Date, b: Date) =>
@@ -30,8 +31,10 @@ export function DailyResults() {
    * 화면은 "무엇을 보고 있는지" 한 줄로 말할 수 없게 된다. 수업은 한 번에 한 반이다.
    * `전체`도 두지 않는다 — 51명이 한 덩어리로 뜨는 화면이 바로 이 필터가 생긴 이유다.
    */
-  const [filterGrade, setFilterGrade] = useState<number | null>(null);
-  const [filterClass, setFilterClass] = useState<number | null>(null);
+  // 탭을 옮겨도 유지한다 — 이 화면은 학년·반을 둘 다 골라야 내용이 나오는데,
+  // 돌아올 때마다 풀리면 두 번씩 다시 눌러야 한다.
+  const [filterGrade, setFilterGrade] = useStickyState<number | null>("hl:grade", null);
+  const [filterClass, setFilterClass] = useStickyState<number | null>("hl:class", null);
 
   // 수업이 시작되면 그 반을 미리 골라 둔다. 이 화면은 학년·반을 **둘 다** 골라야
   // 내용이 나오는데(아래 ready), 수업을 마치고 열 때마다 매번 두 번을 다시 눌러야 했다.

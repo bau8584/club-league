@@ -11,6 +11,7 @@ import { getTier, getTierSubdivision, TIER_ORDER, getFullTierLabel, isUnranked, 
 import { toast } from "sonner";
 import { useLeagueStore } from "@/lib/league-store";
 import { useLeagueTerms, useIsSchoolLeague } from "@/lib/league-terms";
+import { useSeedFromSession } from "@/lib/use-session-scope";
 
 type Selection = { group: string | null; studentId: string | null };
 // 레벨 "전체" 탭이 기본으로 열려 있도록 group을 ALL("__ALL__")로 초기화
@@ -2055,6 +2056,15 @@ function readStoredFilter(classId: string | null): PickerFilter | null {
 }
 
 /** 명단에 없는 학년/반이 남아 있으면(명단 변경·시즌 교체) 그 축만 전체로 되돌린다. */
+function writeStoredFilter(classId: string, next: PickerFilter): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(PICKER_FILTER_KEY + classId, JSON.stringify(next));
+  } catch {
+    // 저장 실패(사생활 보호 모드 등)해도 화면 동작에는 지장이 없다.
+  }
+}
+
 function sanitizeFilter(f: PickerFilter, students: Student[]): PickerFilter {
   const grade = f.grade != null && students.some((s) => s.grade === f.grade) ? f.grade : null;
   const classNum =
@@ -2086,14 +2096,24 @@ function useSchoolPickerFilter(
     setFilter(seed ? sanitizeFilter(seed, students) : EMPTY_FILTER);
   }, [enabled, classId, students, meId]);
 
+  // 수업이 시작되면 그 반으로 끌어온다. 교사 계정에는 저장된 필터가 옛 수업의 반이라
+  // 매번 다시 고르게 만들었다 — 새 수업이 열렸다는 건 그보다 확실한 신호다.
+  // 잠그지는 않는다: 새 수업일 때 한 번 끌어오고, 그 뒤 다른 반을 보러 가면 그대로 둔다.
+  // 명단(props)이 아직 안 왔으면 sanitize 가 반을 통째로 떨어뜨린다. 세션 쪽 학생
+  // 목록은 스토어에서 오므로 여기보다 먼저 준비될 수 있다 — 그때는 미룬다.
+  useSeedFromSession("record-picker", enabled && !!classId && students.length > 0, (scope) => {
+    // 저장값 시딩이 뒤늦게 돌아 이 값을 옛 반으로 되돌리지 못하게 같이 표시한다.
+    seededFor.current = classId;
+    const next = sanitizeFilter(scope, students);
+    setFilter(next);
+    // 저장까지 해 둔다. 수업 도중 새로고침해도 옛 반으로 돌아가지 않는다.
+    if (classId) writeStoredFilter(classId, next);
+  });
+
   const update = useCallback((next: PickerFilter) => {
     setFilter(next);
-    if (!classId || typeof window === "undefined") return;
-    try {
-      window.localStorage.setItem(PICKER_FILTER_KEY + classId, JSON.stringify(next));
-    } catch {
-      // 저장 실패(사생활 보호 모드 등)해도 화면 동작에는 지장이 없다.
-    }
+    if (!classId) return;
+    writeStoredFilter(classId, next);
   }, [classId]);
 
   return [filter, update];
@@ -2565,9 +2585,12 @@ function ScoreRow({ title, accent, entries, value, selected, onSelect, onDigit, 
         // 화면 폭에 따라 배열을 바꾸지 않는다 — 태블릿과 폰을 오가도 손가락 기억이 남는다.
         // 넓은 화면에서 폭을 안 막으면 키가 161×48(3.35:1)까지 늘어나 숫자패드가
         // 아니라 버튼 열두 개로 보인다. 3×3 배열을 고른 이유가 "전화기와 같은 모양이라
-        // 손이 기억한다"였으니 모양이 깨지면 그 이득이 사라진다. 상한을 두면 키가
-        // 약 74×48이 되어 모바일(67×48)과 사실상 같은 모양이 된다.
-        <div className="mt-2 grid grid-cols-4 gap-1.5 lg:mx-auto lg:mt-3 lg:max-w-[20rem]" onClick={(e) => e.stopPropagation()}>
+        // 손이 기억한다"였으니 모양이 깨지면 그 이득이 사라진다.
+        // 맞춰야 할 건 키의 모양(가로세로비)이지 절대 크기가 아니다. 48px 높이는
+        // 손가락 최소 터치 크기에서 나온 값이라 좁은 화면의 제약인데, 그대로 두었더니
+        // 547px 상자에 320px 키패드가 놓여 좌우로 113px씩 비었다. 넓은 화면에서는
+        // 비율(약 1.56:1)을 지킨 채 키 자체를 키운다.
+        <div className="mt-2 grid grid-cols-4 gap-1.5 lg:mx-auto lg:mt-3 lg:max-w-[26rem]" onClick={(e) => e.stopPropagation()}>
           {[1, 2, 3].map((d) => (
             <KeyBtn key={d} onClick={() => onDigit(d)}>{d}</KeyBtn>
           ))}
@@ -2603,8 +2626,9 @@ function KeyBtn({ onClick, children, muted, title }: { onClick: () => void; chil
       onClick={onClick}
       title={title}
       className={cn(
-        // 손가락으로 눌러야 하니 높이를 넉넉히 준다.
-        "flex h-12 items-center justify-center rounded-lg border font-mono text-xl font-black tabular-nums transition-all active:scale-95 cursor-pointer lg:h-12",
+        // 손가락으로 눌러야 하니 높이를 넉넉히 준다. 넓은 화면은 터치 최소 크기에
+        // 매일 이유가 없어 키를 키운다 — 글자도 숫자(72px)에 눌리지 않게 함께 키운다.
+        "flex h-12 items-center justify-center rounded-lg border font-mono text-xl font-black tabular-nums transition-all active:scale-95 cursor-pointer lg:h-16 lg:text-2xl",
         muted
           // 회색 위 회색이면 눈에 안 들어온다. 지우기·초기화는 경고색으로 구분한다.
           ? "border-loss/40 bg-loss/10 text-loss hover:bg-loss/20"
