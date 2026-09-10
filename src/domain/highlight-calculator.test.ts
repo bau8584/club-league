@@ -3,6 +3,8 @@ import {
   computeAwards,
   computeDayStats,
   computeHighlights,
+  type HighlightCard,
+  type HighlightList,
   type HighlightMatch,
   type HighlightPlayer,
 } from "./highlight-calculator";
@@ -30,10 +32,8 @@ const day = (rows: Row[]): HighlightMatch[] =>
     matchType: matchType ?? (winnerIds.length > 1 ? "double" : "single"),
   }));
 
-const cardFor = (cards: { key: string; playerId: string }[], key: string) =>
-  cards.find((c) => c.key === key) ?? null;
-const listFor = (lists: { key: string; playerIds: string[] }[], key: string) =>
-  lists.find((l) => l.key === key) ?? null;
+const cardFor = (cards: HighlightCard[], key: string) => cards.find((c) => c.key === key) ?? null;
+const listFor = (lists: HighlightList[], key: string) => lists.find((l) => l.key === key) ?? null;
 
 describe("computeAwards — 동점과 배정", () => {
   it("2연승이 여러 명이면 연승왕 카드가 아니라 전승 목록으로 내려간다", () => {
@@ -117,7 +117,8 @@ describe("computeAwards — 동점과 배정", () => {
   });
 
   it("드문 상이 흔한 상보다 먼저 배정된다", () => {
-    // u는 대이변러이면서 최다 출전 후보이기도 하다. 드문 쪽을 먼저 가져가야 한다.
+    // u는 자기보다 RP가 200 높은 h를 꺾었고, 최다 출전 후보이기도 하다.
+    // 드문 쪽을 먼저 가져가야 한다.
     const matches = day([
       [["u"], ["h"], 21, 10],
       [["u"], ["c"], 21, 15],
@@ -126,10 +127,10 @@ describe("computeAwards — 동점과 배정", () => {
       [["g"], ["c"], 21, 18],
     ]);
     const players: HighlightPlayer[] = [
-      { id: "u", rp: 1 },
-      { id: "h", rp: 3 },
+      { id: "u", rp: 1000 },
+      { id: "h", rp: 1200 },
     ];
-    const { awards } = computeHighlights({ matches, players, tierOf: (rp) => rp });
+    const { awards } = computeHighlights({ matches, players });
 
     expect(cardFor(awards.cards, "대이변러")?.playerId).toBe("u");
     expect(cardFor(awards.cards, "최다 출전")?.playerId).not.toBe("u");
@@ -409,6 +410,123 @@ describe("computeAwards — 학교용 지표", () => {
     // a는 지난 수업보다 나빠졌다. 반 전체가 보는 화면에 그런 목록은 없다.
     expect(listFor(awards.lists, "나아진 학생")?.playerIds).toEqual(["b"]);
     expect(awards.lists.some((l) => l.key.includes("나빠"))).toBe(false);
+  });
+});
+
+describe("computeAwards — 하루 한두 경기에서도 갈리는 축", () => {
+  it("대이변러는 횟수가 아니라 RP 차로 가른다", () => {
+    // 셋 다 자기보다 센 상대를 한 번씩 꺾었다. 횟수로 재면 전원 1이라 아무도 구별되지 않는다.
+    const { awards } = computeHighlights({
+      matches: day([
+        [["a"], ["x"], 2, 1],
+        [["b"], ["y"], 2, 1],
+        [["c"], ["z"], 2, 0],
+      ]),
+      players: [
+        { id: "a", rp: 1000 },
+        { id: "x", rp: 1030 },
+        { id: "b", rp: 1000 },
+        { id: "y", rp: 1250 }, // 가장 큰 이변
+        { id: "c", rp: 1000 },
+        { id: "z", rp: 1100 },
+      ],
+    });
+
+    const upset = cardFor(awards.cards, "대이변러");
+    expect(upset?.playerId).toBe("b");
+    expect(upset?.value).toBe(250);
+  });
+
+  it("이변의 크기는 경기 전 RP로 잰다", () => {
+    // 경기 후 RP를 쓰면 이긴 쪽은 올라 있고 진 쪽은 내려가 있어 격차가 저절로 깎인다.
+    const matches: HighlightMatch[] = day([[["a"], ["x"], 2, 1]]).map((m) => ({
+      ...m,
+      rpDeltaByPlayer: { a: 30, x: -30 },
+    }));
+    const stats = computeDayStats({
+      matches,
+      players: [
+        { id: "a", rp: 1030 }, // 경기 전 1000
+        { id: "x", rp: 1170 }, // 경기 전 1200
+      ],
+    });
+
+    expect(stats.perPlayer.get("a")?.bestUpsetGap).toBe(200);
+  });
+
+  it("자기보다 약한 상대를 이긴 것은 이변이 아니다", () => {
+    const stats = computeDayStats({
+      matches: day([[["a"], ["x"], 2, 0]]),
+      players: [
+        { id: "a", rp: 1300 },
+        { id: "x", rp: 1000 },
+      ],
+    });
+
+    expect(stats.perPlayer.get("a")?.bestUpsetGap).toBe(0);
+  });
+
+  it("강한 상대는 승패와 무관하다 — 지고도 받는다", () => {
+    const { awards } = computeHighlights({
+      matches: day([
+        [["strong"], ["brave"], 2, 1], // brave 는 오늘 졌다
+        [["c"], ["d"], 2, 0],
+      ]),
+      players: [
+        { id: "strong", rp: 1500 },
+        { id: "brave", rp: 1000 },
+        { id: "c", rp: 1000 },
+        { id: "d", rp: 1000 },
+      ],
+    });
+
+    expect(cardFor(awards.cards, "강한 상대")?.playerId).toBe("brave");
+  });
+
+  it("그 날 평균 RP를 넘는 상대를 만나지 않았으면 강한 상대는 없다", () => {
+    const { awards } = computeHighlights({
+      matches: day([
+        [["a"], ["b"], 2, 1],
+        [["c"], ["d"], 2, 0],
+      ]),
+      players: [
+        { id: "a", rp: 1000 },
+        { id: "b", rp: 1000 },
+        { id: "c", rp: 1000 },
+        { id: "d", rp: 1000 },
+      ],
+    });
+
+    expect(cardFor(awards.cards, "강한 상대")).toBeNull();
+  });
+
+  it("RP 상승은 오늘 오간 RP 합으로 가른다", () => {
+    const deltas: Record<string, number>[] = [
+      { a: 12, x: -12 },
+      { b: 40, y: -40 },
+    ];
+    const matches: HighlightMatch[] = day([
+      [["a"], ["x"], 21, 10],
+      [["b"], ["y"], 21, 15],
+    ]).map((m, i) => ({ ...m, rpDeltaByPlayer: deltas[i] }));
+    const { awards } = computeHighlights({ matches });
+
+    const rp = cardFor(awards.cards, "RP 상승");
+    expect(rp?.playerId).toBe("b");
+    expect(rp?.value).toBe(40);
+  });
+
+  it("RP 기록이 없는 리그에서는 RP 계열 상이 나오지 않는다", () => {
+    const { awards } = computeHighlights({
+      matches: day([
+        [["a"], ["b"], 21, 10],
+        [["c"], ["d"], 21, 19],
+      ]),
+    });
+
+    expect(cardFor(awards.cards, "대이변러")).toBeNull();
+    expect(cardFor(awards.cards, "RP 상승")).toBeNull();
+    expect(cardFor(awards.cards, "강한 상대")).toBeNull();
   });
 });
 

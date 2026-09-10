@@ -66,8 +66,15 @@ export type PlayerDayStat = {
   blowoutWins: number;
   closeWins: number;
   closeLosses: number;
-  /** 자기보다 강한 상대를 꺾은 판. 양쪽 티어를 다 알 때만 센다. */
-  upsetWins: number;
+  /**
+   * 이긴 판 중 가장 큰 RP 차(상대 RP − 내 RP). 진 판과 자기보다 약한 상대는 0이다.
+   *
+   * 횟수가 아니라 차이로 재는 이유는 변별력이다. 하루 1~2경기짜리 리그에서 "몇 번
+   * 꺾었나"는 최댓값이 1에 몰려 열댓 명이 동점이 되지만, RP 차는 사람마다 갈린다.
+   */
+  bestUpsetGap: number;
+  /** 오늘 만난 상대들의 평균 RP. 승패와 무관한 축이다. 상대 RP를 하나도 모르면 null. */
+  oppRpAvg: number | null;
   maxStreak: number;
   /** 오늘 오간 RP 합. rpDelta가 없으면 0이다. */
   rpToday: number;
@@ -100,6 +107,8 @@ export type DayStats = {
   maxStreak: number;
   /** 평균 출전 수. `최다 출전`은 이 값을 **초과**해야 한다. */
   avgAppearances: number;
+  /** 그 날 뛴 학생들의 평균 RP. `강한 상대`는 이 값을 초과해야 한다. 아무도 RP를 모르면 null. */
+  avgPlayerRp: number | null;
   /** 최다승 — 사실 자체가 유일해야 하므로 배정에서 빼고 그대로 내보낸다. 동점이면 전원. */
   topWinners: { playerIds: string[]; wins: number } | null;
   perPlayer: Map<string, PlayerDayStat>;
@@ -182,7 +191,8 @@ const emptyStat = (id: string): PlayerDayStat => ({
   blowoutWins: 0,
   closeWins: 0,
   closeLosses: 0,
-  upsetWins: 0,
+  bestUpsetGap: 0,
+  oppRpAvg: null,
   maxStreak: 0,
   rpToday: 0,
   newOpponents: 0,
@@ -239,10 +249,14 @@ export function computeDayStats({
 }: HighlightInput): DayStats {
   const byId = new Map(players.map((p) => [p.id, p]));
   const asc = [...matches].sort(chronological);
-  /** 지금 티어. rp도 tierOf도 있어야 나온다 — 하나라도 없으면 티어를 쓰는 상은 나오지 않는다. */
-  const strengthOf = (id: string) => {
+  /**
+   * 그 경기 **직전**의 RP. 이변의 크기는 붙기 전의 격차로 재야 한다 —
+   * 경기 후 RP를 쓰면 이긴 쪽은 올라가고 진 쪽은 내려가서 격차가 저절로 깎인다.
+   * rpDelta가 없는 기록에서는 현재 RP가 그대로 쓰인다.
+   */
+  const rpBefore = (id: string, m: HighlightMatch) => {
     const rp = byId.get(id)?.rp;
-    return rp != null && tierOf ? tierOf(rp) : null;
+    return rp == null ? null : rp - (m.rpDeltaByPlayer?.[id] ?? 0);
   };
 
   const margins = asc.map((m) => Math.abs(m.scoreWin - m.scoreLose));
@@ -270,12 +284,10 @@ export function computeDayStats({
     const blowout = blowoutThreshold != null && margin >= blowoutThreshold;
     const close = closeThreshold != null && margin <= closeThreshold;
     const shutout = m.scoreLose === 0;
-    // 진 팀에서 가장 강한 사람 기준. 복식에서 약한 짝을 골라 이변이라 부르지 않는다.
-    const loserStrengths = m.loserIds.map(strengthOf).filter((v): v is number => v != null);
-    const topLoser =
-      loserStrengths.length > 0 && loserStrengths.length === m.loserIds.length
-        ? Math.max(...loserStrengths)
-        : null;
+    // 진 팀에서 가장 센 사람 기준. 복식에서 약한 짝을 골라 이변이라 부르지 않는다.
+    const loserRps = m.loserIds.map((id) => rpBefore(id, m)).filter((v): v is number => v != null);
+    const topLoserRp =
+      loserRps.length > 0 && loserRps.length === m.loserIds.length ? Math.max(...loserRps) : null;
 
     for (const id of m.winnerIds) {
       const s = stat(id);
@@ -284,8 +296,10 @@ export function computeDayStats({
       if (shutout) s.shutoutWins++;
       if (blowout) s.blowoutWins++;
       if (close) s.closeWins++;
-      const mine = strengthOf(id);
-      if (mine != null && topLoser != null && topLoser > mine) s.upsetWins++;
+      const before = rpBefore(id, m);
+      if (before != null && topLoserRp != null) {
+        s.bestUpsetGap = Math.max(s.bestUpsetGap, topLoserRp - before);
+      }
       const c = (streakCur.get(id) ?? 0) + 1;
       streakCur.set(id, c);
       s.maxStreak = Math.max(s.maxStreak, c);
@@ -363,6 +377,14 @@ export function computeDayStats({
         if (!last || cell.t > last.t) last = cell;
       s.isRebound = last != null && last.rp < 0 && s.rpToday > 0;
     }
+  }
+
+  // 오늘 만난 상대의 평균 RP — 승패와 무관한 축. 더 센 상대와 붙기 시작한 것 자체가 개선이다.
+  for (const s of perPlayer.values()) {
+    const rps = [...(oppToday.get(s.id) ?? [])]
+      .map((id) => byId.get(id)?.rp)
+      .filter((v): v is number => v != null);
+    s.oppRpAvg = rps.length > 0 ? rps.reduce((a, b) => a + b, 0) / rps.length : null;
   }
 
   // 티어 승급은 지난 기록이 없어도 난다 — 오늘 오간 RP만 되돌리면 경기 전 티어가 나온다.
@@ -460,6 +482,12 @@ export function computeDayStats({
     closeThreshold,
     maxStreak,
     avgAppearances: perPlayer.size > 0 ? slots / perPlayer.size : 0,
+    avgPlayerRp: (() => {
+      const rps = Array.from(perPlayer.keys())
+        .map((id) => byId.get(id)?.rp)
+        .filter((v): v is number => v != null);
+      return rps.length > 0 ? rps.reduce((a, b) => a + b, 0) / rps.length : null;
+    })(),
     topWinners,
     perPlayer,
     duos: Array.from(duoWins.values()).sort(
@@ -515,6 +543,11 @@ type AwardSpec = {
   emoji: string;
   value: (s: PlayerDayStat) => number;
   min: number;
+  /**
+   * 그 날 평균을 넘어야 하는 상의 문턱. 절대 기준이 없는 지표에 쓴다 —
+   * 평균만큼 뛴 사람을 `최다 출전`이라 부를 수 없다.
+   */
+  floor?: (d: DayStats) => number | null;
   /** 그 날 분포가 이 상을 성립시키는가. 아니면 후보를 보기도 전에 건너뛴다. */
   enabled?: (d: DayStats) => boolean;
   detail: (value: number) => string;
@@ -537,9 +570,11 @@ const AWARDS: AwardSpec[] = [
   {
     key: "대이변러",
     emoji: "🎯",
-    value: (s) => s.upsetWins,
-    min: 1,
-    detail: (v) => `자기보다 높은 티어를 ${v}번 꺾었어요.`,
+    // 횟수가 아니라 RP 차. 하루 1~2경기 리그에서 "몇 번 꺾었나"는 전원이 1이라 아무도
+    // 구별되지 않지만, 차이는 사람마다 갈린다. 최소 20은 "실수로 이긴 게 아니다"의 선.
+    value: (s) => s.bestUpsetGap,
+    min: 20,
+    detail: (v) => `나보다 RP가 ${Math.round(v)} 높은 상대를 꺾었어요.`,
   },
   {
     key: "완봉승",
@@ -559,6 +594,15 @@ const AWARDS: AwardSpec[] = [
     detail: (v) => `쉬지 않고 ${v}연승을 내달렸어요.`,
   },
   {
+    key: "RP 상승",
+    emoji: "📊",
+    // 보너스와 상대 티어가 섞여 값이 거의 겹치지 않는다 — 하루 두 경기짜리 날의 몇 안 되는
+    // 연속값이다. 다만 승패와 강하게 붙어 있으므로 승패 무관 상들보다 아래에 둔다.
+    value: (s) => s.rpToday,
+    min: 1,
+    detail: (v) => `오늘 RP를 +${Math.round(v)} 올렸어요.`,
+  },
+  {
     key: "접전 승부사",
     emoji: "😤",
     // 문서의 `1점차 승부사` 자리. 2점제에서 1점차는 가장 흔한 결과라 고정값을 쓰지 않고
@@ -569,11 +613,23 @@ const AWARDS: AwardSpec[] = [
     detail: (v) => `손에 땀 쥐는 접전을 ${v}번 잡아냈어요.`,
   },
   {
+    key: "강한 상대",
+    emoji: "🧗",
+    // 승패와 무관한 축이다. 져도 받을 수 있고, RP·연승 계열이 잘하는 학생에게 쏠리는 것을
+    // 이 상이 상쇄한다. 그 날 평균 RP를 넘는 상대를 만났을 때만 성립한다.
+    value: (s) => s.oppRpAvg ?? 0,
+    min: 1,
+    floor: (d) => d.avgPlayerRp,
+    enabled: (d) => d.avgPlayerRp != null,
+    detail: (v) => `오늘 만난 상대 평균 RP가 ${Math.round(v)}. 센 상대와 붙었어요.`,
+  },
+  {
     key: "최다 출전",
     emoji: "🏃",
     value: (s) => s.appearances,
     min: 1,
-    detail: (v) => `오늘 ${v}경기, 코트를 가장 오래 지켰어요.`,
+    floor: (d) => d.avgAppearances,
+    detail: (v) => `오늘 ${v}경기, 코트를 오래 지켰어요.`,
   },
   {
     key: "근성상",
@@ -628,12 +684,11 @@ export function computeAwards(day: DayStats, players: HighlightPlayer[] = []): H
   for (const spec of AWARDS) {
     if (spec.enabled && !spec.enabled(day)) continue;
 
-    // `최다 출전`만은 절대 기준이 없다 — 그 날 평균을 넘어야 "최다"라 부를 수 있다.
-    const isAttendance = spec.key === "최다 출전";
+    const floor = spec.floor?.(day) ?? null;
     const pool = stats.filter((s) => {
       if (labeled.has(s.id)) return false; // 이미 받은 학생은 아래 상에서 제외
       const v = spec.value(s);
-      return isAttendance ? v > day.avgAppearances && v >= spec.min : v >= spec.min;
+      return v >= spec.min && (floor == null || v > floor);
     });
     if (pool.length === 0) continue;
 
