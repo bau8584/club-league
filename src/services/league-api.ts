@@ -71,13 +71,21 @@ export async function apiFetchMatches(classId: string, season?: string) {
 }
 
 // --- 대진 호출(예정 경기) ---
-export async function apiFetchScheduledMatches(classId: string) {
-  return supabase
+/**
+ * 큐 읽기. `sessionId`를 주면 그 세션의 줄만 본다(학교 — 옆 반 수업이 섞이면 안 된다).
+ *
+ * 세션 밖의 줄(session_id is null)은 함께 본다. 도전장과 회원 예약은 특정 수업에 속한
+ * 것이 아니고, 마이그레이션 이전에 만들어진 줄도 여기 해당한다. 걸러내면 쓰던 큐가
+ * 배포와 동시에 화면에서 사라진다.
+ */
+export async function apiFetchScheduledMatches(classId: string, sessionId?: string | null) {
+  let q = supabase
     .from("scheduled_matches")
     .select("*")
     .eq("league_id", classId)
-    .in("status", ["waiting", "called", "challenge"])
-    .order("created_at", { ascending: true });
+    .in("status", ["waiting", "called", "challenge"]);
+  if (sessionId) q = q.or(`session_id.eq.${sessionId},session_id.is.null`);
+  return q.order("created_at", { ascending: true });
 }
 
 // 도전장 생성 (회원이 상대 지목) / 응답(수락→called, 거절→cancelled)
@@ -105,9 +113,12 @@ export async function apiCreateScheduledMatch(payload: {
   playerA2Id?: string | null;
   playerB2Id?: string | null;
   court?: string | null;
+  /** 손으로 넣은 대진도 지금 도는 수업의 줄이다. 안 찍으면 옆 반 화면에도 뜬다. */
+  sessionId?: string | null;
 }) {
   return supabase.from("scheduled_matches").insert({
     league_id: payload.classId,
+    session_id: payload.sessionId ?? null,
     match_type: payload.matchType,
     player_a_id: payload.playerAId,
     player_b_id: payload.playerBId,
@@ -138,43 +149,81 @@ export async function apiBulkCreateAssignedMatches(payload: AssignedMatchInput) 
 
 // --- 배정 세션(참가자 명단) ---
 // 명단과 큐가 다른 저장소에 있으면 계산이 틀린다. 큐가 이미 서버에 있으므로 명단도 서버에 둔다.
-export async function apiFetchAssignmentSession(classId: string) {
-  return supabase.from("assignment_sessions").select("*").eq("league_id", classId).maybeSingle();
+
+/** 내 세션을 찾는다. 학교는 `ownerId`(내 계정)로, 동호회는 주인 없는 한 행으로. */
+export async function apiFetchAssignmentSession(classId: string, ownerId?: string | null) {
+  const q = supabase.from("assignment_sessions").select("*").eq("league_id", classId);
+  return (ownerId ? q.eq("owner_id", ownerId) : q.is("owner_id", null)).maybeSingle();
 }
 
 /**
- * [새로 시작] / 명단 수정 — league_id 가 PK 라서 upsert 한 번이면 끝난다.
+ * [새로 시작] / 명단 수정.
  * `startedAt`을 주면 새 세션(경계)이고, 안 주면 기존 세션의 명단만 고치는 것이다.
+ *
+ * upsert 를 쓰지 않는다. 유일성이 부분 인덱스(owner_id is null / is not null)로 걸려 있는데,
+ * PostgREST 의 onConflict 는 컬럼 목록만 받을 뿐 인덱스의 조건절을 표현하지 못해 충돌을
+ * 인식하지 못한다. 찾아서 UPDATE, 없으면 INSERT 로 명시한다.
+ *
+ * 두 기기가 동시에 [새로 시작]을 눌러 둘 다 INSERT 로 가면 부분 인덱스가 한쪽을 막는다(23505).
+ * 막힌 쪽은 상대가 방금 만든 행을 다시 찾아 UPDATE 한다 — 이기는 쪽이 정해질 뿐 행은 하나다.
  */
 export async function apiUpsertAssignmentSession(payload: {
   classId: string;
+  ownerId?: string | null;
   playerIds: string[];
   matchType: "single" | "double";
   startedAt?: string;
+  /** [새로 시작]에서 번호를 1번으로 되돌린다. 같은 행을 계속 쓰므로 저절로 초기화되지 않는다. */
+  resetSeq?: boolean;
 }) {
-  return supabase
-    .from("assignment_sessions")
-    .upsert(
-      {
-        league_id: payload.classId,
-        player_ids: payload.playerIds,
-        match_type: payload.matchType,
-        ...(payload.startedAt ? { started_at: payload.startedAt } : {}),
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "league_id" },
-    )
-    .select()
-    .maybeSingle();
+  const ownerId = payload.ownerId ?? null;
+  const fields = {
+    player_ids: payload.playerIds,
+    match_type: payload.matchType,
+    ...(payload.startedAt ? { started_at: payload.startedAt } : {}),
+    ...(payload.resetSeq ? { next_seq: 1 } : {}),
+    updated_at: new Date().toISOString(),
+  };
+
+  const write = async () => {
+    const { data: found } = await apiFetchAssignmentSession(payload.classId, ownerId);
+    if (found) {
+      return supabase
+        .from("assignment_sessions")
+        .update(fields)
+        .eq("id", (found as { id: string }).id)
+        .select()
+        .maybeSingle();
+    }
+    return supabase
+      .from("assignment_sessions")
+      .insert({ league_id: payload.classId, owner_id: ownerId, ...fields })
+      .select()
+      .maybeSingle();
+  };
+
+  const first = await write();
+  // 23505 = unique_violation. 상대가 먼저 만들었다는 뜻이므로 한 번만 다시 시도한다.
+  if (first.error?.code === "23505") return write();
+  return first;
 }
 
-/** 세션 경계에서 미소화 큐를 비운다. 날짜로는 못 자른다 — 같은 날 3교시와 4교시는 날짜가 같다. */
-export async function apiClearQueue(classId: string) {
-  return supabase
+/**
+ * 세션 경계에서 미소화 큐를 비운다. 날짜로는 못 자른다 — 같은 날 3교시와 4교시는 날짜가 같다.
+ *
+ * `sessionId`를 주면 그 세션의 줄만 지운다. 여기가 옆 반 대기열이 통째로 날아가던 자리다.
+ * 세션 밖의 줄 중에서는 **내가 만든 것만** 함께 지운다(마이그레이션 이전에 내가 뽑아둔 줄).
+ * 남의 옛 줄까지 쓸어버리면 고치려던 문제를 그대로 되풀이한다.
+ */
+export async function apiClearQueue(classId: string, opts?: { sessionId?: string | null; myUid?: string | null }) {
+  const q = supabase
     .from("scheduled_matches")
     .delete()
     .eq("league_id", classId)
     .in("status", ["waiting", "called"]);
+  if (!opts?.sessionId) return q;
+  const mine = opts.myUid ? `,and(session_id.is.null,created_by.eq.${opts.myUid})` : "";
+  return q.or(`session_id.eq.${opts.sessionId}${mine}`);
 }
 
 export async function apiUpdateScheduledStatus(id: string, status: "waiting" | "called" | "done" | "cancelled") {

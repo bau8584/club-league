@@ -607,6 +607,16 @@ export function RecordMatch({
   // 페이지가 그만큼 길지 않아 애초에 도달할 수 없었고(142px 모자랐다), 그래서
   // 착지점이 페이지 높이에 따라 들쭉날쭉했다. block:"nearest" 는 이미 보이면
   // 움직이지 않고, 안 보이면 최소한만 움직여 선수 이름과 키패드를 함께 남긴다.
+  // 이미 들어간 선수를 명단에서 눌렀을 때, 그 선수가 있는 자리를 잠깐 번쩍인다.
+  const [bumpSlot, setBumpSlot] = useState<string | null>(null);
+  const bumpTimer = useRef<number | null>(null);
+  const flashSlot = (key: string) => {
+    setBumpSlot(key);
+    if (bumpTimer.current) window.clearTimeout(bumpTimer.current);
+    bumpTimer.current = window.setTimeout(() => setBumpSlot(null), 1100);
+  };
+  useEffect(() => () => { if (bumpTimer.current) window.clearTimeout(bumpTimer.current); }, []);
+
   const [pendingScroll, setPendingScroll] = useState(false);
   const matchupRef = useRef<HTMLDivElement>(null);
   const readyToScore =
@@ -1256,6 +1266,29 @@ export function RecordMatch({
               name: slots[k].player ? playerLabel(slots[k].player!) : "?",
               onEdit: () => setActiveSlot(k),
             }));
+        // 명단에서 "이 선수 어디 있지?"를 답하는 데 쓰는 짧은 이름.
+        const shortSlot = (k: "A" | "A2" | "B" | "B2") => {
+          const team = k.startsWith("A") ? "팀 A" : "팀 B";
+          if (matchType !== "double") return team;
+          return `${team} · ${k.endsWith("2") ? "선수 2" : "선수 1"}`;
+        };
+        // 이미 대진에 들어간 선수 → 그 자리. 명단에서 중복 선택을 막는 데 쓴다.
+        const takenInfo = new Map<string, { slot: string; label: string; accent: Accent }>();
+        order.forEach((k) => {
+          const id = slots[k].value.studentId;
+          if (id) takenInfo.set(id, { slot: k, label: shortSlot(k), accent: slots[k].accent });
+        });
+        const stripTeams = (["A", "B"] as const).map((team) => ({
+          title: team === "A" ? "팀 A" : "팀 B",
+          accent: (team === "A" ? "amber" : "violet") as Accent,
+          slots: order
+            .filter((k) => k.startsWith(team))
+            .map((k) => ({
+              key: k,
+              label: matchType === "double" ? (k.endsWith("2") ? "선수 2" : "선수 1") : (team === "A" ? "선수 A" : "선수 B"),
+              name: slots[k].player ? playerLabel(slots[k].player!) : null,
+            })),
+        }));
         const slotTitle = (k: "A" | "A2" | "B" | "B2") => {
           const team = k.startsWith("A") ? "팀 A" : "팀 B";
           const who = matchType === "double"
@@ -1352,8 +1385,19 @@ export function RecordMatch({
 
           {act && activeSlot ? (
             <div className="flex min-h-0 flex-col gap-2">
+              {/* 넓은 화면에는 대진이 그대로 보이니 띠가 필요 없다. */}
+              <div className="lg:hidden">
+                <LineupStrip
+                  teams={stripTeams}
+                  activeSlot={activeSlot}
+                  bumpSlot={bumpSlot}
+                  onJump={(k) => setActiveSlot(k as "A" | "A2" | "B" | "B2")}
+                />
+              </div>
               <PlayerPicker
                 title={slotTitle(activeSlot)}
+                taken={takenInfo}
+                onTakenTap={flashSlot}
                 onBack={() => setActiveSlot(null)}
                 onClear={
                   act.value.studentId && !(activeSlot === "A" && !!lockedPlayerId)
@@ -2156,7 +2200,7 @@ function Slot({ accent, label, player, active, locked, onOpen, onClear, threshol
 }
 
 // 선수 선택 picker: 검색 → 레벨 칩 → 선수 목록 (한 번에 1개만 펼쳐짐)
-function PlayerPicker({ students, accent, group, onPick, thresholds, placementEnabled, placementGames, canAddMember, filter, onFilterChange, title, onBack, onClear }: {
+function PlayerPicker({ students, accent, group, onPick, thresholds, placementEnabled, placementGames, canAddMember, filter, onFilterChange, title, onBack, onClear, taken, onTakenTap }: {
   students: Student[]; accent: Accent; group: string | null;
   onPick: (group: string, studentId: string) => void; thresholds?: Record<string, number>;
   placementEnabled: boolean; placementGames: number; canAddMember?: boolean;
@@ -2168,6 +2212,10 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
   onBack?: () => void;
   /** 이 자리를 비운다. 이미 선수가 들어 있을 때만 준다. */
   onClear?: () => void;
+  /** 이미 대진에 들어간 선수 → 어느 자리에 있는지. 중복 선택을 막고 그 자리를 알려준다. */
+  taken?: Map<string, { slot: string; label: string; accent: Accent }>;
+  /** 이미 들어간 선수를 눌렀을 때. 대진 띠의 그 자리를 번쩍이게 하는 데 쓴다. */
+  onTakenTap?: (slot: string) => void;
 }) {
   const terms = useLeagueTerms();
   const isSchool = useIsSchoolLeague();
@@ -2175,6 +2223,9 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
   const [search, setSearch] = useState("");
   const [grp, setGrp] = useState<string>(group ?? ALL_GROUP);
   const [addOpen, setAddOpen] = useState(false);
+  // 이미 들어간 선수를 눌렀을 때 그 카드만 잠깐 흔든다. 토스트나 팝업을 띄우면
+  // 선수를 고르는 동안 떠 있는 목록 위에 층이 하나 더 쌓인다.
+  const [shakeId, setShakeId] = useState<string | null>(null);
   // 범위를 다 고르고 나면 칩을 접는다. 선수 목록이 세로로 눌리는 걸 막기 위해서다.
   // 지난번에 고른 범위가 남아 있으면(새로고침 등) 처음부터 접힌 채로 연다.
   const [filtersOpen, setFiltersOpen] = useState(
@@ -2243,7 +2294,9 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
       {/* 제목·범위·검색·되돌아가기를 한 줄에 묶는다. 각각 한 줄씩 차지하면
           정작 선수 목록이 볼 자리가 없다. */}
       <div className="mb-2 flex shrink-0 items-center gap-1.5">
-        {title && <span className={cn("shrink-0 text-[11px] font-black", a.text)}>{title}</span>}
+        {/* 좁은 화면에서는 감춘다 — 바로 위 대진 띠가 "지금 어느 자리인지"를
+            훨씬 크게 보여주고, 375px 도구줄에 자리도 없다. */}
+        {title && <span className={cn("hidden shrink-0 text-xs font-black lg:inline", a.text)}>{title}</span>}
         <button
           type="button"
           onClick={() => setFiltersOpen((v) => !v)}
@@ -2313,23 +2366,54 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
       )}
       {/* 명단이 길어도 이 칸 안에서만 스크롤한다(페이지가 따라 내려가지 않도록). */}
       <div className="mt-1 grid max-h-[55vh] min-h-0 flex-1 grid-cols-[repeat(auto-fill,minmax(max(5.5rem,calc((100%_-_2rem)/5)),1fr))] gap-2 overflow-y-auto pr-1 lg:max-h-[46vh] lg:grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] lg:gap-2.5">
-        {roster.map((s) => (
+        {roster.map((s) => {
+          // 이미 대진에 들어간 선수는 그 팀 색으로 잠근다. 같은 사람을 두 자리에
+          // 넣는 건 언제나 잘못된 입력인데, 지금까지는 네 명을 다 고르고 점수까지
+          // 넣은 뒤 등록할 때에야 걸렸다.
+          const here = taken?.get(s.id);
+          const ta = here ? ACCENT[here.accent] : null;
+          return (
           <button
             key={s.id}
             type="button"
-            onClick={() => onPick(grp, s.id)}
-            className="relative flex min-h-[4.75rem] w-full min-w-0 flex-col lg:min-h-[6.25rem] items-center justify-between overflow-hidden rounded-lg border border-border/60 bg-surface-deep px-1.5 pt-6 pb-2.5 text-center transition-all lg:px-2 lg:pt-8 lg:pb-3 hover:border-neon-blue/60 hover:bg-accent/40 cursor-pointer"
+            aria-disabled={!!here}
+            onClick={() => {
+              if (here) {
+                // 막되 이유를 말해 준다 — 카드를 흔들고, 위 띠의 그 자리를 번쩍인다.
+                setShakeId(s.id);
+                window.setTimeout(() => setShakeId((cur) => (cur === s.id ? null : cur)), 450);
+                onTakenTap?.(here.slot);
+                return;
+              }
+              onPick(grp, s.id);
+            }}
+            className={cn(
+              "relative flex min-h-[4.75rem] w-full min-w-0 flex-col lg:min-h-[6.25rem] items-center justify-between overflow-hidden rounded-lg border px-1.5 pt-6 pb-2.5 text-center transition-all lg:px-2 lg:pt-8 lg:pb-3 cursor-pointer",
+              here
+                ? cn("border-2", ta!.border, ta!.soft)
+                : "border-border/60 bg-surface-deep hover:border-neon-blue/60 hover:bg-accent/40",
+              shakeId === s.id && "animate-shake",
+            )}
           >
             {(isSchool ? schoolLabelCompact(s, labelAxes) : s.group) && (
               <span className="absolute top-1 left-1.5 max-w-[70%] truncate text-left font-mono text-[10px] text-soft lg:text-sm">{isSchool ? schoolLabelCompact(s, labelAxes) : s.group}</span>
             )}
             <GenderMark gender={s.gender} className="absolute top-1 right-1.5 size-3.5 text-[9px] shrink-0 lg:size-4 lg:text-[10px]" />
             <div className="flex w-full min-w-0 flex-grow items-center justify-center">
-              <span className="w-full truncate text-center text-sm font-bold text-strong lg:text-xl">{playerLabel(s)}</span>
+              <span className={cn("w-full truncate text-center text-sm font-bold lg:text-xl", here ? ta!.text : "text-strong")}>{playerLabel(s)}</span>
             </div>
-            <div className="mt-1.5 flex w-full shrink-0 justify-center"><TierBadge rp={s.rp} thresholds={thresholds} unranked={isUnranked(s, placementEnabled, placementGames)} /></div>
+            <div className="mt-1.5 flex w-full shrink-0 justify-center">
+              {here ? (
+                // 이미 들어간 선수에게 티어는 지금 필요한 정보가 아니다.
+                // 그 자리에 "어디에 있는지"를 대신 놓는다.
+                <span className={cn("max-w-full truncate rounded-md border px-1.5 py-0.5 text-[10px] font-black", ta!.band)}>{here.label}</span>
+              ) : (
+                <TierBadge rp={s.rp} thresholds={thresholds} unranked={isUnranked(s, placementEnabled, placementGames)} />
+              )}
+            </div>
           </button>
-        ))}
+          );
+        })}
         {roster.length === 0 && !canAddMember && (
           <span className="col-span-full block py-2 text-xs text-muted-foreground">선수가 없습니다</span>
         )}
@@ -2600,3 +2684,55 @@ function GeometricRankCrest({
 // 점수를 넣는 동안 좁은 화면에서 대진을 한 줄로 접어 두는 띠. 선수 카드를 그대로
 // 두면 점수판 두 개가 한 화면에 안 들어와, 한쪽 점수만 넣고 등록해 버리기 쉽다.
 // 이름을 누르면 그 자리를 다시 고를 수 있어 접어도 수정 경로는 막히지 않는다.
+
+// 선수를 고르는 동안 좁은 화면에 남겨 두는 대진 띠.
+//
+// 지금까지 좁은 화면에서는 명단이 열리면 대진이 통째로 숨겨졌다. 그래서 선수를
+// 눌러도 명단은 그대로고 — 스크롤 위치도 검색어도 유지되니 화면이 문자 그대로
+// 똑같아 보였다 — 바뀌는 건 왼쪽 위 11px 제목뿐이라, 내가 누른 건지 알 수 없었다.
+// 이 띠가 있으면 탭 한 번에 두 군데가 반응한다: 명단의 그 카드가 팀 색으로 잠기고,
+// 여기에 이름이 박히며, 강조가 다음 자리로 옮겨간다.
+function LineupStrip({ teams, activeSlot, bumpSlot, onJump }: {
+  teams: {
+    title: string;
+    accent: Accent;
+    slots: { key: string; label: string; name: string | null }[];
+  }[];
+  activeSlot: string | null;
+  /** 이미 들어간 선수를 명단에서 눌렀을 때 번쩍일 자리. */
+  bumpSlot: string | null;
+  onJump: (key: string) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      {teams.map((t) => {
+        const a = ACCENT[t.accent];
+        return (
+          <div key={t.title} className={cn("flex items-center gap-2 rounded-xl border px-2 py-1.5", a.soft)}>
+            <span className={cn("shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-black", a.band)}>{t.title}</span>
+            <div className="flex min-w-0 flex-1 items-center gap-1.5">
+              {t.slots.map((sl, i) => (
+                <span key={sl.key} className="flex min-w-0 flex-1 items-center gap-1.5">
+                  {i > 0 && <span className="shrink-0 text-xs text-muted-foreground/50">·</span>}
+                  <button
+                    type="button"
+                    onClick={() => onJump(sl.key)}
+                    className={cn(
+                      "min-w-0 flex-1 truncate rounded-lg border px-2 py-1 text-sm font-bold transition-all active:scale-95 cursor-pointer",
+                      sl.name ? cn(a.fill, a.text) : "border-dashed border-border/60 bg-card/40 text-muted-foreground",
+                      // 지금 고르는 자리를 링으로 세운다 — "다음은 여기"가 한눈에 보여야 한다.
+                      activeSlot === sl.key && cn("ring-2", a.ring),
+                      bumpSlot === sl.key && "animate-flash",
+                    )}
+                  >
+                    {sl.name ?? sl.label}
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}

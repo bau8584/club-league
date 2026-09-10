@@ -69,15 +69,25 @@ export type ScheduledMatch = {
   result_match_id?: string | null;   // 완료 시 연결된 실제 경기(matches) id
   notified_by?: string | null;       // 마지막으로 알림 보낸 선수 id
   notified_at?: string | null;       // 마지막 알림 시각(ISO)
+  session_id?: string | null;        // 어느 세션의 줄인가. null = 세션 밖(도전장·회원 예약·옛 행)
+  seq?: number | null;               // 줄의 고정 번호(#7). null = 번호 없는 줄
   created_at: string;
 };
 
-// 배정 세션 — "지금 여기 모인 참가자 명단 한 벌". 리그당 1행(league_id = PK).
+// 배정 세션 — "지금 여기 모인 참가자 명단 한 벌".
+//
+// 소유자는 리그 타입이 정한다. 학교는 교사 한 명당 하나(owner_id = 교사 계정), 동호회는
+// 리그당 하나(owner_id = null). 학교 리그 하나가 20개 반을 담아 서로 무관한 수업이 여럿
+// 도는 반면, 동호회 리그는 그 자체가 하나의 모임이기 때문이다.
+//
 // 이력은 남기지 않는다 — 커버리지와 판 수는 전부 matches 에서 유도된다.
 export type AssignmentSession = {
+  id: string;
   league_id: string;
+  owner_id: string | null;           // 학교만 채운다
   player_ids: string[];              // 오늘 참석자(출석 체크 결과)
   match_type: "single" | "double";   // 세션의 종목
+  next_seq?: number;                 // 다음에 내줄 대진 번호
   started_at: string;
   updated_at?: string;
 };

@@ -11,6 +11,8 @@ export interface AssignedMatchInput {
   matchType?: "single" | "double";
   /** 큐 맨 뒤에 붙이기 위한 기준 시각(ms). 기본값은 지금. */
   baseTimeMs?: number;
+  /** 어느 수업의 줄인가. 없으면 세션 밖의 줄이 된다(세션을 쓰지 않는 리그). */
+  sessionId?: string | null;
 }
 
 /** 배정 결과 → scheduled_matches 행. 네트워크와 분리해 두어 그대로 테스트한다. */
@@ -22,6 +24,7 @@ export function buildAssignedMatchRows(payload: AssignedMatchInput) {
       .filter((m) => m.teamA?.[0] && m.teamB?.[0])
       .map((m, i) => ({
         league_id: payload.classId,
+        session_id: payload.sessionId ?? null,
         match_type: payload.matchType ?? (m.teamA.length > 1 ? "double" : "single"),
         player_a_id: m.teamA[0],
         player_b_id: m.teamB[0],

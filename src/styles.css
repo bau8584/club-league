@@ -404,3 +404,27 @@
   scrollbar-width: none;
   &::-webkit-scrollbar { display: none; }
 }
+
+/* 이미 대진에 들어간 선수를 명단에서 눌렀을 때의 반응.
+   팝업을 띄우지 않고 "왜 안 되는지"를 그 자리에서 보여준다 —
+   누른 카드가 흔들리고, 위 대진 띠의 그 자리가 함께 번쩍인다. */
+@keyframes clg-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-4px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(2px); }
+}
+
+@utility animate-shake {
+  animation: clg-shake 0.4s ease-in-out;
+}
+
+@keyframes clg-flash {
+  0%, 100% { transform: scale(1); }
+  35% { transform: scale(1.12); }
+}
+
+@utility animate-flash {
+  animation: clg-flash 0.5s ease-in-out 2;
+}

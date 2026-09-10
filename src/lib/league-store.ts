@@ -152,9 +152,12 @@ function useLeagueStoreInternal() {
   const [deletedPlayers, setDeletedPlayers] = useState<Student[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [scheduledMatches, setScheduledMatches] = useState<ScheduledMatch[]>([]);
-  // 배정 세션(참가자 명단). 리그당 1행이라 단일 객체다.
+  // 배정 세션(참가자 명단). 내 세션 하나만 들고 있으므로 단일 객체다 —
+  // 학교는 교사별로 갈리고, 동호회는 리그당 하나다.
   const [assignmentSession, setAssignmentSession] = useState<AssignmentSession | null>(null);
   const assignmentSessionRef = useRef<AssignmentSession | null>(null);
+  // 로그인한 내 계정 uid. 학교 리그에서 "내 수업"을 가리키는 값이다.
+  const myUidRef = useRef<string | null>(null);
   const loadSessionRef = useRef<((classId: string) => void) | null>(null);
   useEffect(() => { assignmentSessionRef.current = assignmentSession; }, [assignmentSession]);
   const loadScheduledRef = useRef<((classId: string) => void) | null>(null);
@@ -268,6 +271,7 @@ function useLeagueStoreInternal() {
         if (user && classData) {
           authResolved = true;
           myUid = user.id;
+          myUidRef.current = user.id;
           const uid = user.id;
           isPrimaryOwner = classData.owner_uid === uid;
           isOwner = isPrimaryOwner
@@ -451,17 +455,23 @@ function useLeagueStoreInternal() {
       const sortedMatches = [...matchesList].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       setMatches(sortedMatches);
 
+      // 배정 세션(참가자 명단) — 없으면 null(아직 [새로 시작] 전).
+      // 큐보다 먼저 읽는다. 큐를 어느 세션으로 걸러야 하는지가 여기서 정해지기 때문이다.
+      // league_type 은 위(setLeagueType)에서 이미 정해졌지만 ref 반영은 다음 렌더라
+      // 여기서는 classData 를 직접 본다.
+      const ownerId = classData.league_type === "school" ? myUid : null;
+      let sessionId: string | null = null;
+      try {
+        const { data: sess } = await apiFetchAssignmentSession(classId, ownerId);
+        setAssignmentSession((sess as AssignmentSession) ?? null);
+        sessionId = (sess as AssignmentSession | null)?.id ?? null;
+      } catch { /* 테이블 마이그레이션 전이면 조용히 넘어간다 */ }
+
       // 대진 호출(예정 경기) — 별도 테이블, RP/통계와 무관
       try {
-        const { data: sched } = await apiFetchScheduledMatches(classId);
+        const { data: sched } = await apiFetchScheduledMatches(classId, sessionId);
         setScheduledMatches((sched || []) as ScheduledMatch[]);
       } catch { /* 비치명적 */ }
-
-      // 배정 세션(참가자 명단) — 없으면 null(아직 [새로 시작] 전)
-      try {
-        const { data: sess } = await apiFetchAssignmentSession(classId);
-        setAssignmentSession((sess as AssignmentSession) ?? null);
-      } catch { /* 테이블 마이그레이션 전이면 조용히 넘어간다 */ }
 
       setCurrentClassId(classId);
 
@@ -587,6 +597,15 @@ function useLeagueStoreInternal() {
   const [leagueType, setLeagueType] = useState<LeagueType>("club");
   const leagueTypeRef = useRef<LeagueType>("club");
   useEffect(() => { leagueTypeRef.current = leagueType; }, [leagueType]);
+  /**
+   * 세션의 소유자. 학교만 교사별로 갈린다.
+   *
+   * 학교 리그 하나가 20개 반을 담아 서로 무관한 수업이 여럿 돌지만, 동호회 리그는 그 자체가
+   * 하나의 모임이다. 동호회에 교사별 분리를 적용하면 운영진이 둘일 때 세션이 갈려 같은
+   * 사람들이 양쪽 큐에 따로 배정된다 — 학교에서 사고인 것이 동호회에서는 정상 상황이다.
+   */
+  const sessionOwnerId = useCallback(
+    () => (leagueTypeRef.current === "school" ? myUidRef.current : null), []);
   // 웹푸시 딥링크용 리그 대시보드 경로 — school 리그는 /school/id, 그 외는 /class/id.
   const classPath = useCallback((cid: string, suffix: string = "") =>
     `${leagueTypeRef.current === "school" ? "/school" : "/class"}/${cid}${suffix}`, []);
@@ -2908,9 +2927,10 @@ function useLeagueStoreInternal() {
   }, [currentClassId]);
 
   // ── 대진 호출(예정 경기) ──────────────────────────────
+  // 큐는 내 세션의 것만 읽는다. 실시간 구독은 league_id 로 그대로 받고, 걸러내는 일은 여기서 한다.
   const loadScheduled = useCallback(async (classId: string) => {
     try {
-      const { data } = await apiFetchScheduledMatches(classId);
+      const { data } = await apiFetchScheduledMatches(classId, assignmentSessionRef.current?.id ?? null);
       setScheduledMatches((data || []) as ScheduledMatch[]);
     } catch { /* 비치명적 */ }
   }, []);
@@ -2926,7 +2946,9 @@ function useLeagueStoreInternal() {
     if (!isClassManagerRef.current) { toast.error("권한이 없습니다."); return false; }
     const cid = currentClassIdRef.current;
     if (!cid) return false;
-    const { error } = await apiCreateScheduledMatch({ classId: cid, ...payload });
+    const { error } = await apiCreateScheduledMatch({
+      classId: cid, ...payload, sessionId: assignmentSessionRef.current?.id ?? null,
+    });
     if (error) { toast.error("대진 추가 실패: " + error.message); return false; }
     await loadScheduled(cid);
     toast.success("대진을 추가했습니다.");
@@ -2969,17 +2991,22 @@ function useLeagueStoreInternal() {
   // 출석 체크가 입력의 전부다. 명단은 서버에 두고 실시간으로 공유한다.
   const loadAssignmentSession = useCallback(async (classId: string) => {
     try {
-      const { data } = await apiFetchAssignmentSession(classId);
+      const { data } = await apiFetchAssignmentSession(classId, sessionOwnerId());
       setAssignmentSession((data as AssignmentSession) ?? null);
     } catch { /* 비치명적 */ }
-  }, []);
+  }, [sessionOwnerId]);
   useEffect(() => { loadSessionRef.current = loadAssignmentSession; }, [loadAssignmentSession]);
 
   /**
-   * [새로 시작] — 세션 경계. 기존 큐를 전부 지우고 새 명단을 확정한다.
+   * [새로 시작] — 세션 경계. 내 세션의 큐를 지우고 새 명단을 확정한다.
    *
    * 소화 못 한 큐를 정리하는 별도 로직이 필요 없다. 4교시 5반이 들어오면 3교시의
    * 미소화 경기가 그때 사라진다. 날짜 기준은 안 된다 — 같은 날 3교시와 4교시는 날짜가 같다.
+   *
+   * 지우는 범위는 내 세션이다. 리그 전체를 지우면 옆 반에서 진행 중이던 대기열이 말없이
+   * 사라진다 — 지운 쪽도 지워진 쪽도 알아채지 못한다.
+   *
+   * 세션을 먼저 쓰고 큐를 지운다. 순서가 반대면, 지운 직후 실패했을 때 큐만 사라진다.
    */
   const startAssignmentSession = useCallback(async (payload: {
     playerIds: string[];
@@ -2988,20 +3015,28 @@ function useLeagueStoreInternal() {
     if (!isClassManagerRef.current) { toast.error("권한이 없습니다."); return false; }
     const cid = currentClassIdRef.current;
     if (!cid) return false;
-    const { error: clearError } = await apiClearQueue(cid);
-    if (clearError) { toast.error("대기열 정리 실패: " + clearError.message); return false; }
     const { data, error } = await apiUpsertAssignmentSession({
       classId: cid,
+      ownerId: sessionOwnerId(),
       playerIds: payload.playerIds,
       matchType: payload.matchType ?? "double",
       startedAt: new Date().toISOString(),
+      // 같은 행을 계속 쓰므로 번호는 저절로 1번으로 돌아가지 않는다. 여기서 되돌린다.
+      resetSeq: true,
     });
     if (error) { toast.error("세션 시작 실패: " + error.message); return false; }
-    setAssignmentSession((data as AssignmentSession) ?? null);
+    const started = (data as AssignmentSession) ?? null;
+    setAssignmentSession(started);
+    assignmentSessionRef.current = started;   // 바로 아래 loadScheduled 가 이 값으로 큐를 거른다
+    const { error: clearError } = await apiClearQueue(cid, {
+      sessionId: started?.id ?? null,
+      myUid: myUidRef.current,
+    });
+    if (clearError) { toast.error("대기열 정리 실패: " + clearError.message); return false; }
     await loadScheduled(cid);
     toast.success(`참석 ${payload.playerIds.length}명으로 시작했어요.`);
     return true;
-  }, [loadScheduled]);
+  }, [loadScheduled, sessionOwnerId]);
 
   /**
    * 명단·종목만 고친다(세션 경계 아님). 지각·조퇴가 여기로 들어온다 —
@@ -3018,13 +3053,14 @@ function useLeagueStoreInternal() {
     const base = assignmentSessionRef.current;
     const { data, error } = await apiUpsertAssignmentSession({
       classId: cid,
+      ownerId: sessionOwnerId(),
       playerIds: payload.playerIds ?? base?.player_ids ?? [],
       matchType: payload.matchType ?? base?.match_type ?? "double",
     });
     if (error) { toast.error("명단 저장 실패: " + error.message); return false; }
     setAssignmentSession((data as AssignmentSession) ?? null);
     return true;
-  }, []);
+  }, [sessionOwnerId]);
 
   // ── 배정: 큐 채우기 ───────────────────────────────────
   // 계산은 순수 함수(domain/assignment-calculator)가 한다. 여기서는 재료를 모아 주고
@@ -3162,6 +3198,7 @@ function useLeagueStoreInternal() {
       matches: out.matches.map((m) => ({ teamA: m.teamA, teamB: m.teamB })),
       matchType: teamSize === 1 ? "single" : "double",
       baseTimeMs: Math.max(Date.now(), lastAt + 1),
+      sessionId: assignmentSessionRef.current?.id ?? null,
     });
     if (error) { toast.error("배정 실패: " + error.message); return 0; }
 
