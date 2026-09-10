@@ -27,18 +27,24 @@ export type HighlightMatch = {
   scoreWin: number;
   scoreLose: number;
   matchType?: "single" | "double" | null;
+  /**
+   * "같은 날"을 묶는 키. 이 파일은 시간대를 모르므로 호출부가 자기 기준(로컬 자정)으로 만든다.
+   * 없으면 ISO 문자열의 앞 10자를 쓴다 — 지난 수업이 언제였는지 셀 때만 필요하다.
+   */
+  dayKey?: string;
+  /** 이 경기로 오간 RP. 티어 승급을 경기 전 RP로 역산하는 데 쓴다. */
+  rpDeltaByPlayer?: Record<string, number>;
 };
 
 /**
  * 이름표를 붙이는 데 필요한 최소한의 정보. 전부 선택 항목이다 —
  * 삭제된 학생이 낀 경기(조회 실패)와 반 정보가 없는 명단(전원 null) 양쪽에서 돌아야 한다.
  *
- * `strength`는 티어를 숫자로 편 값으로, **클수록 강하다**. 이 파일은 티어 이름도,
- * 임계 RP도 모른다 — 호출부가 자기 티어 체계로 환산해서 넘긴다.
+ * `rp`는 **오늘 경기까지 반영된 현재 값**이다. 경기 전 RP는 그 날 rpDelta 합으로 역산한다.
  */
 export type HighlightPlayer = {
   id: string;
-  strength?: number | null;
+  rp?: number | null;
   grade?: number | null;
   classNum?: number | null;
   studentNo?: number | null;
@@ -55,9 +61,23 @@ export type PlayerDayStat = {
   blowoutWins: number;
   closeWins: number;
   closeLosses: number;
-  /** 자기보다 강한 상대를 꺾은 판. 양쪽 strength를 다 알 때만 센다. */
+  /** 자기보다 강한 상대를 꺾은 판. 양쪽 티어를 다 알 때만 센다. */
   upsetWins: number;
   maxStreak: number;
+  /** 오늘 오간 RP 합. rpDelta가 없으면 0이다. */
+  rpToday: number;
+
+  // --- 지난 기록과 대조해야 나오는 것들. `priorMatches`가 없으면 전부 false / 0이다. ---
+  /** 오늘 처음 만난 상대 수. 늘 같은 애들끼리 노는 걸 깨는 것이 체육 수업의 실제 목표다. */
+  newOpponents: number;
+  /** 오늘 처음 뛴 학생. */
+  isDebut: boolean;
+  /** 한 번도 못 이기던 학생의 첫 승. 그날의 사건이다. */
+  isFirstWin: boolean;
+  /** 오늘 경기로 티어가 올라간 학생. */
+  isPromoted: boolean;
+  /** 지난 수업엔 RP가 줄었는데 오늘은 올린 학생. 승률이 아니라 누적 지표로 잰다. */
+  isRebound: boolean;
 };
 
 export type DayStats = {
@@ -80,6 +100,8 @@ export type DayStats = {
   perPlayer: Map<string, PlayerDayStat>;
   /** 복식에서 함께 이긴 조합. 복식이 없는 날은 비어 있다. */
   duos: { playerIds: string[]; wins: number }[];
+  /** 지난 기록을 받았는가. 아니면 `친구 넓히기`·`첫 승`·`리그 데뷔`를 아예 내지 않는다. */
+  hasHistory: boolean;
 };
 
 /** 한 명에게 붙는 카드. */
@@ -110,6 +132,18 @@ export type HighlightAwards = {
 export type HighlightInput = {
   matches: HighlightMatch[];
   players?: HighlightPlayer[];
+  /**
+   * 그 날 **이전**의 모든 경기. 있으면 "오늘 처음"인 것들이 계산된다.
+   *
+   * 반 필터로 좁히지 않은 전체를 넣는다 — 옆 반 학생과 이미 만난 적이 있으면
+   * 오늘 처음 만난 상대가 아니다.
+   */
+  priorMatches?: HighlightMatch[];
+  /**
+   * RP를 티어 번호로 바꾸는 함수. **클수록 강하다.**
+   * 이 파일은 티어 이름도 임계 RP도 모른다 — 호출부가 자기 체계로 환산해서 넘긴다.
+   */
+  tierOf?: (rp: number) => number;
 };
 
 const emptyStat = (id: string): PlayerDayStat => ({
@@ -123,6 +157,12 @@ const emptyStat = (id: string): PlayerDayStat => ({
   closeLosses: 0,
   upsetWins: 0,
   maxStreak: 0,
+  rpToday: 0,
+  newOpponents: 0,
+  isDebut: false,
+  isFirstWin: false,
+  isPromoted: false,
+  isRebound: false,
 });
 
 /** 선형 보간 분위수. 오름차순 정렬된 배열을 받는다. */
@@ -158,9 +198,25 @@ const chronological = (a: HighlightMatch, b: HighlightMatch) => {
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 };
 
-export function computeDayStats({ matches, players = [] }: HighlightInput): DayStats {
+/** 같은 날을 묶는 키. 호출부가 안 주면 ISO 앞 10자로 때운다. */
+const dayKeyOf = (m: HighlightMatch) => m.dayKey ?? m.date.slice(0, 10);
+
+/** 한 경기의 참가자 전원. */
+const everyone = (m: HighlightMatch) => [...m.winnerIds, ...m.loserIds];
+
+export function computeDayStats({
+  matches,
+  players = [],
+  priorMatches,
+  tierOf,
+}: HighlightInput): DayStats {
   const byId = new Map(players.map((p) => [p.id, p]));
   const asc = [...matches].sort(chronological);
+  /** 지금 티어. rp도 tierOf도 있어야 나온다 — 하나라도 없으면 티어를 쓰는 상은 나오지 않는다. */
+  const strengthOf = (id: string) => {
+    const rp = byId.get(id)?.rp;
+    return rp != null && tierOf ? tierOf(rp) : null;
+  };
 
   const margins = asc.map((m) => Math.abs(m.scoreWin - m.scoreLose));
   const { blowoutThreshold, closeThreshold } = marginThresholds(margins);
@@ -174,6 +230,7 @@ export function computeDayStats({ matches, players = [] }: HighlightInput): DayS
 
   const streakCur = new Map<string, number>();
   const duoWins = new Map<string, { playerIds: string[]; wins: number }>();
+  const oppToday = new Map<string, Set<string>>();
   let singles = 0;
   let doubles = 0;
 
@@ -187,9 +244,7 @@ export function computeDayStats({ matches, players = [] }: HighlightInput): DayS
     const close = closeThreshold != null && margin <= closeThreshold;
     const shutout = m.scoreLose === 0;
     // 진 팀에서 가장 강한 사람 기준. 복식에서 약한 짝을 골라 이변이라 부르지 않는다.
-    const loserStrengths = m.loserIds
-      .map((id) => byId.get(id)?.strength)
-      .filter((v): v is number => v != null);
+    const loserStrengths = m.loserIds.map(strengthOf).filter((v): v is number => v != null);
     const topLoser =
       loserStrengths.length > 0 && loserStrengths.length === m.loserIds.length
         ? Math.max(...loserStrengths)
@@ -202,7 +257,7 @@ export function computeDayStats({ matches, players = [] }: HighlightInput): DayS
       if (shutout) s.shutoutWins++;
       if (blowout) s.blowoutWins++;
       if (close) s.closeWins++;
-      const mine = byId.get(id)?.strength;
+      const mine = strengthOf(id);
       if (mine != null && topLoser != null && topLoser > mine) s.upsetWins++;
       const c = (streakCur.get(id) ?? 0) + 1;
       streakCur.set(id, c);
@@ -215,6 +270,14 @@ export function computeDayStats({ matches, players = [] }: HighlightInput): DayS
       if (close) s.closeLosses++;
       streakCur.set(id, 0);
     }
+    for (const id of everyone(m)) {
+      stat(id).rpToday += m.rpDeltaByPlayer?.[id] ?? 0;
+      // 상대는 "반대 팀"이다. 복식 짝꿍은 만난 사람이 아니라 같이 뛴 사람이다.
+      const foes = m.winnerIds.includes(id) ? m.loserIds : m.winnerIds;
+      let set = oppToday.get(id);
+      if (!set) oppToday.set(id, (set = new Set()));
+      for (const f of foes) set.add(f);
+    }
 
     if (isDouble && m.winnerIds.length === 2) {
       const ids = [...m.winnerIds].sort();
@@ -222,6 +285,65 @@ export function computeDayStats({ matches, players = [] }: HighlightInput): DayS
       const cur = duoWins.get(key) ?? { playerIds: ids, wins: 0 };
       cur.wins++;
       duoWins.set(key, cur);
+    }
+  }
+
+  /**
+   * 지난 기록과의 대조. "오늘 처음"인 것들은 전부 여기서 나온다.
+   *
+   * 개선은 반이 아니라 개인으로, 승률이 아니라 RP로 잰다. 반은 인원 구성이 매일 달라
+   * 요동치고, 하루 두 경기짜리 승률은 0·50·100% 세 값뿐이라 한 판에 뒤집힌다.
+   */
+  const hasHistory = priorMatches != null;
+  if (priorMatches) {
+    type Prior = { appearances: number; wins: number; opponents: Set<string> };
+    const prior = new Map<string, Prior>();
+    /** id → 날짜키 → 그 날 오간 RP 합. "지난 수업"은 그 학생이 마지막으로 뛴 날이다. */
+    const rpByDay = new Map<string, Map<string, { rp: number; t: number }>>();
+
+    for (const m of priorMatches) {
+      const key = dayKeyOf(m);
+      const t = new Date(m.date).getTime();
+      for (const id of everyone(m)) {
+        let q = prior.get(id);
+        if (!q) prior.set(id, (q = { appearances: 0, wins: 0, opponents: new Set() }));
+        q.appearances++;
+        const won = m.winnerIds.includes(id);
+        if (won) q.wins++;
+        for (const f of won ? m.loserIds : m.winnerIds) q.opponents.add(f);
+
+        let days = rpByDay.get(id);
+        if (!days) rpByDay.set(id, (days = new Map()));
+        const cell = days.get(key) ?? { rp: 0, t };
+        cell.rp += m.rpDeltaByPlayer?.[id] ?? 0;
+        cell.t = Math.max(cell.t, t);
+        days.set(key, cell);
+      }
+    }
+
+    for (const s of perPlayer.values()) {
+      const q = prior.get(s.id);
+      s.isDebut = !q;
+      s.isFirstWin = !!q && q.wins === 0 && s.wins > 0;
+
+      let fresh = 0;
+      for (const f of oppToday.get(s.id) ?? []) if (!q?.opponents.has(f)) fresh++;
+      s.newOpponents = fresh;
+
+      // 지난 수업엔 RP가 줄었는데 오늘은 올린 학생. 기록이 없으면(전부 0) 해당되지 않는다.
+      let last: { rp: number; t: number } | null = null;
+      for (const cell of rpByDay.get(s.id)?.values() ?? [])
+        if (!last || cell.t > last.t) last = cell;
+      s.isRebound = last != null && last.rp < 0 && s.rpToday > 0;
+    }
+  }
+
+  // 티어 승급은 지난 기록이 없어도 난다 — 오늘 오간 RP만 되돌리면 경기 전 티어가 나온다.
+  if (tierOf) {
+    for (const s of perPlayer.values()) {
+      const rp = byId.get(s.id)?.rp;
+      if (rp == null || s.rpToday === 0) continue;
+      s.isPromoted = tierOf(rp) > tierOf(rp - s.rpToday);
     }
   }
 
@@ -260,6 +382,7 @@ export function computeDayStats({ matches, players = [] }: HighlightInput): DayS
     duos: Array.from(duoWins.values()).sort(
       (a, b) => b.wins - a.wins || (a.playerIds.join() < b.playerIds.join() ? -1 : 1),
     ),
+    hasHistory,
   };
 }
 
@@ -309,6 +432,17 @@ type AwardSpec = {
 };
 
 const AWARDS: AwardSpec[] = [
+  {
+    key: "친구 넓히기",
+    emoji: "👋",
+    // 학교용으로 가장 값진 지표다. 승패와 무관하게 상을 받을 수 있고, 대진 배정의
+    // "다양성 우선"과 목표가 같다. 그래서 사다리 맨 위에 둔다 — 이 학생이 다른 상에
+    // 묶여 사라지면 그 날 하이라이트에서 유일하게 승패를 안 보는 자리가 없어진다.
+    value: (s) => s.newOpponents,
+    min: 2,
+    enabled: (d) => d.hasHistory,
+    detail: (v) => `오늘 처음 만난 상대가 ${v}명. 늘 하던 애들끼리를 깼어요.`,
+  },
   {
     key: "대이변러",
     emoji: "🎯",
@@ -424,6 +558,41 @@ export function computeAwards(day: DayStats, players: HighlightPlayer[] = []): H
         detail: "오늘 한 판도 지지 않았어요.",
       });
     }
+  }
+
+  /**
+   * 사실 목록 — 해당되면 전부 적는다.
+   *
+   * 카드 사다리에 끼우지 않는 이유는, 이것들이 "가장 잘한 한 명"이 아니라 **그 학생에게
+   * 실제로 일어난 일**이기 때문이다. 첫 승을 한 학생이 그 날 다른 카드를 받았다고 해서
+   * 첫 승이 아니게 되지는 않는다. 그래서 라벨을 소비하지도, 라벨 때문에 빠지지도 않는다.
+   *
+   * 나빠진 학생은 내지 않는다. 51명을 다 계산해 "나아짐 / 나빠짐"을 붙이면
+   * 하이라이트가 아니라 성적표가 된다.
+   */
+  const facts: [key: string, emoji: string, pick: (s: PlayerDayStat) => boolean, detail: string][] =
+    [
+      ["리그 데뷔", "🐣", (s) => s.isDebut, "오늘 처음 코트에 섰어요."],
+      ["첫 승", "🎉", (s) => s.isFirstWin, "한 번도 못 이기다가 오늘 첫 승을 거뒀어요."],
+      ["티어 승급", "⬆️", (s) => s.isPromoted, "오늘 경기로 티어가 올라갔어요."],
+      // 승급한 학생은 여기 다시 적지 않는다 — 승급이 더 큰 사실이다.
+      [
+        "나아진 학생",
+        "📈",
+        (s) => s.isRebound && !s.isPromoted,
+        "지난 수업엔 RP가 줄었는데 오늘은 올렸어요.",
+      ],
+    ];
+  for (const [key, emoji, pick, detail] of facts) {
+    const who = stats.filter(pick);
+    if (who.length === 0) continue;
+    lists.push({
+      key,
+      emoji,
+      playerIds: [...who].sort((a, b) => tiebreak(a, b, byId)).map((s) => s.id),
+      value: who.length,
+      detail,
+    });
   }
 
   const duo = day.hasDoubles ? (day.duos.find((d) => d.wins >= 2) ?? null) : null;

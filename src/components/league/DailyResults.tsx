@@ -167,32 +167,50 @@ export function DailyResults() {
    * 상대값 기준·1인 1라벨·타이브레이커가 화면 안에 있으면 검증할 방법이 없다(→ docs/PLAN-testing.md).
    */
   const highlight = useMemo(() => {
-    // 티어를 숫자로 편다. TIER_ORDER는 Diamond가 0이므로 뒤집어야 "클수록 강함"이 된다.
-    const strengthOf = (s: Student) =>
-      TIER_ORDER.length - 1 - TIER_ORDER.indexOf(getTier(s.rp, tierThresholds));
-
-    const hMatches: HighlightMatch[] = shownMatches.map((m) => ({
+    const toHighlight = (m: Match): HighlightMatch => ({
       id: m.id,
       date: m.date,
+      // "같은 날"은 로컬 자정 기준이다. 계산기는 시간대를 모르므로 여기서 키를 만든다.
+      dayKey: String(dayStart(new Date(m.date))),
       winnerIds: [m.playerAId, m.playerA2Id].filter((v): v is string => !!v),
       loserIds: [m.playerBId, m.playerB2Id].filter((v): v is string => !!v),
       scoreWin: m.scoreA,
       scoreLose: m.scoreB,
       matchType: m.matchType ?? null,
-    }));
+      rpDeltaByPlayer: {
+        ...(m.playerAId && m.rpDeltaA != null ? { [m.playerAId]: m.rpDeltaA } : {}),
+        ...(m.playerBId && m.rpDeltaB != null ? { [m.playerBId]: m.rpDeltaB } : {}),
+        ...(m.playerA2Id && m.rpDeltaA2 != null ? { [m.playerA2Id]: m.rpDeltaA2 } : {}),
+        ...(m.playerB2Id && m.rpDeltaB2 != null ? { [m.playerB2Id]: m.rpDeltaB2 } : {}),
+      },
+    });
 
     // 삭제된 학생은 여기 없다. 계산기는 id만으로 끝까지 돌고, 이름만 "알 수 없음"이 된다.
     const hPlayers: HighlightPlayer[] = dayPlayers.map((s) => ({
       id: s.id,
-      strength: strengthOf(s),
+      rp: s.rp,
       grade: s.grade ?? null,
       classNum: s.classNum ?? null,
       studentNo: s.studentNo ?? null,
       name: s.name,
     }));
 
-    return computeHighlights({ matches: hMatches, players: hPlayers });
-  }, [shownMatches, dayPlayers, tierThresholds]);
+    /**
+     * 지난 기록은 **반 필터로 좁히지 않는다.** 옆 반 학생과 이미 만난 적이 있으면
+     * 오늘 처음 만난 상대가 아니다. 좁히면 "처음"이 필터에 따라 달라진다.
+     */
+    const prior = (matches ?? [])
+      .filter((m) => dayStart(new Date(m.date)) < dayStart(date))
+      .map(toHighlight);
+
+    return computeHighlights({
+      matches: shownMatches.map(toHighlight),
+      players: hPlayers,
+      priorMatches: prior,
+      // TIER_ORDER는 Diamond가 0이므로 뒤집어야 "클수록 강함"이 된다.
+      tierOf: (rp) => TIER_ORDER.length - 1 - TIER_ORDER.indexOf(getTier(rp, tierThresholds)),
+    });
+  }, [shownMatches, dayPlayers, tierThresholds, matches, date]);
 
   const nameOf = (id: string) => displayName(byId.get(id) ?? { name: "알 수 없음" });
   const day = highlight.day;

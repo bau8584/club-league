@@ -126,10 +126,10 @@ describe("computeAwards — 동점과 배정", () => {
       [["g"], ["c"], 21, 18],
     ]);
     const players: HighlightPlayer[] = [
-      { id: "u", strength: 1 },
-      { id: "h", strength: 3 },
+      { id: "u", rp: 1 },
+      { id: "h", rp: 3 },
     ];
-    const { awards } = computeHighlights({ matches, players });
+    const { awards } = computeHighlights({ matches, players, tierOf: (rp) => rp });
 
     expect(cardFor(awards.cards, "대이변러")?.playerId).toBe("u");
     expect(cardFor(awards.cards, "최다 출전")?.playerId).not.toBe("u");
@@ -255,6 +255,160 @@ describe("computeAwards — 종목", () => {
     expect(stats.doubles).toBe(1);
     expect(stats.perPlayer.get("s")?.wins).toBe(3);
     expect(stats.perPlayer.get("s")?.maxStreak).toBe(3);
+  });
+});
+
+describe("computeAwards — 학교용 지표", () => {
+  const prior = day([
+    [["a"], ["b"], 21, 10],
+    [["a"], ["b"], 21, 12],
+  ]);
+
+  it("지난 기록이 없으면 친구 넓히기·첫 승·리그 데뷔를 아예 내지 않는다", () => {
+    // priorMatches를 안 주면 오늘 만난 전원이 "처음 만난 상대"가 되어 버린다. 침묵이 낫다.
+    const { day: stats, awards } = computeHighlights({
+      matches: day([
+        [["a"], ["c"], 21, 10],
+        [["a"], ["d"], 21, 12],
+      ]),
+    });
+
+    expect(stats.hasHistory).toBe(false);
+    expect(cardFor(awards.cards, "친구 넓히기")).toBeNull();
+    expect(listFor(awards.lists, "첫 승")).toBeNull();
+    expect(listFor(awards.lists, "리그 데뷔")).toBeNull();
+  });
+
+  it("오늘 처음 만난 상대가 가장 많은 학생이 친구 넓히기를 받는다", () => {
+    // a는 b와만 놀던 학생. 오늘 c·d를 처음 만났다.
+    const { awards } = computeHighlights({
+      matches: day([
+        [["a"], ["c"], 21, 10],
+        [["a"], ["d"], 21, 12],
+        [["b"], ["c"], 21, 15],
+      ]),
+      priorMatches: prior,
+    });
+
+    expect(cardFor(awards.cards, "친구 넓히기")?.playerId).toBe("a");
+  });
+
+  it("친구 넓히기가 사다리 맨 위라 다른 상에 묶여 사라지지 않는다", () => {
+    const { awards } = computeHighlights({
+      matches: day([
+        [["a"], ["c"], 2, 0],
+        [["a"], ["d"], 2, 1],
+        [["b"], ["c"], 2, 1],
+      ]),
+      priorMatches: prior,
+    });
+
+    // a는 완봉승·최다 출전 후보이기도 하다. 승패와 무관한 자리를 먼저 가져간다.
+    expect(cardFor(awards.cards, "친구 넓히기")?.playerId).toBe("a");
+    expect(awards.cards.filter((c) => c.playerId === "a")).toHaveLength(1);
+  });
+
+  it("복식 짝꿍은 만난 상대로 세지 않는다", () => {
+    const stats = computeDayStats({
+      matches: day([[["a", "x"], ["c", "d"], 2, 1]]),
+      priorMatches: prior,
+    });
+
+    // a가 오늘 만난 사람은 c·d 둘이다. 같은 편 x는 만난 게 아니라 같이 뛴 것이다.
+    expect(stats.perPlayer.get("a")?.newOpponents).toBe(2);
+  });
+
+  it("한 번도 못 이기던 학생의 첫 승을 목록으로 낸다", () => {
+    // b는 지난 기록이 2패뿐이다.
+    const { awards } = computeHighlights({
+      matches: day([
+        [["b"], ["a"], 21, 19],
+        [["a"], ["b"], 21, 10],
+      ]),
+      priorMatches: prior,
+    });
+
+    expect(listFor(awards.lists, "첫 승")?.playerIds).toEqual(["b"]);
+  });
+
+  it("오늘 처음 뛴 학생은 첫 승이 아니라 리그 데뷔다", () => {
+    const { awards } = computeHighlights({
+      matches: day([
+        [["new1"], ["a"], 21, 10],
+        [["a"], ["new1"], 21, 12],
+      ]),
+      priorMatches: prior,
+    });
+
+    expect(listFor(awards.lists, "리그 데뷔")?.playerIds).toEqual(["new1"]);
+    expect(listFor(awards.lists, "첫 승")).toBeNull();
+  });
+
+  it("티어 승급은 오늘 오간 RP를 되돌려 경기 전 티어와 견준다", () => {
+    const matches: HighlightMatch[] = day([[["a"], ["b"], 21, 10]]).map((m) => ({
+      ...m,
+      rpDeltaByPlayer: { a: 20, b: -20 },
+    }));
+    const { awards } = computeHighlights({
+      matches,
+      players: [
+        { id: "a", rp: 1005 }, // 경기 전 985 → 승급
+        { id: "b", rp: 980 }, //  경기 전 1000 → 강등(내보내지 않는다)
+      ],
+      priorMatches: prior,
+      tierOf: (rp) => (rp >= 1000 ? 1 : 0),
+    });
+
+    expect(listFor(awards.lists, "티어 승급")?.playerIds).toEqual(["a"]);
+  });
+
+  it("지난 수업엔 RP가 줄었는데 오늘 올린 학생만 나아진 학생으로 낸다", () => {
+    const priorRp: HighlightMatch[] = [
+      // 지난 수업(09-03): a는 -20, b는 +20
+      {
+        id: "h1",
+        date: "2026-09-03T09:00:00.000Z",
+        dayKey: "2026-09-03",
+        winnerIds: ["b"],
+        loserIds: ["a"],
+        scoreWin: 21,
+        scoreLose: 10,
+        rpDeltaByPlayer: { a: -20, b: 20 },
+      },
+    ];
+    const matches: HighlightMatch[] = day([
+      [["a"], ["b"], 21, 19],
+      [["a"], ["b"], 21, 15],
+    ]).map((m) => ({ ...m, dayKey: "2026-09-10", rpDeltaByPlayer: { a: 10, b: -10 } }));
+
+    const { awards } = computeHighlights({ matches, priorMatches: priorRp });
+
+    expect(listFor(awards.lists, "나아진 학생")?.playerIds).toEqual(["a"]);
+  });
+
+  it("나빠진 학생은 내지 않는다", () => {
+    const priorRp: HighlightMatch[] = [
+      {
+        id: "h1",
+        date: "2026-09-03T09:00:00.000Z",
+        dayKey: "2026-09-03",
+        winnerIds: ["a"],
+        loserIds: ["b"],
+        scoreWin: 21,
+        scoreLose: 10,
+        rpDeltaByPlayer: { a: 20, b: -20 },
+      },
+    ];
+    const matches: HighlightMatch[] = day([
+      [["b"], ["a"], 21, 19],
+      [["b"], ["a"], 21, 15],
+    ]).map((m) => ({ ...m, dayKey: "2026-09-10", rpDeltaByPlayer: { a: -10, b: 10 } }));
+
+    const { awards } = computeHighlights({ matches, priorMatches: priorRp });
+
+    // a는 지난 수업보다 나빠졌다. 반 전체가 보는 화면에 그런 목록은 없다.
+    expect(listFor(awards.lists, "나아진 학생")?.playerIds).toEqual(["b"]);
+    expect(awards.lists.some((l) => l.key.includes("나빠"))).toBe(false);
   });
 });
 
