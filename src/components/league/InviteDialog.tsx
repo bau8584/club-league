@@ -9,6 +9,7 @@ export type ShareMode = "invite" | "ranking";
 
 export function InviteDialog({
   open, onOpenChange, classId, leagueName, defaultMode = "invite", allowRanking = true, allowInvite = true,
+  ownerId = null,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -20,6 +21,12 @@ export function InviteDialog({
   allowInvite?: boolean;
   /** 어느 탭으로 열지 — 메뉴에서 '공개 순위표'로 바로 들어올 수 있게 한다. */
   defaultMode?: ShareMode;
+  /**
+   * 교실 화면 주소에 넣을 소유자(= 이 선생님). 주면 링크가 그 선생님의 수업을 따라간다.
+   * 세션 id 가 아니라 소유자를 가리키므로 수업이 바뀌어도 주소는 그대로다 —
+   * 태블릿에 한 번 띄워두고 잊는 물건이 된다.
+   */
+  ownerId?: string | null;
 }) {
   const [copied, setCopied] = useState(false);
   // invite = 로그인해서 참가하는 초대 링크 / ranking = 로그인 없이 보는 공개 순위표 링크
@@ -34,7 +41,10 @@ export function InviteDialog({
 
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const inviteUrl = useMemo(() => `${origin}/join?classId=${classId}`, [origin, classId]);
-  const rankingUrl = useMemo(() => `${origin}/ranking/${classId}`, [origin, classId]);
+  const rankingUrl = useMemo(
+    () => `${origin}/ranking/${classId}${ownerId ? `/${ownerId}` : ""}`,
+    [origin, classId, ownerId],
+  );
   const shareUrl = mode === "ranking" ? rankingUrl : inviteUrl;
 
   if (!open) return null;
@@ -43,7 +53,7 @@ export function InviteDialog({
     try {
       await navigator.clipboard.writeText(shareUrl);
       setCopied(true);
-      toast.success(mode === "ranking" ? "공개 순위표 링크를 복사했어요." : "초대 링크를 복사했어요.");
+      toast.success(mode === "ranking" ? (ownerId ? "교실 화면 링크를 복사했어요." : "공개 순위표 링크를 복사했어요.") : "초대 링크를 복사했어요.");
       setTimeout(() => setCopied(false), 1800);
     } catch {
       toast.error("복사에 실패했어요. 링크를 길게 눌러 복사해 주세요.");
@@ -57,7 +67,7 @@ export function InviteDialog({
         onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 flex items-center justify-between">
           <h3 className="flex items-center gap-2 text-base font-black text-foreground">
-            <QrCode className="size-5 text-neon-blue" /> {mode === "ranking" ? "공개 순위표 공유" : "QR로 초대하기"}
+            <QrCode className="size-5 text-neon-blue" /> {mode === "ranking" ? (ownerId ? "교실 화면 공유" : "공개 순위표 공유") : "QR로 초대하기"}
           </h3>
           <button type="button" onClick={() => onOpenChange(false)} className="text-muted-foreground hover:text-foreground" title="닫기">
             <X className="size-5" />
@@ -66,7 +76,7 @@ export function InviteDialog({
 
         {/* 링크 종류 선택 — 고를 게 하나뿐이면 탭 자체를 감춘다(잘못 눌러 엉뚱한 링크를 뿌리지 않도록). */}
         <div className={cn("mb-3 grid-cols-2 gap-1.5 rounded-xl border border-border/50 bg-input/40 p-1", allowRanking && allowInvite ? "grid" : "hidden")}>
-          {([["invite", "참가 초대"], ["ranking", "공개 순위표"]] as const).map(([m, label]) => (
+          {([["invite", "참가 초대"], ["ranking", ownerId ? "교실 화면" : "공개 순위표"]] as const).map(([m, label]) => (
             <button key={m} type="button" onClick={() => { setMode(m); setCopied(false); }}
               className={cn("h-8 rounded-lg text-xs font-black transition-all active:scale-95",
                 mode === m ? "bg-neon-blue text-white" : "text-muted-foreground hover:text-foreground")}>
@@ -77,7 +87,9 @@ export function InviteDialog({
 
         <p className="mb-3 text-xs text-muted-foreground">
           {mode === "ranking"
-            ? `${leagueName ? `‘${leagueName}’ ` : ""}리그의 순위표를 로그인 없이 볼 수 있는 링크예요. 개인 상세 기록은 보이지 않습니다.`
+            ? ownerId
+              ? "교실 화면 링크예요. 태블릿에 띄워두면 수업 중에는 대기열이, 끝나면 등급이 보여요. 버튼이 없어서 아이가 만져도 아무 일도 일어나지 않아요. 수업이 바뀌어도 이 주소 그대로예요."
+              : `${leagueName ? `‘${leagueName}’ ` : ""}리그의 순위표를 로그인 없이 볼 수 있는 링크예요. 개인 상세 기록은 보이지 않습니다.`
             : `${leagueName ? `‘${leagueName}’ ` : ""}리그로 초대해요. QR을 찍거나 링크를 공유하면 참가 화면으로 이동합니다.`}
         </p>
 
@@ -94,7 +106,7 @@ export function InviteDialog({
             rel="noreferrer"
             className="mb-2 flex items-center justify-center gap-1.5 rounded-xl border border-neon-blue/40 bg-neon-blue/10 px-3 py-2.5 text-xs font-black text-neon-blue transition-all hover:bg-neon-blue/20 active:scale-95"
           >
-            <ExternalLink className="size-3.5" /> 순위표 열어보기
+            <ExternalLink className="size-3.5" /> {ownerId ? "교실 화면 열어보기" : "순위표 열어보기"}
           </a>
         )}
 

@@ -159,6 +159,7 @@ function useLeagueStoreInternal() {
   const assignmentSessionRef = useRef<AssignmentSession | null>(null);
   // 로그인한 내 계정 uid. 학교 리그에서 "내 수업"을 가리키는 값이다.
   const myUidRef = useRef<string | null>(null);
+  const [myUid, setMyUid] = useState<string | null>(null);
   const loadSessionRef = useRef<((classId: string) => void) | null>(null);
   useEffect(() => { assignmentSessionRef.current = assignmentSession; }, [assignmentSession]);
   const loadScheduledRef = useRef<((classId: string) => void) | null>(null);
@@ -273,6 +274,7 @@ function useLeagueStoreInternal() {
           authResolved = true;
           myUid = user.id;
           myUidRef.current = user.id;
+          setMyUid(user.id);
           const uid = user.id;
           isPrimaryOwner = classData.owner_uid === uid;
           isOwner = isPrimaryOwner
@@ -3724,6 +3726,8 @@ function useLeagueStoreInternal() {
     isClassManager,
     isClassMember,
     myPlayerId,
+    /** 교실 화면 주소가 이걸 가리킨다 — 세션이 아니라 소유자를 가리켜야 주소가 안 바뀐다. */
+    myUid,
     claimPlayer,
     fetchLeagueMembers,
     unlinkPlayer,

@@ -1,8 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { PublicRanking } from "@/features/leaderboard/PublicRanking";
+import { RankingEntry } from "@/features/classroom/RankingEntry";
 
-// 무인증 공개 순위표(B안). 로그인 없이 열 수 있는 공유용 링크로, club/school 모두 쓴다.
+// 무인증 공개 화면. 로그인 없이 열 수 있는 공유용 링크로, club/school 모두 쓴다.
 // 개인 상세는 제공하지 않으며 본명(name)도 노출하지 않는다.
+//
+// 학교 리그는 교실 화면(대기열 + 등급 묶음)으로, 동호회는 기존 순위표로 간다.
+// 어느 쪽인지는 RankingEntry 가 리그를 읽어 정한다.
 export const Route = createFileRoute("/ranking/$classId")({
   head: () => ({
     meta: [
@@ -14,6 +17,6 @@ export const Route = createFileRoute("/ranking/$classId")({
   }),
   component: () => {
     const { classId } = Route.useParams();
-    return <PublicRanking classId={classId} />;
+    return <RankingEntry classId={classId} />;
   },
 });

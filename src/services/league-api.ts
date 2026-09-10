@@ -382,6 +382,31 @@ export async function apiFetchRankingPublic(classId: string) {
   return supabase.rpc("get_ranking_public", { p_class_id: classId });
 }
 
+/** 교실 화면에서 고를 학년·반 목록. */
+export async function apiFetchClassOptionsPublic(classId: string) {
+  return supabase.rpc("get_class_options_public", { p_league_id: classId });
+}
+
+/**
+ * 교실 화면 — 대기열 + 등급. 로그인 없이 연다.
+ *
+ * 대기열의 실명 여부, 무엇을 보여줄지는 전부 서버가 정한다. 화면에서 가리는 방식이면
+ * 실명이 이미 브라우저까지 내려온 뒤라 조금만 아는 사람은 그냥 꺼내 본다.
+ */
+export async function apiFetchClassViewPublic(payload: {
+  classId: string;
+  ownerId?: string | null;
+  grade?: number | null;
+  classNum?: number | null;
+}) {
+  return supabase.rpc("get_class_view_public", {
+    p_league_id: payload.classId,
+    p_owner_id: payload.ownerId ?? null,
+    p_grade: payload.grade ?? null,
+    p_class_num: payload.classNum ?? null,
+  });
+}
+
 export async function apiUpdateStudentRp(studentId: string, rp: number) {
   return supabase
     .from("players")

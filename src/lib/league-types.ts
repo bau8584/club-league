@@ -288,6 +288,38 @@ export function getTierSubdivision(rp: number, thresholds?: Record<TierName, num
   return 1;
 }
 
+/**
+ * 다음 단계까지 남은 점수. 최고 단계면 null.
+ *
+ * 단계는 티어의 네 칸(골드 4→3→2→1)이고, 골드 1의 다음은 플래티넘 4다. 한 칸이 작아서
+ * 오늘 한 판으로 줄어드는 게 보인다 — "몇 등"과 달리 자기 얘기이고, 바꿀 수 있는 값이다.
+ *
+ * 강등까지 남은 거리는 만들지 않는다. 올라가는 거리만 보여준다.
+ */
+export function nextStepGap(rp: number, thresholds?: Record<TierName, number>): number | null {
+  const t = thresholds || { Bronze: 0, Silver: 1000, Gold: 1200, Platinum: 1400, Diamond: 1600 };
+  const cut = {
+    Bronze: t.Bronze ?? 0, Silver: t.Silver ?? 1000, Gold: t.Gold ?? 1200,
+    Platinum: t.Platinum ?? 1400, Diamond: t.Diamond ?? 1600,
+  };
+  const marks: number[] = [];
+  // getTierSubdivision 과 같은 눈금이다 — 한 티어를 넷으로 나누고, 네 번째 눈금이 곧 다음 티어.
+  const spans: [number, number][] = [
+    [cut.Bronze, cut.Silver], [cut.Silver, cut.Gold],
+    [cut.Gold, cut.Platinum], [cut.Platinum, cut.Diamond],
+  ];
+  for (const [lo, hi] of spans) {
+    const range = hi - lo;
+    if (range <= 0) continue;
+    for (let k = 1; k <= 4; k++) marks.push(lo + (range * k) / 4);
+  }
+  // 다이아몬드는 위가 열려 있어 100점마다 한 칸이고, 그 위로는 최고 단계다.
+  for (const d of [100, 200, 300]) marks.push(cut.Diamond + d);
+
+  const next = marks.filter((m) => m > rp).sort((a, b) => a - b)[0];
+  return next === undefined ? null : Math.max(1, Math.ceil(next - rp));
+}
+
 export function getFullTierLabel(rp: number, thresholds?: Record<TierName, number>): string {
   const tier = getTier(rp, thresholds);
   const sub = getTierSubdivision(rp, thresholds);

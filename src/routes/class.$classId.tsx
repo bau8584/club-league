@@ -60,6 +60,7 @@ export function LeagueApp({ classId }: { classId: string }) {
     isClassManager,
     isClassMember,
     myPlayerId,
+    myUid,
     claimPlayer,
     createMyPlayer,
     levelMode,
@@ -517,7 +518,7 @@ export function LeagueApp({ classId }: { classId: string }) {
         {!isSchool && <PushPrompt leagueId={classId} />}
 
         {/* 관리자 QR 초대 다이얼로그 */}
-        <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} classId={classId} leagueName={title} defaultMode={shareMode} allowRanking={isSchool} allowInvite={!isSchool} />
+        <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} classId={classId} leagueName={title} defaultMode={shareMode} allowRanking={isSchool} allowInvite={!isSchool} ownerId={isSchool ? myUid : null} />
 
         {/* Tenant Panels */}
         {tab === "seasonSummary" && currentViewSeason !== "현재 시즌" && (
