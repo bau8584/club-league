@@ -1,15 +1,12 @@
+import { useState } from "react";
 import { Card } from "@/components/ui/card";
-import { ClipboardCheck, ListOrdered } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { ChevronDown, ClipboardCheck, ListOrdered } from "lucide-react";
 import { useLeagueStore } from "@/lib/league-store";
 import { classKeyOf, classLabel, type ScheduledMatch } from "@/lib/league-types";
 import { useQueueRows } from "@/lib/use-queue-rows";
 import { SessionRoster } from "./SessionRoster";
 import { MatchQueue } from "./MatchQueue";
-
-function fmtTime(iso: string): string {
-  const d = new Date(iso);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-}
 
 /**
  * 오늘 수업 — 출석과 대진을 한 카드의 두 단계로 묶는다.
@@ -29,7 +26,9 @@ export function SessionCard({
   onRecordRow: (row: ScheduledMatch) => void;
 }) {
   const { students, assignmentSession, matches } = useLeagueStore();
-  const { queue } = useQueueRows();
+  const { queue, myTurn } = useQueueRows();
+  // 명단 펼침. 세션이 없으면 접을 것이 없다 — 명단을 정하는 것이 지금 할 일이다.
+  const [rosterOpen, setRosterOpen] = useState(false);
 
   const present = assignmentSession?.player_ids ?? [];
   const hasSession = !!assignmentSession && present.length > 0;
@@ -78,11 +77,13 @@ export function SessionCard({
             <p className="text-[11px] text-muted-foreground">
               {queue.length === 0
                 ? "아직 대기 중인 경기가 없어요."
-                : "위에서부터 코트에 들어갑니다. 결과를 입력하면 그 줄이 빠집니다."}
+                : myTurn >= 0
+                  ? `내 차례 ${myTurn + 1}번째예요.`
+                  : "위에서부터 코트에 들어갑니다."}
             </p>
           </div>
         </div>
-        <MatchQueue canManage={false} stepLabel={null} onRecordRow={onRecordRow} />
+        <MatchQueue canManage={false} onRecordRow={onRecordRow} />
       </Card>
     );
   }
@@ -99,19 +100,38 @@ export function SessionCard({
               ? `${sessionText ? `${sessionText} · ` : ""}참석 ${present.length}명`
               : "오늘 수업"}
           </h2>
+          {/* 사용법이 아니라 상태다. 시작 시각은 수업 중 아무도 보지 않아 뺐다. */}
           <p className="text-[11px] text-muted-foreground">
             {hasSession
-              ? `${assignmentSession?.match_type === "single" ? "단식" : "복식"} · ${fmtTime(assignmentSession!.started_at)} 시작 · ${idleCount > 0 ? `아직 못 뛴 학생 ${idleCount}명` : "전원 한 판 이상 뛰었습니다"}`
+              ? [
+                  assignmentSession?.match_type === "single" ? "단식" : "복식",
+                  queue.length > 0 ? `대기 ${queue.length}경기` : null,
+                  idleCount > 0 ? `아직 못 뛴 학생 ${idleCount}명` : "전원 한 판 이상 뛰었어요",
+                ]
+                  .filter(Boolean)
+                  .join(" · ")
               : "출석을 정하면 그 명단으로 대진을 뽑습니다."}
           </p>
         </div>
+        {/* 명단은 수업당 한 번 정한다. 지각·조퇴나 반 교체는 여기서 다시 연다. */}
+        {hasSession && (
+          <button
+            type="button"
+            onClick={() => setRosterOpen((v) => !v)}
+            className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-border/40 px-2.5 text-[11px] font-black text-muted-foreground transition-all hover:text-foreground"
+          >
+            {rosterOpen ? "접기" : "명단 바꾸기"}
+            <ChevronDown className={cn("size-3.5 transition-transform", rosterOpen && "rotate-180")} />
+          </button>
+        )}
       </div>
 
-      <SessionRoster />
+      <SessionRoster open={rosterOpen} onOpenChange={setRosterOpen} />
 
-      <div className="my-4 border-t border-border/30" />
+      {/* 명단을 펼쳤을 때만 선을 긋는다. 접힌 상태에서는 머리글 아래가 바로 대기열이다. */}
+      {(rosterOpen || !hasSession) && <div className="my-4 border-t border-border/30" />}
 
-      <MatchQueue canManage stepLabel="2단계 · 대진" onRecordRow={onRecordRow} />
+      <MatchQueue canManage onRecordRow={onRecordRow} />
     </Card>
   );
 }

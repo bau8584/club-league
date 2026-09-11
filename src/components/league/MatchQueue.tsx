@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { ChevronDown, Plus, Sparkles, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Minus, Plus, Sparkles, X } from "lucide-react";
 import { useLeagueStore } from "@/lib/league-store";
 import { teamsOf, useQueueRows } from "@/lib/use-queue-rows";
 import type { ScheduledMatch, Student } from "@/lib/league-types";
@@ -21,11 +21,40 @@ function seqMark(seq?: number | null): string {
   return seq == null ? "" : `#${seq}`;
 }
 
-const PRESETS: { value: AssignmentPreset; label: string; hint: string }[] = [
-  { value: "diversity", label: "다양성 우선", hint: "아직 안 만난 사람끼리 붙입니다." },
-  { value: "balanced", label: "절충", hint: "안 만난 조합 중에서 실력이 맞는 쪽으로 붙입니다." },
-  { value: "skill", label: "실력 우선", hint: "실력이 비슷한 사람끼리 붙입니다." },
+/**
+ * 세 프리셋은 "무엇을 먼저 보느냐"의 순서가 다를 뿐이다.
+ * - 다양성: 안 만난 사람 > 적게 뛴 사람 > 실력
+ * - 밸런스: 적게 뛴 사람 > 실력 균형 > 안 만난 사람
+ * - 실력:   실력 > 안 만난 사람 > 적게 뛴 사람
+ *
+ * "실력"이 무엇인지는 리그마다 다르다 — 급수를 둔 리그는 급수, 아니면 RP.
+ * 이름만 보고 "실력이 뭔데?"를 묻지 않도록 설명에 기준을 박아 둔다.
+ */
+const PRESETS: {
+  value: AssignmentPreset;
+  label: string;
+  hint: (skill: string) => string;
+}[] = [
+  { value: "diversity", label: "다양성", hint: () => "아직 안 만난 사람끼리. 실력은 너무 벌어지지만 않게." },
+  { value: "balanced", label: "밸런스", hint: (s) => `골고루 뛰고, ${s}도 맞춰서.` },
+  { value: "skill", label: "실력", hint: (s) => `${s}가 비슷한 사람끼리 팽팽하게.` },
 ];
+
+/**
+ * 이 경기 수로 뽑으면 무슨 일이 생기는지 한 줄. "보장"이 아니라 "이만큼이면 들어갈
+ * 수 있다"는 안내다 — [실력]은 판 수를 뒤에 보므로 같은 사람이 두 번 들어갈 수 있다.
+ */
+function countHint(count: number, free: number, perMatch: number): string {
+  if (free < perMatch) return "뽑을 수 있는 인원이 모자라요.";
+  const slots = count * perMatch;
+  if (slots < free) return `${slots}명이 1번, ${free - slots}명은 다음에.`;
+  const each = Math.floor(slots / free);
+  const extra = slots % free;
+  const base = `전원 ${each}번씩 들어갈 수 있는 수`;
+  const tail = extra > 0 ? ` (${extra}명은 ${each + 1}번)` : "";
+  const long = each >= 3 ? " · 대기열이 길어져요" : "";
+  return base + tail + long + ".";
+}
 
 /**
  * 대기열 — 순서 목록 하나.
@@ -33,18 +62,15 @@ const PRESETS: { value: AssignmentPreset; label: string; hint: string }[] = [
  * 진행 중/대기를 나누지 않는다. 코트에 누가 있는지는 고개를 돌리면 보이고,
  * 대기하는 사람에게 필요한 정보는 "내가 몇 번째냐" 하나다.
  * 위에서부터 코트에 들어가고, 결과가 등록되면 그 줄이 빠진다.
+ *
+ * 화면의 주인공은 줄 목록이다. 아이가 찾는 것은 번호와 자기 이름이라 번호를 굵게 세우고,
+ * 뽑는 조작은 수업 중 한두 번 쓰는 것이라 카드 아래 한 줄로 낮춘다.
  */
 export function MatchQueue({
   canManage,
-  stepLabel,
   onRecordRow,
 }: {
   canManage: boolean;
-  /**
-   * 이 단계의 이름("2단계 · 대진"). 학생 화면에서는 단계가 하나뿐이라 카드 제목이 곧
-   * 대기열이므로 null을 준다 — 그때는 머리글 없이 목록만 그린다.
-   */
-  stepLabel?: string | null;
   /** 줄의 [결과 입력] — 4명이 확정이므로 선수 선택 없이 바로 점수판으로 간다. */
   onRecordRow: (row: ScheduledMatch) => void;
 }) {
@@ -53,6 +79,7 @@ export function MatchQueue({
     deletedById,
     myPlayerId,
     leagueType,
+    levels,
     assignmentSession,
     fillAssignmentQueue,
     removeScheduledMatch,
@@ -63,6 +90,8 @@ export function MatchQueue({
   );
   const [filling, setFilling] = useState(false);
   const [presetOpen, setPresetOpen] = useState(false);
+  // 실력의 기준 — 급수를 둔 리그는 급수, 아니면 RP. 계산기(skillRating)와 같은 판단.
+  const skillBasis = levels.length > 1 ? "급수" : "RP";
   // 줄에서 빼기 확인 팝업 대상. 삭제는 되돌릴 수 없으므로 한 번 묻는다.
   const [confirmRemove, setConfirmRemove] = useState<ScheduledMatch | null>(null);
 
@@ -73,41 +102,48 @@ export function MatchQueue({
     return m;
   }, [students, deletedById]);
 
-  const { queue, myTurn } = useQueueRows();
+  const { queue } = useQueueRows();
 
-  const fill = async (mode: "round" | "one") => {
+  // 지금 놀고 있는 사람 수. 기본 경기 수(한 바퀴)와 안내 문구의 바탕이다.
+  const perMatch = assignmentSession?.match_type === "single" ? 2 : 4;
+  const free = useMemo(() => {
+    const busy = new Set<string>();
+    for (const r of queue) {
+      const { teamA, teamB, pool } = teamsOf(r);
+      for (const id of [...teamA, ...teamB, ...pool]) busy.add(id);
+    }
+    return (assignmentSession?.player_ids ?? []).filter((id) => !busy.has(id)).length;
+  }, [queue, assignmentSession?.player_ids]);
+  const defaultCount = Math.max(1, Math.floor(free / perMatch));
+
+  /**
+   * 뽑을 경기 수. 기본은 한 바퀴(놀고 있는 인원 ÷ 경기당 인원)이고, 교사가 늘리거나
+   * 줄일 수 있다. 손으로 고친 값은 그 순간의 인원에 대한 판단이지 영구 설정이 아니다 —
+   * 인원이 바뀌어 기본값이 달라지면 버린다. 안 그러면 줄이 다 빠진 뒤에도 아까 고친
+   * 숫자가 남아 "26명인데 5경기"가 된다.
+   */
+  const [override, setOverride] = useState<{ count: number; base: number } | null>(null);
+  const count = override && override.base === defaultCount ? override.count : defaultCount;
+  const setCount = (n: number) => setOverride({ count: Math.max(1, n), base: defaultCount });
+
+  const fill = async () => {
     setFilling(true);
-    // 종목은 세션 설정이다. 여기서는 채우는 단위(한 바퀴 / 1경기)만 정한다.
-    await fillAssignmentQueue({ mode, policy: preset });
+    // 종목은 세션 설정이다. 여기서는 경기 수만 정한다.
+    await fillAssignmentQueue({ count, policy: preset });
+    setOverride(null);
     setFilling(false);
   };
 
+  const currentPreset = PRESETS.find((p) => p.value === preset)!;
+
   return (
     <div>
-      {/* 학생 화면에서는 카드 제목이 곧 "대기열 (N)"이라 머리글이 겹친다 → 통째로 생략. */}
-      {stepLabel && (
-        <div className={cn("min-w-0", queue.length > 0 && "mb-3")}>
-          <p className="text-xs font-black text-foreground">
-            {stepLabel} ({queue.length})
-          </p>
-          {/* 줄이 없을 때 줄 서는 법을 설명할 이유가 없다. 빈 대기열에서 알아야 할 것은
-              "지금 무엇을 하면 되는가" 하나뿐이고, 그건 사람마다 다르다. */}
-          <p className="text-[11px] text-muted-foreground">
-            {queue.length === 0
-              ? canManage
-                ? "대진을 채워서 시작하세요."
-                : "아직 대기 중인 경기가 없어요."
-              : myTurn >= 0
-                ? `내 차례 ${myTurn + 1}번째예요.`
-                : "위에서부터 코트에 들어갑니다. 결과를 입력하면 그 줄이 빠집니다."}
-          </p>
-        </div>
-      )}
-
-      {/* 빈 대기열에 점선 상자를 세우지 않는다. "아래에서 대진을 채우세요"는 바로 아래
-          [한 바퀴 채우기] 버튼이 이미 하는 말이고, 그 안내에 화면 절반을 쓸 이유가 없다. */}
+      {/*
+        태블릿 가로에서는 두 줄씩. 이름 넷이 든 줄은 400px 이면 충분한데 카드는 1,300px 이라,
+        한 줄에 하나씩 세우면 오른쪽 2/3 가 비고 세로만 길어진다. 폰은 한 줄이다.
+      */}
       {queue.length > 0 && (
-        <div className="space-y-2">
+        <div className="grid gap-2 md:grid-cols-2">
           {queue.map((r) => {
             const { teamA, teamB, pool } = teamsOf(r);
             const confirmed = teamA.length > 0 && teamB.length > 0;
@@ -115,7 +151,8 @@ export function MatchQueue({
             const nameOf = (id: string) => dn(byId.get(id));
             const names = (
               <>
-                <span className="w-9 shrink-0 text-center text-sm font-black tabular-nums text-muted-foreground">
+                {/* 번호가 아이들이 부르는 이름이다. 목록에서 제일 먼저 눈에 띄어야 한다. */}
+                <span className="w-8 shrink-0 text-sm font-black tabular-nums text-foreground">
                   {seqMark(r.seq)}
                 </span>
                 <span className="min-w-0 flex-1 truncate text-left text-sm font-bold text-foreground">
@@ -134,47 +171,42 @@ export function MatchQueue({
               </>
             );
             const rowStyle = cn(
-              "flex w-full items-center gap-2 rounded-xl border px-3 py-2.5",
+              "flex min-h-11 w-full items-center gap-2 rounded-xl border pl-3",
               mine ? "border-neon-blue/40 bg-neon-blue/5" : "border-border/30 bg-input/40",
             );
 
             // 볼 수만 있는 사람에게는 목록일 뿐이다. 누를 것이 없으니 버튼으로 만들지 않는다.
             if (!canManage) {
               return (
-                <div key={r.id} className={rowStyle}>
+                <div key={r.id} className={cn(rowStyle, "pr-3")}>
                   {names}
                 </div>
               );
             }
 
+            /*
+              행이 곧 [결과 입력] 버튼이다. 따로 글자를 두지 않는다 — 행 전체가 눌리는 것을
+              화살표 하나가 말해 주고, 잘못 눌러도 폼이 열릴 뿐이라 되돌리는 비용이 0이다.
+              × 는 행 안 오른쪽 끝에 둔다. 밖에 세우면 목록의 오른쪽 선이 흐트러진다.
+              되돌릴 수 없는 동작이므로 확인을 거친다.
+            */
             return (
-              <div key={r.id} className="flex items-center gap-1">
-                {/*
-                  행 전체가 [결과 입력] 버튼이다. 예전의 작은 버튼은 28px 로 권장치 44px 에
-                  한참 못 미쳤는데, 행 자체는 이미 48px 였다 — 알맞은 타깃이 이미 있는데
-                  눌리지 않을 뿐이었다. 사람들이 이름을 누르는 건 실수가 아니다.
-                  잘못 눌러도 폼이 열릴 뿐이라 되돌리는 비용이 0이다.
-                */}
+              <div key={r.id} className={cn(rowStyle, "pr-1")}>
                 <button
                   type="button"
                   onClick={() => onRecordRow(r)}
-                  className={cn(rowStyle, "min-w-0 flex-1 text-left transition-colors hover:border-neon-blue/50")}
+                  className="flex min-h-11 min-w-0 flex-1 items-center gap-2 text-left transition-colors hover:text-neon-blue"
                 >
                   {names}
-                  {/* 버튼이 아니라 글자로 남긴다 — 누를 곳을 가리키는 게 아니라 무엇이 일어날지 알린다. */}
-                  <span className="shrink-0 text-[10px] font-black text-neon-blue">결과 입력</span>
+                  <ChevronRight className="size-4 shrink-0 text-muted-foreground/60" />
                 </button>
-                {/*
-                  되돌릴 수 없는 동작만 조준을 요구한다. 행이 큰 타깃이 되면서 × 와 붙으므로
-                  확인을 거친다 — 예전에는 정확히 반대였다(작은 × 가 확인 없이 즉시 삭제).
-                */}
                 <button
                   type="button"
                   onClick={() => setConfirmRemove(r)}
                   aria-label={`${seqMark(r.seq) || "이 대진"} 대기열에서 빼기`}
-                  className="flex size-11 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                  className="flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive"
                 >
-                  <X className="size-5" />
+                  <X className="size-4" />
                 </button>
               </div>
             );
@@ -182,78 +214,100 @@ export function MatchQueue({
         </div>
       )}
 
+      {/* 관리자가 아니고 줄도 없으면 카드 머리글이 이미 "아직 없어요"를 말한다. */}
+
       {canManage && !assignmentSession?.player_ids?.length && (
         <p className="text-[11px] text-muted-foreground">
-          1단계를 마치면 대진을 뽑을 수 있어요. 참석한 사람만 대진에 들어갑니다.
+          출석을 정하면 대진을 뽑을 수 있어요. 참석한 사람만 대진에 들어갑니다.
         </p>
       )}
 
       {canManage && !!assignmentSession?.player_ids?.length && (
-        <div className="mt-4 border-t border-border/30 pt-4">
-          {/* 대진 방식은 대개 기본값 그대로 둔다. 평소에는 지금 무엇으로 뽑는지만 한 줄로
-              알리고, 바꾸려는 사람만 펼친다 — 처음 보는 사람에게 뜻 모를 선택지 셋을
-              들이밀지 않는다. */}
-          {presetOpen ? (
-            <div className="animate-in fade-in slide-in-from-top-1 duration-150">
-              <div className="flex flex-wrap items-center gap-1.5">
-                {PRESETS.map((p) => (
-                  <button
-                    key={p.value}
-                    type="button"
-                    onClick={() => setPreset(p.value)}
-                    className={cn(
-                      "rounded-full border px-3 py-1 text-xs font-black transition-all",
-                      preset === p.value
-                        ? "border-neon-blue/50 bg-neon-blue/20 text-neon-blue"
-                        : "border-border/40 text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => setPresetOpen(false)}
-                  className="ml-auto text-[11px] font-bold text-muted-foreground underline underline-offset-2 hover:text-foreground"
-                >
-                  접기
-                </button>
-              </div>
-              <p className="mt-1.5 text-[11px] text-muted-foreground">
-                {PRESETS.find((p) => p.value === preset)?.hint}
-              </p>
-            </div>
-          ) : (
+        <div className={cn(queue.length > 0 && "mt-4 border-t border-border/30 pt-3")}>
+          {/*
+            조작은 한 줄: 방식 · 경기 수 · [대진 뽑기]. 셋 다 같은 높이(h-9)라 한 묶음으로
+            읽히고, 버튼은 내용 너비만 차지한다 — 수업 중 한두 번 누르는 것이 화면의 1/8 을
+            차지할 이유가 없다. 안내는 같은 줄 끝(좁으면 다음 줄)에 한 문장.
+          */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* 대진 방식 — 평소엔 기본값 그대로. 누르면 아래에 선택지가 펼쳐진다. */}
             <button
               type="button"
-              onClick={() => setPresetOpen(true)}
-              className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+              onClick={() => setPresetOpen((v) => !v)}
+              className={cn(
+                "flex h-9 items-center gap-1 rounded-lg border px-2.5 text-xs font-black transition-all",
+                presetOpen
+                  ? "border-neon-blue/50 text-neon-blue"
+                  : "border-border/40 text-foreground hover:border-border",
+              )}
             >
-              대진 방식{" "}
-              <span className="font-black text-foreground">
-                {PRESETS.find((p) => p.value === preset)?.label}
-              </span>
-              <ChevronDown className="size-3.5" />
+              <span className="font-bold text-muted-foreground">방식</span>
+              {currentPreset.label}
+              <ChevronDown className={cn("size-3.5 transition-transform", presetOpen && "rotate-180")} />
             </button>
-          )}
 
-          <div className="mt-3 flex gap-2">
+            {/* 경기 수 — 기본은 한 바퀴. "전원 1번"이 안 되는 인원(25명에 6경기)일 때
+                그 사실을 뽑기 전에 옆 문장에서 보게 하는 것이 이 숫자의 목적이다. */}
+            <div className="flex h-9 items-center rounded-lg border border-border/40">
+              <button
+                type="button"
+                onClick={() => setCount(count - 1)}
+                disabled={filling || count <= 1}
+                aria-label="경기 수 줄이기"
+                className="flex h-full w-8 items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-30"
+              >
+                <Minus className="size-3.5" />
+              </button>
+              <span className="min-w-12 text-center text-xs font-black tabular-nums text-foreground">
+                {count}경기
+              </span>
+              <button
+                type="button"
+                onClick={() => setCount(count + 1)}
+                disabled={filling}
+                aria-label="경기 수 늘리기"
+                className="flex h-full w-8 items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-30"
+              >
+                <Plus className="size-3.5" />
+              </button>
+            </div>
+
             <Button
-              onClick={() => fill("round")}
-              disabled={filling}
-              className="h-11 flex-1 rounded-xl bg-neon-blue text-sm font-black text-primary-foreground hover:bg-neon-blue/90"
+              onClick={fill}
+              disabled={filling || free < perMatch}
+              className="h-9 rounded-lg bg-neon-blue px-4 text-xs font-black text-primary-foreground hover:bg-neon-blue/90"
             >
-              <Sparkles className="mr-1.5 size-4" /> 한 바퀴 채우기
+              <Sparkles className="mr-1 size-3.5" /> 대진 뽑기
             </Button>
-            <Button
-              onClick={() => fill("one")}
-              disabled={filling}
-              variant="outline"
-              className="h-11 shrink-0 rounded-xl border-border/50 px-4 text-sm font-black"
-            >
-              <Plus className="mr-1 size-4" /> 1경기
-            </Button>
+
+            <span className="text-[11px] text-muted-foreground">
+              {countHint(count, free, perMatch)}
+            </span>
           </div>
+
+          {presetOpen && (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5 animate-in fade-in slide-in-from-top-1 duration-150">
+              {PRESETS.map((p) => (
+                <button
+                  key={p.value}
+                  type="button"
+                  onClick={() => {
+                    setPreset(p.value);
+                    setPresetOpen(false);
+                  }}
+                  className={cn(
+                    "rounded-full border px-3 py-1 text-xs font-black transition-all",
+                    preset === p.value
+                      ? "border-neon-blue/50 bg-neon-blue/20 text-neon-blue"
+                      : "border-border/40 text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {p.label}
+                  <span className="ml-1.5 font-bold opacity-70">{p.hint(skillBasis)}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

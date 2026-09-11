@@ -2,7 +2,6 @@ import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { ChevronDown } from "lucide-react";
 import { useLeagueStore } from "@/lib/league-store";
 import { classKeyOf, classLabel, sortStudentsForRoster, type Student } from "@/lib/league-types";
 import { sessionClassKeys } from "@/domain/session-scope";
@@ -70,7 +69,18 @@ function ClassChip({
  * 결석은 반 안에서만 기억한다. 반을 다시 고르면 그 반의 결석 표시가 그대로 살아난다
  * (같은 반이 다음 교시에 또 들어오는 경우).
  */
-export function SessionRoster() {
+export function SessionRoster({
+  open,
+  onOpenChange,
+}: {
+  /**
+   * 펼침 여부는 카드가 쥔다. 손잡이(명단 바꾸기)가 카드 머리글에 있기 때문이다 —
+   * 명단을 정하는 일은 수업당 한 번이라, 그 손잡이는 카드 제목 옆 한 자리면 충분하고
+   * 반 칩 스무 개와 이름 칩 스물여섯 개는 매 경기 쓰는 대기열에 자리를 내준다.
+   */
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
   const { students, assignmentSession, startAssignmentSession, updateAssignmentSession } =
     useLeagueStore();
 
@@ -89,10 +99,6 @@ export function SessionRoster() {
   const [absent, setAbsent] = useState<Record<string, string[]>>({});
   const [draftType, setDraftType] = useState<"single" | "double">("double");
   const [editing, setEditing] = useState(false);
-  // 명단을 정하는 일은 수업당 한 번이다. 정하고 나면 필요한 정보는 "어느 반, 몇 명,
-  // 무슨 종목" 한 줄뿐이고, 반 칩 스무 개와 이름 칩 스물여섯 개는 화면을 차지할 이유가
-  // 없다. 그 자리는 매 경기 쓰는 대기열의 것이다.
-  const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const present = useMemo(() => assignmentSession?.player_ids ?? [], [assignmentSession]);
@@ -209,7 +215,7 @@ export function SessionRoster() {
     // 저장이 곧 "정했다"는 뜻이다 → 접고 대기열에 자리를 내준다.
     if (ok) {
       setEditing(false);
-      setOpen(false);
+      onOpenChange(false);
     }
   };
 
@@ -220,40 +226,22 @@ export function SessionRoster() {
       picked.some((id) => !present.includes(id)) ||
       draftType !== (assignmentSession?.match_type ?? "double"));
 
-  return (
-    <div>
-      {/* 카드 제목과 세션 요약(6-10반 · 참석 26명 · 복식)은 SessionCard가 갖는다.
-          여기 남는 것은 이 단계의 이름과, 다시 열고 닫는 손잡이뿐이다. */}
-      <div className={cn("flex items-center gap-2.5", !collapsed && "mb-3")}>
-        <div className="min-w-0 flex-1">
-          <p className="text-xs font-black text-foreground">1단계 · 출석</p>
-          {!collapsed && (
-            <p className="text-[11px] text-muted-foreground">
-              {singleClass
-                ? "안 온 학생만 눌러서 빼세요."
-                : "수업할 반을 고르고, 안 온 학생만 눌러서 빼세요."}
-            </p>
-          )}
-        </div>
-        {/* 세션이 열려 있을 때만 접었다 펼 수 있다. 지각·조퇴나 반 교체는 여기서 다시 연다. */}
-        {hasSession && (
-          <button
-            type="button"
-            onClick={() => {
-              // 접는 것은 곧 편집을 그만두는 것이다 → 저장 안 한 손질은 버리고 세션으로 되돌린다.
-              if (open) setEditing(false);
-              setOpen((v) => !v);
-            }}
-            className="flex shrink-0 items-center gap-1 rounded-lg border border-border/40 px-2.5 py-1 text-[11px] font-black text-muted-foreground transition-all hover:text-foreground"
-          >
-            {open ? "접기" : "명단 바꾸기"}
-            <ChevronDown className={cn("size-3.5 transition-transform", open && "rotate-180")} />
-          </button>
-        )}
-      </div>
+  // 접는 것은 곧 편집을 그만두는 것이다 → 저장 안 한 손질은 버리고 세션으로 되돌린다.
+  useEffect(() => {
+    if (!open) setEditing(false);
+  }, [open]);
 
-      {!collapsed && (
-        <div className="animate-in fade-in slide-in-from-top-1 duration-150">
+  if (collapsed) return null;
+
+  return (
+    <div className="animate-in fade-in slide-in-from-top-1 duration-150">
+      {/* 카드 제목과 세션 요약은 SessionCard가 갖는다. 여기는 할 일 한 줄뿐이다. */}
+      <p className="mb-3 text-[11px] text-muted-foreground">
+        {singleClass
+          ? "안 온 학생만 눌러서 빼세요."
+          : "수업할 반을 고르고, 안 온 학생만 눌러서 빼세요."}
+      </p>
+      <div>
           {/* 반 고르기 = 명단 정하기. 반이 하나뿐인 리그에는 고를 것이 없다. */}
           {!singleClass && (
             <div className="mb-3 space-y-2">
@@ -435,8 +423,7 @@ export function SessionRoster() {
               </div>
             </>
           )}
-        </div>
-      )}
+      </div>
     </div>
   );
 }
