@@ -250,6 +250,14 @@ export function MatchesTab({
   // 덮어쓰기 확인을 기다리는 큐 줄.
   const [pendingRow, setPendingRow] = useState<(typeof scheduledMatches)[number] | null>(null);
 
+  // 결과를 등록하고 영수증을 닫으면 대기열로 돌아간다 — 단, 방금 등록한 경기가 큐의
+  // 줄이었을 때만. 학교에서는 폼이 큐 아래 같은 화면에 있어서, 결과를 넣고 나면 다음
+  // 아이가 와서 자기 줄을 눌러야 하는데 화면이 폼에 머물러 있으면 아래에서 이름을 찾기
+  // 시작한다. 큐와 무관하게 손으로 넣는 경우(연속 입력)는 폼에 그대로 둔다 — 올려 보내면
+  // 매번 다시 내려와야 한다. 동호회는 폼이 팝업이라 닫히면 이미 목록이므로 해당 없다.
+  const queueCardRef = useRef<HTMLDivElement>(null);
+  const lastRecordWasQueued = useRef(false);
+
   const applyQueueRow = (row: (typeof scheduledMatches)[number]) => {
     setActiveReservation(row);
     setDirectInitials(null);
@@ -294,28 +302,43 @@ export function MatchesTab({
     type?: "single" | "double",
   ): Match | undefined => {
     const m = recordMatch(a, b, sa, sb, a2, b2, type);
-    // 폼에서 선수를 갈아끼웠다면 이건 그 줄의 경기가 아니다. 엉뚱한 줄을 지우고
-    // 엉뚱한 사람에게 결과 알림을 보내는 대신, 그냥 일반 기록으로 남긴다.
+    if (!m) return m;
+
+    // 어느 줄의 경기인가는 "누가 뛰었나"로 정한다. 팀이 어느 쪽이든, 짝의 순서가
+    // 어떻든, 같은 사람들이면 같은 경기다.
     const played = new Set([a, a2, b, b2].filter(Boolean) as string[]);
-    const sameMatch =
-      !!activeReservation &&
-      participantsOf(activeReservation).length === played.size &&
-      participantsOf(activeReservation).every((id) => played.has(id));
-    if (m && activeReservation && sameMatch) {
+    const isSameMatch = (r: (typeof scheduledMatches)[number]) => {
+      const parts = participantsOf(r);
+      return parts.length === played.size && parts.every((id) => played.has(id));
+    };
+    // 1순위: 줄의 [결과 입력]으로 넘어온 그 줄. 단, 폼에서 선수를 갈아끼웠다면 그
+    //        줄의 경기가 아니다 — 엉뚱한 줄을 지우고 엉뚱한 사람에게 알림을 보내면 안 된다.
+    // 2순위: 줄을 누르지 않고 폼에서 직접 같은 사람들을 골라 넣은 경우. 지금까지는
+    //        이러면 줄이 남았다 — 아이들이 결과를 넣고도 대기열에 자기 이름이 그대로
+    //        있어 두 번 넣거나 선생님이 손으로 지워야 했다. 앞줄부터 찾는다(같은 사람들이
+    //        두 번 잡혀 있으면 먼저 잡힌 줄이 먼저 뛴 것이다).
+    const target =
+      (activeReservation && isSameMatch(activeReservation) ? activeReservation : null) ??
+      [...reservations]
+        .sort((x, y) => (x.seq ?? Infinity) - (y.seq ?? Infinity) || x.created_at.localeCompare(y.created_at))
+        .find(isSameMatch) ??
+      null;
+
+    lastRecordWasQueued.current = !!target;
+    if (target) {
       const winners = [a, a2]
         .filter(Boolean)
         .map((id) => dn(byId.get(id as string)))
         .join("·");
       const summary = `${winners} 승 · ${sa}:${sb}`;
-      const parts = participantsOf(activeReservation);
-      linkReservationResult(activeReservation.id, m.id, parts, summary);
-      // 큐에서 온 경기는 여기서 끝난다. 다음 입력이 이미 사라진 줄에 다시 연결되면 안 된다.
-      setActiveReservation(null);
-    } else if (m && activeReservation) {
-      // 다른 사람들로 기록했다 → 그 줄은 대기열에 그대로 두고 연결만 끊는다.
-      setActiveReservation(null);
+      linkReservationResult(target.id, m.id, participantsOf(target), summary);
+    } else if (activeReservation) {
+      // 줄에서 넘어왔는데 다른 사람들로 기록했고, 그 사람들의 줄도 따로 없다 →
+      // 넘어온 줄은 대기열에 그대로 두고 연결만 끊는다.
       toast.info("선수가 대기열의 대진과 달라 그 줄은 남겨 두었어요.");
     }
+    // 큐와의 연결은 여기서 끝난다. 다음 입력이 이미 사라진 줄에 다시 붙으면 안 된다.
+    setActiveReservation(null);
     return m;
   };
 
@@ -455,7 +478,9 @@ export function MatchesTab({
            지금은 학교 리그에만 (동호회는 예약 목록과 합칠 때 함께).
            관리자냐 아니냐는 카드 안에서 갈린다 — 학생에게는 대기열만 보인다. */}
       {isSchool && !readOnly && (
-        <SessionCard canManage={isClassManager} onRecordRow={openQueueRow} />
+        <div ref={queueCardRef}>
+          <SessionCard canManage={isClassManager} onRecordRow={openQueueRow} />
+        </div>
       )}
 
       {canRecord && isSchool && (
@@ -478,6 +503,11 @@ export function MatchesTab({
             onUpdateGender={updateStudentGender}
             lockedPlayerId={lockedPlayerId}
             onDirtyChange={setFormDirty}
+            onCloseResult={() => {
+              if (!lastRecordWasQueued.current) return;
+              lastRecordWasQueued.current = false;
+              queueCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
           />
         </Card>
       )}

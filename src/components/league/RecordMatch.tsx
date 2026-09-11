@@ -582,6 +582,11 @@ export function RecordMatch({
         }
         setScoreA(0);
         setScoreB(0);
+        // 선수를 한두 명 고르던 중에 대기열의 [결과 입력]을 누르면 이름 선택창이 열린
+        // 채로 남았다. 대진은 이미 다 찼는데 선택창이 그 위를 덮고 있어 등록 버튼이
+        // 안 보였다 — 좁은 화면에서는 대진 자체도 접혀 있어 무슨 상황인지 알 수 없었다.
+        // 큐에서 온 대진은 완성된 것이므로 고르던 자리는 닫는다.
+        setActiveSlot(null);
         appliedSigRef.current = slotSig(
           initials.playerAId,
           type === "double" ? initials.playerA2Id : undefined,
@@ -1906,67 +1911,40 @@ export function RecordMatch({
         );
       })()}
 
-      {/* 성별 정보 보완 팝업창 (LoL 테크니컬 디자인 다크모드) */}
+      {/* 성별 선택 팝업 — 이름 크게, 문구 한 줄, 버튼 둘 */}
       {genderModalOpen && genderTargetId && (() => {
         const targetStudent = students.find((s) => s.id === genderTargetId);
         if (!targetStudent) return null;
         return (
           <div className="fixed inset-0 z-[110] flex justify-center overflow-y-auto bg-background/90 backdrop-blur-md p-4 animate-in fade-in duration-300">
-            <div className="relative my-auto w-full max-w-md overflow-hidden border border-neon-blue/30 bg-background/95 rounded-2xl p-6 md:p-8 glow-primary flex flex-col items-center animate-in zoom-in duration-300">
-              {/* Grid Background Effect */}
-              <div className="absolute inset-0 bg-[linear-gradient(rgba(18,18,18,0.2)_1px,transparent_1px),linear-gradient(90deg,rgba(18,18,18,0.2)_1px,transparent_1px)] bg-[size:20px_20px] pointer-events-none opacity-20" />
-              
-              {/* Close Button */}
-              <button 
+            <div className="relative my-auto w-full max-w-md border border-neon-blue/30 bg-background/95 rounded-2xl p-6 md:p-8 flex flex-col items-center animate-in zoom-in duration-300">
+              <button
                 onClick={handleCancelGender}
                 className="absolute right-4 top-4 text-muted-foreground hover:text-foreground hover:bg-muted/40 p-1.5 rounded-lg transition-all"
-                title="취소 및 뒤로가기"
+                title="취소"
               >
                 <X className="size-5" />
               </button>
 
-              {/* Title & Info */}
-              <div className="relative z-10 flex flex-col items-center text-center w-full">
-                <div className="flex size-14 items-center justify-center rounded-full bg-neon-blue/15 border border-neon-blue/30 text-neon-blue glow-primary mb-4 animate-pulse">
-                  <Sparkles className="size-6 text-neon-blue" />
-                </div>
-                <h3 className="text-xl font-black uppercase tracking-wider text-glow-blue text-neon-blue mb-1">
-                  선수 성별 정보 보완
-                </h3>
-                <p className="text-xs text-muted-foreground max-w-sm mb-6 leading-relaxed">
-                  <span className="font-bold text-foreground">[{targetStudent.name}]</span> 선수의 성별 정보(M/F)가 지정되지 않았습니다.<br />
-                  리그 경기 결과를 등록하기 위해 성별을 입력해주세요.
-                </p>
+              <div className="mt-2 text-3xl font-black text-foreground text-center break-keep">
+                {targetStudent.nickname || targetStudent.name}
               </div>
+              <p className="mt-2 mb-6 text-base text-muted-foreground">성별을 선택해 주세요</p>
 
-              {/* Gender Selection Grid */}
-              <div className="relative z-10 grid grid-cols-2 gap-4 w-full">
-                {/* Male Option */}
+              <div className="grid grid-cols-2 gap-4 w-full">
                 <button
                   onClick={() => handleUpdateGender("M")}
-                  className="flex flex-col items-center justify-center p-5 rounded-xl border border-neon-blue/30 bg-neon-blue/5 hover:bg-neon-blue/15 hover:border-neon-blue/60 transition-all active:scale-95 group glow-primary"
+                  className="h-24 rounded-xl border border-neon-blue/40 bg-neon-blue/10 hover:bg-neon-blue/20 text-neon-blue text-3xl font-black transition-all active:scale-95"
                 >
-                  <span className="text-4xl mb-2 group-hover:animate-bounce">♂</span>
-                  <span className="text-sm font-black text-neon-blue tracking-wider">남성 (M)</span>
-                  <span className="text-[10px] text-muted-foreground mt-1">Male Athlete</span>
+                  남
                 </button>
-
-                {/* Female Option */}
                 <button
                   onClick={() => handleUpdateGender("F")}
-                  className="flex flex-col items-center justify-center p-5 rounded-xl border border-loss/30 bg-loss/5 hover:bg-loss/15 hover:border-loss/60 transition-all active:scale-95 group shadow-[0_0_15px_rgba(239,68,68,0.05)]"
+                  className="h-24 rounded-xl border border-loss/40 bg-loss/10 hover:bg-loss/20 text-loss text-3xl font-black transition-all active:scale-95"
                 >
-                  <span className="text-4xl mb-2 group-hover:animate-bounce text-loss">♀</span>
-                  <span className="text-sm font-black text-loss tracking-wider">여성 (F)</span>
-                  <span className="text-[10px] text-muted-foreground mt-1">Female Athlete</span>
+                  여
                 </button>
               </div>
-
-              {/* Notice Footer */}
-              <p className="relative z-10 text-[10px] text-muted-foreground mt-6 text-center leading-relaxed">
-                입력하신 성별 데이터는 로컬 브라우저 캐시는 물론,<br />
-                관리자 전용 구글 스프레드시트 클라우드 데이터베이스에 실시간 영속 동기화됩니다.
-              </p>
             </div>
           </div>
         );
