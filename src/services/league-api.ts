@@ -465,6 +465,17 @@ export async function apiResetAllClassStudentsRp(classId: string) {
     .eq("league_id", classId);
 }
 
+/**
+ * 이름·닉네임의 앞뒤 공백을 자른다. 명단을 붙여넣으면 "류나경 "처럼 공백이 딸려 오고,
+ * 그 뒤로는 검색도 정렬도 같은 이름을 다른 사람으로 본다. 저장되는 길목 네 곳이 전부 이걸 거친다.
+ */
+function trimNames<T extends { name?: string | null; nickname?: string | null }>(fields: T): T {
+  const out = { ...fields };
+  if (typeof out.name === "string") out.name = out.name.trim();
+  if (typeof out.nickname === "string") out.nickname = out.nickname.trim();
+  return out;
+}
+
 export async function apiUpdateStudentFields(studentId: string, fields: {
   name?: string | null;
   nickname?: string | null;
@@ -478,7 +489,7 @@ export async function apiUpdateStudentFields(studentId: string, fields: {
 }) {
   return supabase
     .from("players")
-    .update(fields)
+    .update(trimNames(fields))
     .eq("id", studentId);
 }
 
@@ -494,6 +505,7 @@ export async function apiInsertStudent(classId: string, info: {
   user_id?: string | null;
   rp?: number;
 }) {
+  info = trimNames(info);
   return supabase
     .from("players")
     .insert({
@@ -558,7 +570,7 @@ export async function apiUpdateStudentInfo(studentId: string, payload: {
 }) {
   return supabase
     .from("players")
-    .update(payload)
+    .update(trimNames(payload))
     .eq("id", studentId);
 }
 
@@ -572,7 +584,7 @@ export async function apiDeleteClassStudents(classId: string) {
 export async function apiInsertStudentsBulk(students: any[]) {
   return supabase
     .from("players")
-    .insert(students);
+    .insert(students.map(trimNames));
 }
 
 // 안전한 복원: 서버에서 원자적(트랜잭션)으로 삭제+삽입. 실패 시 자동 롤백.
