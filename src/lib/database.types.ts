@@ -39,6 +39,7 @@ export type MatchInsert = {
   rp_delta_loser2?: number | null;   // 복식 패배팀 파트너
   season?: string | null;
   status?: string;
+  rp_breakdown?: unknown | null;  // 결과 영수증 스냅샷. 승패를 고치면 비운다.
 };
 export type MatchUpdate = Partial<MatchInsert>;
 

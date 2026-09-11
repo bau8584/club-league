@@ -347,6 +347,9 @@ export async function apiUpdateMatchWinnerLoser(
     patch.rp_delta_loser = extra.rpDeltaLoser ?? null;
     patch.rp_delta_winner2 = extra.rpDeltaWinner2 ?? null;
     patch.rp_delta_loser2 = extra.rpDeltaLoser2 ?? null;
+    // 영수증은 입력 당시 계산이다. 승패가 바뀐 뒤에도 남겨 두면 옛 승자가 이긴 것으로 보인다.
+    // 비우면 화면이 델타로 다시 구성한다(MatchesTab.buildResultFromMatch).
+    patch.rp_breakdown = null;
   }
   return supabase
     .from("matches")
@@ -412,6 +415,17 @@ export async function apiUpdateStudentRp(studentId: string, rp: number) {
     .from("players")
     .update({ rp })
     .eq("id", studentId);
+}
+
+/**
+ * 경기 수정 뒤 선수 캐시 갱신. rp만 고치면 공개 순위(PublicRanking)가 읽는 win_count·lose_count가
+ * 수정 전 승패로 남는다 — 실제로 승패가 뒤집힌 경기의 네 명이 그렇게 어긋나 있었다.
+ */
+export async function apiUpdateStudentStats(
+  studentId: string,
+  stats: { rp: number; win_count: number; lose_count: number },
+) {
+  return supabase.from("players").update(stats).eq("id", studentId);
 }
 
 // 휴면 감점 수동 실시 — 대상 entries를 RPC로 일괄 차감 + decay_log 기록. batch_id 반환.

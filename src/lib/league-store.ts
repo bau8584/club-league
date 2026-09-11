@@ -31,6 +31,7 @@ import {
   apiFetchStudents,
   apiFetchStudentsPublic,
   apiUpdateStudentRp,
+  apiUpdateStudentStats,
   apiResetStudentRp,
   apiUpdateStudentFields,
   apiInsertStudent,
@@ -2318,6 +2319,7 @@ function useLeagueStoreInternal() {
     // 3. Construct the updated Match record
     const updatedMatch: Match = {
       ...match,
+      rpBreakdown: null, // 서버와 같이 비운다 — 옛 영수증은 옛 승자를 가리킨다
       scoreA: nextScoreA,
       scoreB: nextScoreB,
       rpDeltaA: statA?.delta,
@@ -2455,7 +2457,9 @@ function useLeagueStoreInternal() {
 
         for (const s of nextStudentsList) {
           if (activePlayerIds.includes(s.id)) {
-            const { error: studErr } = await apiUpdateStudentRp(s.id, s.rp);
+            const { error: studErr } = await apiUpdateStudentStats(s.id, {
+              rp: s.rp, win_count: s.wins, lose_count: s.losses,
+            });
             if (studErr) throw studErr;
           }
         }
