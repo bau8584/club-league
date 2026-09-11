@@ -168,13 +168,13 @@ export function Onboarding({
                   type="button"
                   onClick={() => setForm((f) => ({ ...f, gender: g }))}
                   className={cn(
-                    "h-8 px-3 rounded-md text-[11px] font-black border transition-all active:scale-95",
+                    "h-10 px-5 rounded-md text-sm font-black border transition-all active:scale-95",
                     form.gender === g
                       ? (g === "M" ? "border-sky-500/60 bg-sky-500/20 text-sky-400" : g === "F" ? "border-pink-500/60 bg-pink-500/20 text-pink-400" : "border-neon-blue/60 bg-neon-blue/20 text-neon-blue")
                       : "border-border/40 text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  {g === "M" ? "남" : g === "F" ? "녀" : "미정"}
+                  {g === "M" ? "남" : g === "F" ? "여" : "미정"}
                 </button>
               ))}
             </div>
