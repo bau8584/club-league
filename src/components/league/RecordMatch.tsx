@@ -2540,7 +2540,7 @@ function ScoreRow({ title, accent, entries, value, selected, onSelect, onDigit, 
                   ev.stopPropagation();
                   e.onEdit();
                 }}
-                className="min-w-0 max-w-full truncate text-lg font-bold leading-tight text-foreground transition-opacity active:scale-95 active:opacity-70 cursor-pointer"
+                className="min-w-0 max-w-full truncate text-base font-bold leading-snug text-foreground transition-opacity active:scale-95 active:opacity-70 cursor-pointer"
               >
                 {e.name}
               </button>

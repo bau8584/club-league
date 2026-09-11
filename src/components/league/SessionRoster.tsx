@@ -2,6 +2,7 @@ import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { ClipboardCheck, X } from "lucide-react";
 import { useLeagueStore } from "@/lib/league-store";
 import { classKeyOf, classLabel, sortStudentsForRoster, type Student } from "@/lib/league-types";
 import { sessionClassKeys } from "@/domain/session-scope";
@@ -28,34 +29,52 @@ function classNumLabel(key: string): string {
   return c === "" ? "전체" : `${c}반`;
 }
 
-function ClassChip({
-  on,
-  nav,
-  onClick,
-  children,
-}: {
-  on: boolean;
-  /** 학년 줄은 고르는 곳이 아니라 옮겨 다니는 곳이다. 선택 색(파랑)은 반 줄에만 쓴다. */
-  nav?: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
+/**
+ * 명단 상자 안의 선택지는 두 층뿐이다.
+ * - 학년: 아래 반 줄을 갈아 끼우는 탭. 밑줄로 "지금 보는 곳"만 표시한다
+ * - 반·섞기·종목: 실제 선택. 같은 크기의 칩이고 켜지면 파랗다
+ * 셋을 전부 같은 칩으로 만들면 6학년을 누른 건지 4반을 고른 건지 구분이 안 된다.
+ */
+function GradeTab({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        "rounded-lg border px-3 py-1.5 text-xs font-black transition-all",
+        "-mb-px border-b-2 px-2.5 pb-1.5 text-xs font-black transition-colors",
+        on ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "h-8 rounded-lg border px-3 text-xs font-black transition-all",
         on
-          ? nav
-            ? "border-foreground/30 bg-foreground/10 text-foreground"
-            : "border-neon-blue/50 bg-neon-blue/20 text-neon-blue"
+          ? "border-neon-blue/50 bg-neon-blue/20 text-neon-blue"
           : "border-border/40 text-muted-foreground hover:text-foreground",
       )}
     >
       {children}
     </button>
   );
+}
+
+/**
+ * 이름은 번호 순으로 위→아래로 채운다(세로 채우기). 1열에 1~10번, 2열에 11~20번.
+ * 가로로 흘리면 번호가 지그재그가 되어 "13번 어디 있지"를 눈으로 훑어야 한다.
+ * 폰은 2열, 태블릿 3열, 넓으면 5열. 30명까지는 3열일 때 10행을 지키고, 넘으면 균등하게 나눈다.
+ */
+function columnRows(n: number, cols: number): number {
+  if (cols === 3 && n <= 30) return Math.min(10, n);
+  return Math.max(1, Math.ceil(n / cols));
 }
 
 /**
@@ -74,9 +93,10 @@ export function SessionRoster({
   onOpenChange,
 }: {
   /**
-   * 펼침 여부는 카드가 쥔다. 손잡이(명단 바꾸기)가 카드 머리글에 있기 때문이다 —
-   * 명단을 정하는 일은 수업당 한 번이라, 그 손잡이는 카드 제목 옆 한 자리면 충분하고
-   * 반 칩 스무 개와 이름 칩 스물여섯 개는 매 경기 쓰는 대기열에 자리를 내준다.
+   * 팝업이다. 열림 여부는 카드가 쥔다 — 손잡이(명단 바꾸기)가 카드 머리글에 있다.
+   * 명단을 정하는 일은 수업당 한 번인데 반 칩 스무 개와 이름 스물여섯 개는 화면 두 장이라,
+   * 카드 안에 펼치면 매 경기 쓰는 대기열이 밀려나 사라진다. 지각생 하나 빼려다 대기열을
+   * 잃으면 안 된다. 그래서 대기열 위에 띄우고, 닫으면 대기열이 그 자리에 그대로 있다.
    */
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -103,8 +123,7 @@ export function SessionRoster({
 
   const present = useMemo(() => assignmentSession?.player_ids ?? [], [assignmentSession]);
   const hasSession = !!assignmentSession && present.length > 0;
-  /** 세션이 없으면 접을 것이 없다 — 명단을 정하는 것이 지금 할 일이다. */
-  const collapsed = hasSession && !open;
+  const collapsed = !open;
 
   /** 현재 세션이 어느 반으로 돌아가고 있는지. 반이 바뀌면 그것이 곧 새 수업이다.
       경기 결과 입력·랭킹·하이라이트도 같은 답을 필요로 해서 공용 함수로 빼 두었다. */
@@ -226,203 +245,220 @@ export function SessionRoster({
       picked.some((id) => !present.includes(id)) ||
       draftType !== (assignmentSession?.match_type ?? "double"));
 
-  // 접는 것은 곧 편집을 그만두는 것이다 → 저장 안 한 손질은 버리고 세션으로 되돌린다.
+  // 닫는 것은 곧 편집을 그만두는 것이다 → 저장 안 한 손질은 버리고 세션으로 되돌린다.
   useEffect(() => {
     if (!open) setEditing(false);
   }, [open]);
 
   if (collapsed) return null;
 
+  const close = () => onOpenChange(false);
+
   return (
-    <div className="animate-in fade-in slide-in-from-top-1 duration-150">
-      {/* 카드 제목과 세션 요약은 SessionCard가 갖는다. 여기는 할 일 한 줄뿐이다. */}
-      <p className="mb-3 text-[11px] text-muted-foreground">
-        {singleClass
-          ? "안 온 학생만 눌러서 빼세요."
-          : "수업할 반을 고르고, 안 온 학생만 눌러서 빼세요."}
-      </p>
-      <div>
+    <div
+      className="fixed inset-0 z-[85] flex items-start justify-center overflow-y-auto bg-black/70 p-4 backdrop-blur-sm animate-in fade-in duration-150"
+      onClick={close}
+    >
+      <div
+        className="relative my-4 flex w-full max-w-3xl flex-col rounded-2xl border border-border/50 bg-background shadow-2xl sm:my-8"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* 머리글 — 무엇을 하는 창인지와 지금 몇 명인지 */}
+        <div className="flex items-center gap-2.5 px-4 pt-4 sm:px-6 sm:pt-5">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-neon-green/15 text-neon-green">
+            <ClipboardCheck className="size-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-base font-black tracking-tight text-foreground">
+              {hasSession ? "명단 바꾸기" : "오늘 수업"}
+            </h3>
+            <p className="text-[11px] text-muted-foreground">
+              {singleClass
+                ? "안 온 사람만 눌러서 빼세요."
+                : "수업할 반을 고르고, 안 온 학생만 눌러서 빼세요."}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={close}
+            aria-label="닫기"
+            className="flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+          >
+            <X className="size-5" />
+          </button>
+        </div>
+
+        <div className="space-y-4 px-4 py-4 sm:px-6">
           {/* 반 고르기 = 명단 정하기. 반이 하나뿐인 리그에는 고를 것이 없다. */}
           {!singleClass && (
-            <div className="mb-3 space-y-2">
+            <div className="space-y-2.5">
               {/* 학년 줄 — 고르는 곳이 아니라 아래 반 줄을 갈아 끼우는 곳. */}
               {gradeKeys.length > 1 && (
-                <div className="flex flex-wrap gap-1.5">
+                <div className="flex gap-1 border-b border-border/30">
                   {gradeKeys.map((g) => (
-                    <ClassChip key={g} nav on={g === viewGrade} onClick={() => setViewGrade(g)}>
+                    <GradeTab key={g} on={g === viewGrade} onClick={() => setViewGrade(g)}>
                       {gradeLabel(g)}
-                    </ClassChip>
+                    </GradeTab>
                   ))}
                 </div>
               )}
 
-              {/* 반 줄 — 실제 선택. 학년을 위에서 골랐으므로 숫자만 남아 한 줄에 들어간다. */}
-              <div className="flex flex-wrap gap-1.5">
+              {/* 반 줄 — 실제 선택. [여러 반 섞기]는 일 년에 몇 번 쓰는 예외라 줄 끝에 작게. */}
+              <div className="flex flex-wrap items-center gap-1.5">
                 {keysInView.map((key) => (
-                  <ClassChip
-                    key={key}
-                    on={selected.includes(key)}
-                    onClick={() => pickClass(key, multi)}
-                  >
+                  <Chip key={key} on={selected.includes(key)} onClick={() => pickClass(key, multi)}>
                     {classNumLabel(key)}
-                  </ClassChip>
+                  </Chip>
                 ))}
-              </div>
-
-              {multi ? (
-                // 섞는 동안에는 학년을 옮겨 다니느라 고른 반이 화면에서 사라진다 → 요약으로 붙잡아 둔다.
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[11px] font-bold text-muted-foreground">
-                    고른 반: {scopeText || "없음"}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
+                <span className="grow" />
+                <Chip
+                  on={multi}
+                  onClick={() => {
+                    if (multi) {
                       // 섞기를 끄는 것은 "한 반으로 돌아간다"는 뜻이다.
-                      setMulti(false);
                       setSelected((prev) => (prev.length > 1 ? prev.slice(0, 1) : prev));
                       if (selected.length > 1) setEditing(true);
-                    }}
-                    className="rounded-lg border border-neon-blue/50 bg-neon-blue/15 px-2.5 py-1 text-[11px] font-black text-neon-blue"
-                  >
-                    섞는 중 · 끄기
-                  </button>
-                  <span className="text-[11px] text-muted-foreground">
-                    누르는 반이 더해집니다. 학년을 바꿔도 고른 반은 남습니다.
-                  </span>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setMulti(true)}
-                  className="text-[11px] font-bold text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                    }
+                    setMulti((v) => !v);
+                  }}
                 >
                   여러 반 섞기
-                </button>
+                </Chip>
+              </div>
+
+              {/* 섞는 동안에는 학년을 옮겨 다니느라 고른 반이 화면에서 사라진다 → 요약으로 붙잡아 둔다. */}
+              {multi && (
+                <p className="text-[11px] text-muted-foreground">
+                  누르는 반이 더해집니다 · 고른 반: <span className="font-black text-foreground">{scopeText || "없음"}</span>
+                </p>
               )}
             </div>
           )}
 
           {selected.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-border/30 py-6 text-center text-[11px] text-muted-foreground">
+            <p className="rounded-xl border border-dashed border-border/30 py-8 text-center text-xs text-muted-foreground">
               수업할 반을 고르세요.
             </p>
           ) : (
             <>
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-xs font-bold text-muted-foreground">
-                  {scopeText ? `${scopeText} ` : ""}참석 {picked.length}명
+              {/* 명단 — 결과 입력의 선수 칸과 같은 모양(모서리·테두리·가운데 이름). */}
+              <div className="rounded-xl border border-border/30 bg-input/30 p-2">
+                <div className="mb-2 flex items-center gap-2 px-1">
+                  <span className="text-xs font-bold text-muted-foreground">
+                    {scopeText ? `${scopeText} ` : ""}참석 {picked.length}명
+                    {absentIds.size > 0 && (
+                      <span className="ml-1.5 font-black text-amber-500">결석 {absentIds.size}명</span>
+                    )}
+                  </span>
                   {absentIds.size > 0 && (
-                    <span className="ml-1.5 font-black text-amber-500">
-                      결석 {absentIds.size}명
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditing(true);
+                        setAbsent((prev) => {
+                          const out = { ...prev };
+                          for (const key of selected) out[key] = [];
+                          return out;
+                        });
+                      }}
+                      className="ml-auto text-[11px] font-bold text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                    >
+                      결석 표시 지우기
+                    </button>
                   )}
-                </span>
-                {absentIds.size > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditing(true);
-                      setAbsent((prev) => {
-                        const out = { ...prev };
-                        for (const key of selected) out[key] = [];
-                        return out;
-                      });
-                    }}
-                    className="ml-auto rounded-lg border border-border/40 px-2 py-1 text-[10px] font-black text-muted-foreground hover:text-foreground"
-                  >
-                    결석 표시 지우기
-                  </button>
-                )}
+                </div>
+
+                <div className="space-y-3">
+                  {selected.map((key) => {
+                    const group = scopeStudents.filter((s) => classKeyOf(s) === key);
+                    if (group.length === 0) return null;
+                    const n = group.length;
+                    return (
+                      <div key={key}>
+                        {/* 여러 반을 섞었을 때만 반 머리글을 붙인다. 한 반이면 군더더기다. */}
+                        {selected.length > 1 && (
+                          <p className="mb-1 px-1 text-[10px] font-black text-muted-foreground">
+                            {classLabel(key)} ({group.filter((s) => !absentIds.has(s.id)).length}/{n})
+                          </p>
+                        )}
+                        <div
+                          className="grid grid-flow-col grid-cols-2 grid-rows-[repeat(var(--r2),minmax(0,auto))] gap-1.5 sm:grid-cols-3 sm:grid-rows-[repeat(var(--r3),minmax(0,auto))] lg:grid-cols-5 lg:grid-rows-[repeat(var(--r5),minmax(0,auto))]"
+                          style={
+                            {
+                              "--r2": columnRows(n, 2),
+                              "--r3": columnRows(n, 3),
+                              "--r5": columnRows(n, 5),
+                            } as React.CSSProperties
+                          }
+                        >
+                          {group.map((s) => {
+                            const out = absentIds.has(s.id);
+                            return (
+                              <button
+                                key={s.id}
+                                type="button"
+                                onClick={() => toggleAbsent(s)}
+                                className={cn(
+                                  "flex h-9 min-w-0 items-center gap-1.5 rounded-lg border px-2.5 text-sm font-bold transition-all active:scale-95",
+                                  out
+                                    ? // 결석은 눈에 띄어야 한다 — 교사가 훑어보는 대상은 빠진 사람이다.
+                                      "border-amber-500/40 bg-amber-500/10 text-amber-600/80 line-through dark:text-amber-400/80"
+                                    : "border-border/40 bg-background text-foreground hover:border-border",
+                                )}
+                              >
+                                {s.studentNo != null && (
+                                  <span className="w-5 shrink-0 text-right text-[11px] font-black tabular-nums text-muted-foreground">
+                                    {s.studentNo}
+                                  </span>
+                                )}
+                                <span className="min-w-0 flex-1 truncate text-left">{dn(s)}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
-              {/* 종목은 그 수업의 성격이라 세션 설정이다. 채우는 단위(한 바퀴/1경기)와는 다른 축. */}
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-[11px] font-bold text-muted-foreground">종목</span>
+              {/* 종목은 명단이 아니라 수업 설정이지만 같이 저장된다 → 저장 버튼 바로 위에. */}
+              <div className="flex items-center gap-1.5">
+                <span className="mr-1 text-xs font-bold text-muted-foreground">종목</span>
                 {(["double", "single"] as const).map((t) => (
-                  <button
+                  <Chip
                     key={t}
-                    type="button"
+                    on={draftType === t}
                     onClick={() => {
                       setEditing(true);
                       setDraftType(t);
                     }}
-                    className={cn(
-                      "rounded-lg border px-2.5 py-1 text-[11px] font-black transition-all",
-                      draftType === t
-                        ? "border-neon-blue/50 bg-neon-blue/15 text-neon-blue"
-                        : "border-border/40 text-muted-foreground hover:text-foreground",
-                    )}
                   >
                     {t === "double" ? "복식" : "단식"}
-                  </button>
+                  </Chip>
                 ))}
-              </div>
-
-              {/* 확정 버튼은 명단 위에 둔다 — 결석이 없는 날(대부분)에는 이름 스물여섯 개를
-                  지나쳐 스크롤할 이유가 없다. 결석 빼기는 그 아래에서 필요할 때만 한다. */}
-              {(dirty || !hasSession) && (
-                <div className="mb-3">
-                  <Button
-                    onClick={save}
-                    disabled={saving || picked.length === 0}
-                    className="h-11 w-full rounded-xl bg-neon-green text-sm font-black text-primary-foreground hover:bg-neon-green/90"
-                  >
-                    {classesChanged ? `${scopeText ? `${scopeText} ` : ""}수업 시작` : "명단 반영"}
-                  </Button>
-                  <p className="mt-2 text-[11px] text-muted-foreground">
-                    {classesChanged
-                      ? "대기 중인 경기를 지우고 이 명단으로 새로 시작합니다."
-                      : "대기 중인 경기는 그대로 두고 명단만 고칩니다. (지각·조퇴)"}
-                  </p>
-                </div>
-              )}
-
-              <div className="max-h-56 overflow-y-auto rounded-xl border border-border/30 p-2">
-                {selected.map((key) => {
-                  const group = scopeStudents.filter((s) => classKeyOf(s) === key);
-                  if (group.length === 0) return null;
-                  return (
-                    <div key={key} className="mb-2 last:mb-0">
-                      {/* 여러 반을 섞었을 때만 반 머리글을 붙인다. 한 반이면 군더더기다. */}
-                      {selected.length > 1 && (
-                        <p className="mb-1 text-[10px] font-black text-muted-foreground">
-                          {classLabel(key)} ({group.filter((s) => !absentIds.has(s.id)).length}/
-                          {group.length})
-                        </p>
-                      )}
-                      <div className="flex flex-wrap gap-1.5">
-                        {group.map((s) => {
-                          const out = absentIds.has(s.id);
-                          return (
-                            <button
-                              key={s.id}
-                              type="button"
-                              onClick={() => toggleAbsent(s)}
-                              className={cn(
-                                "rounded-full border px-2.5 py-1 text-xs font-bold transition-all",
-                                out
-                                  ? // 결석은 눈에 띄어야 한다 — 교사가 훑어보는 대상은 빠진 사람이다.
-                                    "border-amber-500/40 bg-amber-500/10 text-amber-500/80 line-through"
-                                  : "border-neon-green/50 bg-neon-green/15 text-neon-green",
-                              )}
-                            >
-                              {dn(s)}
-                              {s.studentNo != null && (
-                                <span className="ml-1 text-[10px] font-normal opacity-70">
-                                  {s.studentNo}
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
               </div>
             </>
           )}
+        </div>
+
+        {/* 저장 — 창 바닥에 붙어 스크롤해도 보인다. 바뀐 게 없으면 누를 것도 없다. */}
+        {selected.length > 0 && (dirty || !hasSession) && (
+          <div className="sticky bottom-0 rounded-b-2xl border-t border-border/30 bg-background/95 px-4 py-3 backdrop-blur sm:px-6">
+            <Button
+              onClick={save}
+              disabled={saving || picked.length === 0}
+              className="h-11 w-full rounded-xl bg-neon-green text-sm font-black text-primary-foreground hover:bg-neon-green/90"
+            >
+              {classesChanged ? `${scopeText ? `${scopeText} ` : ""}수업 시작` : "명단 반영"}
+            </Button>
+            <p className="mt-1.5 text-center text-[11px] text-muted-foreground">
+              {classesChanged
+                ? "대기 중인 경기를 지우고 이 명단으로 새로 시작합니다."
+                : "대기 중인 경기는 그대로 두고 명단만 고칩니다. (지각·조퇴)"}
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );

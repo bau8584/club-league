@@ -43,9 +43,12 @@ const PRESETS: {
 /**
  * 이 경기 수로 뽑으면 무슨 일이 생기는지 한 줄. "보장"이 아니라 "이만큼이면 들어갈
  * 수 있다"는 안내다 — [실력]은 판 수를 뒤에 보므로 같은 사람이 두 번 들어갈 수 있다.
+ *
+ * 놀고 있는 사람이 한 경기 인원도 안 되면 이미 줄에 선 사람으로 다음 판을 미리 잡는다.
+ * 계산기가 판 수 적은 순으로 다시 쓴다.
  */
 function countHint(count: number, free: number, perMatch: number): string {
-  if (free < perMatch) return "뽑을 수 있는 인원이 모자라요.";
+  if (free < perMatch) return "놀고 있는 사람이 모자라 이미 줄에 선 사람으로 다음 판을 미리 잡아요.";
   const slots = count * perMatch;
   if (slots < free) return `${slots}명이 1번, ${free - slots}명은 다음에.`;
   const each = Math.floor(slots / free);
@@ -114,7 +117,13 @@ export function MatchQueue({
     }
     return (assignmentSession?.player_ids ?? []).filter((id) => !busy.has(id)).length;
   }, [queue, assignmentSession?.player_ids]);
-  const defaultCount = Math.max(1, Math.floor(free / perMatch));
+  /**
+   * 한 바퀴 = 놀고 있는 사람 전원이 한 번씩, 남는 사람은 다음에. 25명 복식이면 6경기(1명 남음),
+   * 단식이면 12경기. "모두 한 번 이상"(7경기, 3명은 두 번)이 아니다 — 바퀴라는 말이
+   * "한 사람 한 번"이고, 두 번 들어갈 사람을 고르는 규칙이 따로 필요해진다.
+   */
+  const roundCount = Math.floor(free / perMatch);
+  const defaultCount = Math.max(1, roundCount);
 
   /**
    * 뽑을 경기 수. 기본은 한 바퀴(놀고 있는 인원 ÷ 경기당 인원)이고, 교사가 늘리거나
@@ -126,13 +135,18 @@ export function MatchQueue({
   const count = override && override.base === defaultCount ? override.count : defaultCount;
   const setCount = (n: number) => setOverride({ count: Math.max(1, n), base: defaultCount });
 
-  const fill = async () => {
+  const fill = async (n: number) => {
     setFilling(true);
     // 종목은 세션 설정이다. 여기서는 경기 수만 정한다.
-    await fillAssignmentQueue({ count, policy: preset });
+    await fillAssignmentQueue({ count: n, policy: preset });
     setOverride(null);
     setFilling(false);
   };
+
+  // 학교는 한 바퀴씩, 동호회는 몇 경기씩 그때그때. 자주 쓰는 쪽을 진하게.
+  const roundPrimary = leagueType === "school";
+  const primaryBtn = "bg-neon-blue text-primary-foreground hover:bg-neon-blue/90";
+  const secondaryBtn = "border border-border/40 bg-transparent text-foreground hover:bg-muted/40";
 
   const currentPreset = PRESETS.find((p) => p.value === preset)!;
 
@@ -216,18 +230,12 @@ export function MatchQueue({
 
       {/* 관리자가 아니고 줄도 없으면 카드 머리글이 이미 "아직 없어요"를 말한다. */}
 
-      {canManage && !assignmentSession?.player_ids?.length && (
-        <p className="text-[11px] text-muted-foreground">
-          출석을 정하면 대진을 뽑을 수 있어요. 참석한 사람만 대진에 들어갑니다.
-        </p>
-      )}
-
       {canManage && !!assignmentSession?.player_ids?.length && (
         <div className={cn(queue.length > 0 && "mt-4 border-t border-border/30 pt-3")}>
           {/*
-            조작은 한 줄: 방식 · 경기 수 · [대진 뽑기]. 셋 다 같은 높이(h-9)라 한 묶음으로
+            조작은 한 줄: [방식] · [한 바퀴] · [− N +][N경기]. 전부 같은 높이(h-9)라 한 묶음으로
             읽히고, 버튼은 내용 너비만 차지한다 — 수업 중 한두 번 누르는 것이 화면의 1/8 을
-            차지할 이유가 없다. 안내는 같은 줄 끝(좁으면 다음 줄)에 한 문장.
+            차지할 이유가 없다. 안내는 그 아래 한 문장.
           */}
           <div className="flex flex-wrap items-center gap-2">
             {/* 대진 방식 — 평소엔 기본값 그대로. 누르면 아래에 선택지가 펼쳐진다. */}
@@ -246,9 +254,17 @@ export function MatchQueue({
               <ChevronDown className={cn("size-3.5 transition-transform", presetOpen && "rotate-180")} />
             </button>
 
-            {/* 경기 수 — 기본은 한 바퀴. "전원 1번"이 안 되는 인원(25명에 6경기)일 때
-                그 사실을 뽑기 전에 옆 문장에서 보게 하는 것이 이 숫자의 목적이다. */}
-            <div className="flex h-9 items-center rounded-lg border border-border/40">
+            {/* 한 바퀴 — 숫자 없이. 놀고 있는 사람이 한 경기도 안 되면 바퀴가 없다. */}
+            <Button
+              onClick={() => fill(roundCount)}
+              disabled={filling || roundCount === 0}
+              className={cn("h-9 rounded-lg px-3 text-xs font-black", roundPrimary ? primaryBtn : secondaryBtn)}
+            >
+              <Sparkles className="mr-1 size-3.5" /> 한 바퀴
+            </Button>
+
+            {/* N경기 — 스테퍼와 버튼을 한 덩어리로 붙인다. 숫자가 버튼의 일부라는 뜻이다. */}
+            <div className="flex h-9 items-center overflow-hidden rounded-lg border border-border/40">
               <button
                 type="button"
                 onClick={() => setCount(count - 1)}
@@ -258,8 +274,8 @@ export function MatchQueue({
               >
                 <Minus className="size-3.5" />
               </button>
-              <span className="min-w-12 text-center text-xs font-black tabular-nums text-foreground">
-                {count}경기
+              <span className="min-w-6 text-center text-xs font-black tabular-nums text-foreground">
+                {count}
               </span>
               <button
                 type="button"
@@ -270,20 +286,22 @@ export function MatchQueue({
               >
                 <Plus className="size-3.5" />
               </button>
+              <Button
+                onClick={() => fill(count)}
+                disabled={filling}
+                className={cn(
+                  "h-full rounded-none border-0 border-l border-border/40 px-3 text-xs font-black",
+                  roundPrimary ? secondaryBtn : primaryBtn,
+                )}
+              >
+                {count}경기 뽑기
+              </Button>
             </div>
-
-            <Button
-              onClick={fill}
-              disabled={filling || free < perMatch}
-              className="h-9 rounded-lg bg-neon-blue px-4 text-xs font-black text-primary-foreground hover:bg-neon-blue/90"
-            >
-              <Sparkles className="mr-1 size-3.5" /> 대진 뽑기
-            </Button>
-
-            <span className="text-[11px] text-muted-foreground">
-              {countHint(count, free, perMatch)}
-            </span>
           </div>
+
+          <p className="mt-1.5 text-[11px] text-muted-foreground">
+            {countHint(count, free, perMatch)}
+          </p>
 
           {presetOpen && (
             <div className="mt-2 flex flex-wrap items-center gap-1.5 animate-in fade-in slide-in-from-top-1 duration-150">

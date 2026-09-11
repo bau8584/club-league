@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { ChevronDown, ClipboardCheck, ListOrdered } from "lucide-react";
+import { ClipboardCheck, ListOrdered } from "lucide-react";
 import { useLeagueStore } from "@/lib/league-store";
 import { classKeyOf, classLabel, type ScheduledMatch } from "@/lib/league-types";
 import { useQueueRows } from "@/lib/use-queue-rows";
@@ -90,46 +90,37 @@ export function SessionCard({
 
   return (
     <Card className="border border-border/40 bg-card/50 p-5 shadow-lg backdrop-blur">
+      {/* 제목이 곧 정체다 — 이 카드는 대기열이다. 어느 반 몇 명인지는 부제로 내린다.
+          종목과 대기 경기 수는 바로 아래 목록에서 눈으로 보이니 적지 않는다. */}
       <div className="mb-4 flex items-center gap-2.5">
-        <div className="flex size-9 items-center justify-center rounded-xl bg-neon-green/15 text-neon-green">
-          <ClipboardCheck className="size-5" />
+        <div className="flex size-9 items-center justify-center rounded-xl bg-neon-blue/15 text-neon-blue">
+          <ListOrdered className="size-5" />
         </div>
         <div className="min-w-0 flex-1">
-          <h2 className="text-base font-black tracking-tight text-foreground">
+          <h2 className="text-base font-black tracking-tight text-foreground">대기열</h2>
+          <p className="truncate text-[11px] text-muted-foreground">
             {hasSession
-              ? `${sessionText ? `${sessionText} · ` : ""}참석 ${present.length}명`
-              : "오늘 수업"}
-          </h2>
-          {/* 사용법이 아니라 상태다. 시작 시각은 수업 중 아무도 보지 않아 뺐다. */}
-          <p className="text-[11px] text-muted-foreground">
-            {hasSession
-              ? [
-                  assignmentSession?.match_type === "single" ? "단식" : "복식",
-                  queue.length > 0 ? `대기 ${queue.length}경기` : null,
-                  idleCount > 0 ? `아직 못 뛴 학생 ${idleCount}명` : "전원 한 판 이상 뛰었어요",
-                ]
-                  .filter(Boolean)
-                  .join(" · ")
-              : "출석을 정하면 그 명단으로 대진을 뽑습니다."}
+              ? `${sessionText ? `${sessionText} · ` : ""}참석 ${present.length}명${idleCount > 0 ? ` (미출전 ${idleCount})` : ""}`
+              : "출석을 정하면 그 명단으로 대진을 뽑아요."}
           </p>
         </div>
         {/* 명단은 수업당 한 번 정한다. 지각·조퇴나 반 교체는 여기서 다시 연다. */}
-        {hasSession && (
-          <button
-            type="button"
-            onClick={() => setRosterOpen((v) => !v)}
-            className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-border/40 px-2.5 text-[11px] font-black text-muted-foreground transition-all hover:text-foreground"
-          >
-            {rosterOpen ? "접기" : "명단 바꾸기"}
-            <ChevronDown className={cn("size-3.5 transition-transform", rosterOpen && "rotate-180")} />
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => setRosterOpen(true)}
+          className={cn(
+            "flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2.5 text-[11px] font-black transition-all",
+            hasSession
+              ? "border-border/40 text-muted-foreground hover:text-foreground"
+              : "border-neon-green/50 bg-neon-green/15 text-neon-green hover:bg-neon-green/25",
+          )}
+        >
+          <ClipboardCheck className="size-3.5" />
+          {hasSession ? "명단 바꾸기" : "출석 정하기"}
+        </button>
       </div>
 
       <SessionRoster open={rosterOpen} onOpenChange={setRosterOpen} />
-
-      {/* 명단을 펼쳤을 때만 선을 긋는다. 접힌 상태에서는 머리글 아래가 바로 대기열이다. */}
-      {(rosterOpen || !hasSession) && <div className="my-4 border-t border-border/30" />}
 
       <MatchQueue canManage onRecordRow={onRecordRow} />
     </Card>
