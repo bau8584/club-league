@@ -11,6 +11,8 @@ import {
   type AssignmentPreset,
   type TeamSize,
 } from "@/domain/assignment-calculator";
+import { carriedPlayDebt } from "@/domain/play-debt";
+import { skillRating } from "@/domain/skill-rating";
 import { getTodayPlayerIds } from "./today-players";
 import {
   apiGetUser,
@@ -3087,16 +3089,8 @@ function useLeagueStoreInternal() {
     };
   };
 
-  // 실력을 무엇으로 재는가: 급수 데이터가 있으면 급수를, 없으면 RP를 쓴다.
-  // 동호회에서 "실력이 맞는다"는 RP가 아니라 급수 기준이어야 납득하기 때문이다.
-  // levels는 높은 → 낮은 순이라 인덱스를 뒤집어 RP와 같은 방향(클수록 강함)으로 맞춘다.
-  const ratingOf = (s: Student): number => {
-    if (levels.length > 1 && s.group) {
-      const idx = levels.findIndex((l) => l.name === s.group);
-      if (idx >= 0) return ((levels.length - 1 - idx) / (levels.length - 1)) * 1000;
-    }
-    return s.rp;
-  };
+  // 실력을 무엇으로 재는가: 급수가 먼저, 같은 급이면 RP. 급수가 없는 리그는 RP. (skill-rating.ts)
+  const ratingOf = (s: Student): number => skillRating(s, levels);
 
   const fillAssignmentQueue = useCallback(async (opts?: {
     /**
@@ -3174,6 +3168,26 @@ function useLeagueStoreInternal() {
     const todayKey = new Date().toDateString();
     const isTodayMatch = (m: Match) => new Date(m.date).toDateString() === todayKey;
 
+    // 지난 출석일의 빚. 판 수는 오늘만 세지만, 지난 시간에 한 판밖에 못 뛴 아이가
+    // 오늘 또 한 판만 뛰는 건 막아야 한다 — 그 손해만큼을 마이너스에서 출발시킨다.
+    //
+    // 학교만 진다. 반 전체가 같은 시간에 있는 학교에서 덜 뛴 건 운이 나빴던 것이지만,
+    // 동호회에서 덜 뛴 건 대개 늦게 왔거나 일찍 간 본인 선택이다. 그걸 다음 주에
+    // 갚아 주면 오히려 "쟤는 왜 먼저 들어가냐"는 불만이 된다.
+    const playCountOffset: Record<string, number> = {};
+    if (leagueTypeRef.current === "school") {
+      const debt = carriedPlayDebt(
+        matches
+          .filter((m) => !isTodayMatch(m))
+          .map((m) => ({
+            dayKey: new Date(m.date).toDateString(),
+            playerIds: [m.playerAId, m.playerBId, m.playerA2Id, m.playerB2Id].filter(Boolean) as string[],
+          })),
+        participantIds,
+      );
+      for (const [id, d] of Object.entries(debt)) playCountOffset[id] = -d;
+    }
+
     const out = calculateAssignment({
       participants: students
         .filter((s) => participantIds!.includes(s.id))
@@ -3187,6 +3201,7 @@ function useLeagueStoreInternal() {
         ...queueHistory,
         ...queuePlayOnly,
       ],
+      playCountOffset,
       count,
       teamSize,
       policy: preset,

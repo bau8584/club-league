@@ -90,6 +90,12 @@ export interface AssignmentInput {
    * 생략하면 `history`를 그대로 쓴다.
    */
   playHistory?: AssignmentHistoryMatch[];
+  /**
+   * 판 수 보정. id별로 더해진다 — 음수면 "빚"(지난 출석일에 남들보다 덜 뛴 만큼)이라
+   * 그만큼 먼저 들어간다. playHistory 가 오늘만 세는 창일 때 지난날의 손해를 넘겨주는
+   * 통로다. 결과 playCounts 에는 섞이지 않는다(그건 실제 판 수다).
+   */
+  playCountOffset?: Record<string, number>;
   /** 뽑을 경기 수. "다 뽑기"가 아니라 모자란 만큼만 채운다. */
   count: number;
   teamSize?: TeamSize;
@@ -417,6 +423,9 @@ export function calculateAssignment(input: AssignmentInput): AssignmentOutput {
     // 판 수만 다른 창에서 다시 센다. 만남 카운트는 history 것을 그대로 둔다.
     stats.playCount = buildHistoryStats(input.playHistory).playCount;
   }
+  for (const [id, by] of Object.entries(input.playCountOffset ?? {})) {
+    if (roster.has(id) && Number.isFinite(by) && by !== 0) bump(stats.playCount, id, by);
+  }
   // 입력으로 들어온 큐 인원과, 이번 호출에서 방금 배정한 인원을 나눠 둔다.
   // 전자는 후보가 모자랄 때 감점과 함께 완화할 수 있지만, 후자는 절대 완화하지 않는다.
   // 같은 사람을 한 번의 채우기에서 두 경기에 넣는 것은 물리적으로 불가능하다.
@@ -495,7 +504,9 @@ export function calculateAssignment(input: AssignmentInput): AssignmentOutput {
   }
 
   const playCounts: Record<string, number> = {};
-  for (const id of roster.keys()) playCounts[id] = stats.playCount.get(id) ?? 0;
+  for (const id of roster.keys()) {
+    playCounts[id] = (stats.playCount.get(id) ?? 0) - (input.playCountOffset?.[id] ?? 0);
+  }
 
   return { matches, shortfall, playCounts };
 
