@@ -71,6 +71,7 @@ import {
   apiAllocMatchSeq,
   apiUpdateScheduledStatus,
   apiDeleteScheduledMatch,
+  apiUpdateScheduledTeams,
   apiCreateReservation,
   apiLinkScheduledResult,
   apiUpdateReservationPlayers,
@@ -2996,6 +2997,24 @@ function useLeagueStoreInternal() {
     return true;
   }, [loadScheduled]);
 
+  /**
+   * 대기열 한 줄에서 한 사람을 다른 사람으로 바꾼다. 자리는 그대로(팀·짝 유지).
+   * 다른 줄에 이미 선 사람도 넣을 수 있다 — 막지 않고 화면에서 표시만 한다.
+   */
+  const replaceQueuePlayer = useCallback(async (rowId: string, fromId: string, toId: string): Promise<boolean> => {
+    if (!isClassManagerRef.current) { toast.error("권한이 없습니다."); return false; }
+    const row = scheduledMatches.find((m) => m.id === rowId);
+    if (!row) return false;
+    const swap = (id: string | null | undefined) => (id === fromId ? toId : id);
+    const teamA = [swap(row.player_a_id), swap(row.player_a2_id)].filter(Boolean) as string[];
+    const teamB = [swap(row.player_b_id), swap(row.player_b2_id)].filter(Boolean) as string[];
+    const { error } = await apiUpdateScheduledTeams(rowId, teamA, teamB);
+    if (error) { toast.error("바꾸기 실패: " + error.message); return false; }
+    const cid = currentClassIdRef.current;
+    if (cid) await loadScheduled(cid);
+    return true;
+  }, [scheduledMatches, loadScheduled]);
+
   // ── 배정 세션 — 참가자 명단 ───────────────────────────
   // 출석 체크가 입력의 전부다. 명단은 서버에 두고 실시간으로 공유한다.
   const loadAssignmentSession = useCallback(async (classId: string) => {
@@ -3805,6 +3824,7 @@ function useLeagueStoreInternal() {
     fillAssignmentQueue,
     callScheduledMatch,
     removeScheduledMatch,
+    replaceQueuePlayer,
     createReservation,
     cancelReservation,
     linkReservationResult,

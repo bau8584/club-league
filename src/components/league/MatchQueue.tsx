@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { ChevronDown, ChevronRight, CircleHelp, Plus, X } from "lucide-react";
+import { ChevronDown, ChevronRight, CircleHelp, Pencil, Plus, X } from "lucide-react";
 import { useLeagueStore } from "@/lib/league-store";
 import { teamsOf, useQueueRows } from "@/lib/use-queue-rows";
-import type { ScheduledMatch, Student } from "@/lib/league-types";
+import { sortStudentsForRoster, type ScheduledMatch, type Student } from "@/lib/league-types";
 import type { AssignmentPreset } from "@/domain/assignment-calculator";
 
 const dn = (s?: Student | null) => (s ? s.nickname || s.name : "?");
@@ -85,6 +85,7 @@ export function MatchQueue({
     assignmentSession,
     fillAssignmentQueue,
     removeScheduledMatch,
+    replaceQueuePlayer,
   } = useLeagueStore();
 
   const [preset, setPreset] = useState<AssignmentPreset>(
@@ -96,6 +97,8 @@ export function MatchQueue({
   const skillBasis = levels.length > 1 ? "급수" : "RP";
   // 줄에서 빼기 확인 팝업 대상. 삭제는 되돌릴 수 없으므로 한 번 묻는다.
   const [confirmRemove, setConfirmRemove] = useState<ScheduledMatch | null>(null);
+  // 사람 바꾸기 팝업 대상 줄.
+  const [editRow, setEditRow] = useState<ScheduledMatch | null>(null);
 
   const byId = useMemo(() => {
     const m = new Map<string, Student>();
@@ -203,6 +206,18 @@ export function MatchQueue({
                   {names}
                   <ChevronRight className="size-4 shrink-0 text-muted-foreground/60" />
                 </button>
+                {/* 사람 바꾸기는 연필로. 이름을 눌러 바꾸게 하면 폰에서 이름이 행 대부분이라
+                    결과 입력하려다 바꾸기 창이 뜬다 — 행 누르기의 뜻은 하나여야 한다. */}
+                {confirmed && (
+                  <button
+                    type="button"
+                    onClick={() => setEditRow(r)}
+                    aria-label={`${seqMark(r.seq) || "이 대진"} 사람 바꾸기`}
+                    className="flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground/60 transition-colors hover:bg-muted/40 hover:text-foreground"
+                  >
+                    <Pencil className="size-3.5" />
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setConfirmRemove(r)}
@@ -312,6 +327,19 @@ export function MatchQueue({
         </div>
       )}
 
+      {editRow && (
+        <QueueEditDialog
+          row={queue.find((r) => r.id === editRow.id) ?? editRow}
+          queue={queue}
+          participants={(assignmentSession?.player_ids ?? [])
+            .map((id) => byId.get(id))
+            .filter((s): s is Student => !!s)}
+          nameOf={(id) => dn(byId.get(id))}
+          onReplace={(from, to) => replaceQueuePlayer(editRow.id, from, to)}
+          onClose={() => setEditRow(null)}
+        />
+      )}
+
       {/* 줄에서 빼기 확인 — MatchesTab 의 예약 정리 팝업과 같은 모양이다. */}
       {confirmRemove &&
         (() => {
@@ -359,6 +387,166 @@ export function MatchQueue({
             </div>
           );
         })()}
+    </div>
+  );
+}
+
+/**
+ * 대기열 한 줄의 사람 바꾸기.
+ *
+ * 위에 그 줄의 네 사람(단식이면 둘), 아래에 오늘 명단. 위에서 누구를 뺄지 누르고 아래에서
+ * 누구를 넣을지 누르면 끝이다 — 저장 버튼이 없다. 자리(팀·짝)는 그대로다.
+ *
+ * 명단에 없는 사람은 선택지에 없다(참석한 사람만 대진에 들어간다는 규칙). 다른 줄에 이미 선
+ * 사람은 막지 않고 "#n" 표시만 한다 — 두 줄에 서는 것이 미리 잡기의 정의라서다.
+ */
+function QueueEditDialog({
+  row,
+  queue,
+  participants,
+  nameOf,
+  onReplace,
+  onClose,
+}: {
+  row: ScheduledMatch;
+  queue: ScheduledMatch[];
+  participants: Student[];
+  nameOf: (id: string) => string;
+  onReplace: (fromId: string, toId: string) => Promise<boolean>;
+  onClose: () => void;
+}) {
+  const { teamA, teamB } = teamsOf(row);
+  const inRow = new Set([...teamA, ...teamB]);
+  // 빼려는 사람. 처음엔 아무도 안 골라져 있다 — 넣을 사람부터 누르는 실수를 막으려면
+  // 위에서 먼저 골라야 아래가 켜지게 한다.
+  const [fromId, setFromId] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  // 다른 줄에 선 사람 → 그 줄 번호. 같은 사람이 여러 줄이면 앞줄만.
+  const seqOf = new Map<string, number | null>();
+  for (const r of queue) {
+    if (r.id === row.id) continue;
+    const { teamA: a, teamB: b, pool } = teamsOf(r);
+    for (const id of [...a, ...b, ...pool]) if (!seqOf.has(id)) seqOf.set(id, r.seq ?? null);
+  }
+
+  const candidates = sortStudentsForRoster(participants).filter((s) => !inRow.has(s.id));
+
+  const pick = async (toId: string) => {
+    if (!fromId || busy) return;
+    setBusy(true);
+    const ok = await onReplace(fromId, toId);
+    setBusy(false);
+    if (ok) onClose();
+  };
+
+  const Slot = ({ id }: { id: string }) => (
+    <button
+      type="button"
+      onClick={() => setFromId((v) => (v === id ? null : id))}
+      className={cn(
+        "h-10 flex-1 rounded-lg border text-sm font-bold transition-all",
+        fromId === id
+          ? "border-neon-blue bg-neon-blue/15 text-neon-blue ring-2 ring-neon-blue/40"
+          : "border-border/40 bg-background text-foreground hover:border-border",
+      )}
+    >
+      {nameOf(id)}
+    </button>
+  );
+
+  return (
+    <div
+      className="fixed inset-0 z-[85] flex items-start justify-center overflow-y-auto bg-black/70 p-4 backdrop-blur-sm animate-in fade-in duration-150"
+      onClick={onClose}
+    >
+      <div
+        className="relative my-4 w-full max-w-2xl rounded-2xl border border-border/50 bg-background shadow-2xl sm:my-8"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-2.5 px-4 pt-4 sm:px-6 sm:pt-5">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-neon-blue/15 text-neon-blue">
+            <Pencil className="size-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-base font-black tracking-tight text-foreground">
+              {seqMark(row.seq) ? `${seqMark(row.seq)} 사람 바꾸기` : "사람 바꾸기"}
+            </h3>
+            <p className="text-[11px] text-muted-foreground">
+              {fromId ? `${nameOf(fromId)} 대신 들어갈 사람을 고르세요.` : "먼저 뺄 사람을 누르세요."}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="닫기"
+            className="flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+          >
+            <X className="size-5" />
+          </button>
+        </div>
+
+        <div className="space-y-4 px-4 py-4 sm:px-6">
+          {/* 그 줄의 사람들 — 팀 모양 그대로. */}
+          <div className="flex items-center gap-2">
+            <div className="flex flex-1 gap-1.5">
+              {teamA.map((id) => (
+                <Slot key={id} id={id} />
+              ))}
+            </div>
+            <span className="text-[11px] font-black text-muted-foreground">vs</span>
+            <div className="flex flex-1 gap-1.5">
+              {teamB.map((id) => (
+                <Slot key={id} id={id} />
+              ))}
+            </div>
+          </div>
+
+          {/* 오늘 명단 — 뺄 사람을 고르기 전엔 흐리게. */}
+          <div
+            className={cn(
+              "rounded-xl border border-border/30 bg-input/30 p-2 transition-opacity",
+              !fromId && "pointer-events-none opacity-40",
+            )}
+          >
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-4">
+              {candidates.map((s) => {
+                const seq = seqOf.get(s.id);
+                const elsewhere = seqOf.has(s.id);
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => pick(s.id)}
+                    className={cn(
+                      "flex h-9 min-w-0 items-center gap-1.5 rounded-lg border px-2.5 text-sm font-bold transition-all active:scale-95",
+                      "border-border/40 bg-background text-foreground hover:border-neon-blue/50 hover:text-neon-blue",
+                    )}
+                  >
+                    {s.studentNo != null && (
+                      <span className="w-5 shrink-0 text-right text-[11px] font-black tabular-nums text-muted-foreground">
+                        {s.studentNo}
+                      </span>
+                    )}
+                    <span className="min-w-0 flex-1 truncate text-left">{nameOf(s.id)}</span>
+                    {elsewhere && (
+                      <span className="shrink-0 text-[10px] font-black text-muted-foreground">
+                        {seq == null ? "줄" : `#${seq}`}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+              {candidates.length === 0 && (
+                <p className="col-span-full py-4 text-center text-xs text-muted-foreground">
+                  바꿔 넣을 사람이 없어요.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

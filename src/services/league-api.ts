@@ -274,6 +274,19 @@ export async function apiTouchReservationNotify(id: string, by: string | null) {
     .eq("id", id);
 }
 
+// 배정된 줄의 선수 교체 — 팀이 확정된 줄(player_a/b)만. 팀 미정 예약은 apiUpdateReservationPlayers.
+export async function apiUpdateScheduledTeams(id: string, teamA: string[], teamB: string[]) {
+  return supabase
+    .from("scheduled_matches")
+    .update({
+      player_a_id: teamA[0] ?? null,
+      player_a2_id: teamA[1] ?? null,
+      player_b_id: teamB[0] ?? null,
+      player_b2_id: teamB[1] ?? null,
+    })
+    .eq("id", id);
+}
+
 export async function apiDeleteScheduledMatch(id: string) {
   return supabase.from("scheduled_matches").delete().eq("id", id);
 }
