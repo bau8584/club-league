@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { ChevronDown, ChevronRight, CircleHelp, Pencil, Plus, X } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, CircleHelp, ListChecks, Pencil, Plus, X } from "lucide-react";
 import { useLeagueStore } from "@/lib/league-store";
 import { teamsOf, useQueueRows } from "@/lib/use-queue-rows";
 import { sortStudentsForRoster, type ScheduledMatch, type Student } from "@/lib/league-types";
@@ -85,6 +86,7 @@ export function MatchQueue({
     assignmentSession,
     fillAssignmentQueue,
     removeScheduledMatch,
+    removeScheduledMatches,
     replaceQueuePlayer,
   } = useLeagueStore();
 
@@ -99,6 +101,9 @@ export function MatchQueue({
   const [confirmRemove, setConfirmRemove] = useState<ScheduledMatch | null>(null);
   // 사람 바꾸기 팝업 대상 줄.
   const [editRow, setEditRow] = useState<ScheduledMatch | null>(null);
+  // 여러 줄 빼기 — 고르는 중이면 Set, 아니면 null. 한 줄씩 × 를 누르면 폰에서 N번 확인해야 한다.
+  const [picking, setPicking] = useState<Set<string> | null>(null);
+  const [confirmBulk, setConfirmBulk] = useState(false);
 
   const byId = useMemo(() => {
     const m = new Map<string, Student>();
@@ -196,6 +201,39 @@ export function MatchQueue({
               × 는 행 안 오른쪽 끝에 둔다. 밖에 세우면 목록의 오른쪽 선이 흐트러진다.
               되돌릴 수 없는 동작이므로 확인을 거친다.
             */
+            // 고르는 중에는 행이 체크박스다. 결과 입력·바꾸기·빼기는 잠시 물러난다.
+            if (picking) {
+              const on = picking.has(r.id);
+              return (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() =>
+                    setPicking((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(r.id)) next.delete(r.id);
+                      else next.add(r.id);
+                      return next;
+                    })
+                  }
+                  className={cn(
+                    "flex min-h-11 w-full items-center gap-2 rounded-xl border px-3 text-left transition-colors",
+                    on ? "border-destructive/50 bg-destructive/10" : "border-border/30 bg-input/40",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "flex size-5 shrink-0 items-center justify-center rounded-md border",
+                      on ? "border-destructive bg-destructive text-white" : "border-border/60",
+                    )}
+                  >
+                    {on && <Check className="size-3.5" />}
+                  </span>
+                  {names}
+                </button>
+              );
+            }
+
             return (
               <div key={r.id} className={cn(rowStyle, "pr-1")}>
                 <button
@@ -234,7 +272,29 @@ export function MatchQueue({
 
       {/* 관리자가 아니고 줄도 없으면 카드 머리글이 이미 "아직 없어요"를 말한다. */}
 
-      {canManage && !!assignmentSession?.player_ids?.length && (
+      {canManage && picking && (
+        <div className="mt-4 flex items-center gap-2 border-t border-border/30 pt-3">
+          <span className="text-xs font-bold text-muted-foreground">
+            {picking.size === 0 ? "뺄 줄을 누르세요." : `${picking.size}줄 골랐어요.`}
+          </span>
+          <button
+            type="button"
+            onClick={() => setPicking(null)}
+            className="ml-auto h-9 rounded-lg border border-border/40 px-3 text-xs font-black text-muted-foreground hover:text-foreground"
+          >
+            취소
+          </button>
+          <Button
+            onClick={() => setConfirmBulk(true)}
+            disabled={picking.size === 0}
+            className="h-9 rounded-lg bg-destructive px-3 text-xs font-black text-white hover:bg-destructive/90"
+          >
+            {picking.size}줄 빼기
+          </Button>
+        </div>
+      )}
+
+      {canManage && !picking && !!assignmentSession?.player_ids?.length && (
         <div className={cn(queue.length > 0 && "mt-4 border-t border-border/30 pt-3")}>
           {/*
             조작은 한 줄: [방식] · [한 바퀴 ?] · [+1경기]. 전부 같은 높이(h-9)라 한 묶음으로
@@ -259,33 +319,32 @@ export function MatchQueue({
             </button>
 
             {/* 한 바퀴 — 놀고 있는 사람이 한 경기도 안 되면 바퀴가 없다. 뜻은 물음표 말풍선에. */}
-            <div className="relative flex h-9 items-stretch overflow-visible rounded-lg">
-              <Button
+            <div
+              className={cn(
+                "relative flex h-9 items-stretch overflow-hidden rounded-lg",
+                roundPrimary ? "bg-neon-blue text-primary-foreground" : "border border-border/40 text-foreground",
+                (filling || roundCount === 0) && "opacity-50",
+              )}
+            >
+              <button
+                type="button"
                 onClick={() => fill(roundCount)}
                 disabled={filling || roundCount === 0}
-                className={cn("h-9 rounded-l-lg rounded-r-none px-3 text-xs font-black", roundPrimary ? primaryBtn : secondaryBtn)}
+                className="px-3 text-xs font-black transition-colors hover:bg-black/5 disabled:cursor-not-allowed"
               >
                 한 바퀴
-              </Button>
+              </button>
               <button
                 type="button"
                 onClick={() => setHelpOpen((v) => !v)}
                 aria-label="한 바퀴가 뭔가요"
                 className={cn(
-                  "flex w-7 items-center justify-center rounded-r-lg border-l text-muted-foreground transition-colors hover:text-foreground",
-                  roundPrimary ? "border-primary-foreground/20 bg-neon-blue/80 text-primary-foreground/80" : "border-border/40 border-y border-r",
+                  "flex w-7 items-center justify-center border-l transition-colors hover:bg-black/5",
+                  roundPrimary ? "border-white/25" : "border-border/40 text-muted-foreground",
                 )}
               >
                 <CircleHelp className="size-3.5" />
               </button>
-              {helpOpen && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => setHelpOpen(false)} />
-                  <div className="absolute left-0 top-full z-20 mt-1.5 w-64 rounded-xl border border-border/50 bg-background p-3 text-[11px] leading-relaxed text-foreground shadow-xl animate-in fade-in slide-in-from-top-1 duration-150">
-                    {ROUND_HELP}
-                  </div>
-                </>
-              )}
             </div>
 
             {/* +1경기 — 한 건. 누르는 횟수가 곧 경기 수라 숫자를 고를 필요가 없다.
@@ -297,9 +356,31 @@ export function MatchQueue({
             >
               <Plus className="mr-0.5 size-3.5" /> 1경기
             </Button>
+
+            {/* 여러 줄 빼기 — 줄이 있을 때만. 오른쪽 끝, 아이콘만(드물게 쓴다). */}
+            {queue.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setPicking(new Set())}
+                aria-label="여러 줄 골라서 빼기"
+                className="ml-auto flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/40 text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <ListChecks className="size-4" />
+              </button>
+            )}
           </div>
 
-          <p className="mt-1.5 text-[11px] text-muted-foreground">{roundHint(free, perMatch)}</p>
+          {helpOpen ? (
+            <button
+              type="button"
+              onClick={() => setHelpOpen(false)}
+              className="mt-1.5 w-full rounded-lg border border-border/40 bg-input/40 p-2.5 text-left text-[11px] leading-relaxed text-foreground animate-in fade-in duration-150"
+            >
+              {ROUND_HELP}
+            </button>
+          ) : (
+            <p className="mt-1.5 text-[11px] text-muted-foreground">{roundHint(free, perMatch)}</p>
+          )}
 
           {presetOpen && (
             <div className="mt-2 flex flex-wrap items-center gap-1.5 animate-in fade-in slide-in-from-top-1 duration-150">
@@ -327,7 +408,7 @@ export function MatchQueue({
         </div>
       )}
 
-      {editRow && (
+      {editRow && createPortal(
         <QueueEditDialog
           row={queue.find((r) => r.id === editRow.id) ?? editRow}
           queue={queue}
@@ -337,7 +418,52 @@ export function MatchQueue({
           nameOf={(id) => dn(byId.get(id))}
           onReplace={(from, to) => replaceQueuePlayer(editRow.id, from, to)}
           onClose={() => setEditRow(null)}
-        />
+        />,
+        document.body,
+      )}
+
+      {/* 여러 줄 빼기 확인 */}
+      {confirmBulk && picking && createPortal(
+        <div
+          className="fixed inset-0 z-[85] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-in fade-in duration-150"
+          onClick={() => setConfirmBulk(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl border border-border/50 bg-background p-5 shadow-2xl animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-black text-foreground">{picking.size}줄을 뺄까요?</h3>
+            <p className="mt-1.5 text-xs font-bold text-muted-foreground">
+              {queue
+                .filter((r) => picking.has(r.id))
+                .map((r) => seqMark(r.seq) || "번호 없음")
+                .join(" · ")}
+            </p>
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+              경기 기록은 남지 않아요. 되돌릴 수 없어요.
+            </p>
+            <div className="mt-4 flex flex-col gap-2">
+              <Button
+                onClick={async () => {
+                  const ok = await removeScheduledMatches([...picking]);
+                  setConfirmBulk(false);
+                  if (ok) setPicking(null);
+                }}
+                className="h-10 rounded-xl bg-destructive text-sm font-black text-white hover:bg-destructive/90"
+              >
+                줄에서 뺄게요
+              </Button>
+              <button
+                type="button"
+                onClick={() => setConfirmBulk(false)}
+                className="mt-0.5 rounded-lg py-2 text-xs font-bold text-muted-foreground hover:text-foreground"
+              >
+                그대로 둘게요
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
       )}
 
       {/* 줄에서 빼기 확인 — MatchesTab 의 예약 정리 팝업과 같은 모양이다. */}
@@ -349,7 +475,7 @@ export function MatchQueue({
           const who = (teamA.length && teamB.length ? [...teamA, ...teamB] : pool)
             .map((id) => dn(byId.get(id)))
             .join(" · ");
-          return (
+          return createPortal(
             <div
               className="fixed inset-0 z-[85] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-in fade-in duration-150"
               onClick={() => setConfirmRemove(null)}
@@ -384,7 +510,8 @@ export function MatchQueue({
                   </button>
                 </div>
               </div>
-            </div>
+            </div>,
+            document.body,
           );
         })()}
     </div>

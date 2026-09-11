@@ -291,6 +291,11 @@ export async function apiDeleteScheduledMatch(id: string) {
   return supabase.from("scheduled_matches").delete().eq("id", id);
 }
 
+export async function apiDeleteScheduledMatches(ids: string[]) {
+  if (ids.length === 0) return { error: null };
+  return supabase.from("scheduled_matches").delete().in("id", ids);
+}
+
 export async function apiInsertMatch(classId: string, winnerId: string, loserId: string) {
   return supabase
     .from("matches")

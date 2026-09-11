@@ -1,5 +1,6 @@
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ClipboardCheck, X } from "lucide-react";
@@ -254,7 +255,8 @@ export function SessionRoster({
 
   const close = () => onOpenChange(false);
 
-  return (
+  // 포털 — 카드의 backdrop-blur 가 fixed 의 기준이 되어 팝업이 카드 안에 갇힌다.
+  return createPortal(
     <div
       className="fixed inset-0 z-[85] flex items-start justify-center overflow-y-auto bg-black/70 p-4 backdrop-blur-sm animate-in fade-in duration-150"
       onClick={close}
@@ -403,7 +405,8 @@ export function SessionRoster({
                                   out
                                     ? // 결석은 눈에 띄어야 한다 — 교사가 훑어보는 대상은 빠진 사람이다.
                                       "border-amber-500/40 bg-amber-500/10 text-amber-600/80 line-through dark:text-amber-400/80"
-                                    : "border-border/40 bg-background text-foreground hover:border-border",
+                                    : // 참석은 초록 — 한눈에 "다 왔다"가 보이고, 빠진 사람만 색이 다르다.
+                                      "border-neon-green/50 bg-neon-green/15 text-neon-green",
                                 )}
                               >
                                 {s.studentNo != null && (
@@ -460,6 +463,7 @@ export function SessionRoster({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

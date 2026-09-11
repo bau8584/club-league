@@ -71,6 +71,7 @@ import {
   apiAllocMatchSeq,
   apiUpdateScheduledStatus,
   apiDeleteScheduledMatch,
+  apiDeleteScheduledMatches,
   apiUpdateScheduledTeams,
   apiCreateReservation,
   apiLinkScheduledResult,
@@ -2997,6 +2998,16 @@ function useLeagueStoreInternal() {
     return true;
   }, [loadScheduled]);
 
+  /** 여러 줄을 한 번에 뺀다. 한 줄씩 지우면 폰에서 N번 확인해야 한다. */
+  const removeScheduledMatches = useCallback(async (ids: string[]): Promise<boolean> => {
+    if (!isClassManagerRef.current) { toast.error("권한이 없습니다."); return false; }
+    const cid = currentClassIdRef.current;
+    const { error } = await apiDeleteScheduledMatches(ids);
+    if (error) { toast.error("삭제 실패: " + error.message); return false; }
+    if (cid) await loadScheduled(cid);
+    return true;
+  }, [loadScheduled]);
+
   /**
    * 대기열 한 줄에서 한 사람을 다른 사람으로 바꾼다. 자리는 그대로(팀·짝 유지).
    * 다른 줄에 이미 선 사람도 넣을 수 있다 — 막지 않고 화면에서 표시만 한다.
@@ -3824,6 +3835,7 @@ function useLeagueStoreInternal() {
     fillAssignmentQueue,
     callScheduledMatch,
     removeScheduledMatch,
+    removeScheduledMatches,
     replaceQueuePlayer,
     createReservation,
     cancelReservation,
