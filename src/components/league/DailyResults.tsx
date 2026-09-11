@@ -219,23 +219,33 @@ export function DailyResults() {
    * 상대값 기준·1인 1라벨·타이브레이커가 화면 안에 있으면 검증할 방법이 없다(→ docs/PLAN-testing.md).
    */
   const highlight = useMemo(() => {
-    const toHighlight = (m: Match): HighlightMatch => ({
-      id: m.id,
-      date: m.date,
-      // "같은 날"은 로컬 자정 기준이다. 계산기는 시간대를 모르므로 여기서 키를 만든다.
-      dayKey: String(dayStart(new Date(m.date))),
-      winnerIds: [m.playerAId, m.playerA2Id].filter((v): v is string => !!v),
-      loserIds: [m.playerBId, m.playerB2Id].filter((v): v is string => !!v),
-      scoreWin: m.scoreA,
-      scoreLose: m.scoreB,
-      matchType: m.matchType ?? null,
-      rpDeltaByPlayer: {
-        ...(m.playerAId && m.rpDeltaA != null ? { [m.playerAId]: m.rpDeltaA } : {}),
-        ...(m.playerBId && m.rpDeltaB != null ? { [m.playerBId]: m.rpDeltaB } : {}),
-        ...(m.playerA2Id && m.rpDeltaA2 != null ? { [m.playerA2Id]: m.rpDeltaA2 } : {}),
-        ...(m.playerB2Id && m.rpDeltaB2 != null ? { [m.playerB2Id]: m.rpDeltaB2 } : {}),
-      },
-    });
+    const toHighlight = (m: Match): HighlightMatch => {
+      /**
+       * 승자는 **점수로** 가른다. DB에서 읽은 경기는 A=승자로 정렬되어 오지만, 방금 이 기기에서
+       * 입력·수정한 경기는 다시 불러오기 전까지 입력한 순서 그대로 들어 있다. A=승자로 믿으면
+       * 수업 중에 B팀이 이긴 판이 전부 뒤집혀 승패·연승·이변이 엉뚱한 학생에게 간다.
+       */
+      const aWon = m.scoreA > m.scoreB;
+      const teamA = [m.playerAId, m.playerA2Id].filter((v): v is string => !!v);
+      const teamB = [m.playerBId, m.playerB2Id].filter((v): v is string => !!v);
+      return {
+        id: m.id,
+        date: m.date,
+        // "같은 날"은 로컬 자정 기준이다. 계산기는 시간대를 모르므로 여기서 키를 만든다.
+        dayKey: String(dayStart(new Date(m.date))),
+        winnerIds: aWon ? teamA : teamB,
+        loserIds: aWon ? teamB : teamA,
+        scoreWin: aWon ? m.scoreA : m.scoreB,
+        scoreLose: aWon ? m.scoreB : m.scoreA,
+        matchType: m.matchType ?? null,
+        rpDeltaByPlayer: {
+          ...(m.playerAId && m.rpDeltaA != null ? { [m.playerAId]: m.rpDeltaA } : {}),
+          ...(m.playerBId && m.rpDeltaB != null ? { [m.playerBId]: m.rpDeltaB } : {}),
+          ...(m.playerA2Id && m.rpDeltaA2 != null ? { [m.playerA2Id]: m.rpDeltaA2 } : {}),
+          ...(m.playerB2Id && m.rpDeltaB2 != null ? { [m.playerB2Id]: m.rpDeltaB2 } : {}),
+        },
+      };
+    };
 
     // 삭제된 학생은 여기 없다. 계산기는 id만으로 끝까지 돌고, 이름만 "알 수 없음"이 된다.
     const hPlayers: HighlightPlayer[] = dayPlayers.map((s) => ({
