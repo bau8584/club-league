@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { ChevronDown, ChevronRight, Minus, Plus, Sparkles, X } from "lucide-react";
+import { ChevronDown, ChevronRight, CircleHelp, Plus, X } from "lucide-react";
 import { useLeagueStore } from "@/lib/league-store";
 import { teamsOf, useQueueRows } from "@/lib/use-queue-rows";
 import type { ScheduledMatch, Student } from "@/lib/league-types";
@@ -41,23 +41,22 @@ const PRESETS: {
 ];
 
 /**
- * 이 경기 수로 뽑으면 무슨 일이 생기는지 한 줄. "보장"이 아니라 "이만큼이면 들어갈
+ * [한 바퀴]가 지금 몇 경기이고 누가 남는지 한 줄. "보장"이 아니라 "이만큼이면 들어갈
  * 수 있다"는 안내다 — [실력]은 판 수를 뒤에 보므로 같은 사람이 두 번 들어갈 수 있다.
- *
- * 놀고 있는 사람이 한 경기 인원도 안 되면 이미 줄에 선 사람으로 다음 판을 미리 잡는다.
- * 계산기가 판 수 적은 순으로 다시 쓴다.
+ * 놀고 있는 사람이 한 경기 인원도 안 되면 바퀴가 없고, [+1경기]는 이미 줄에 선 사람으로
+ * 다음 판을 미리 잡는다(계산기가 판 수 적은 순으로 다시 쓴다).
  */
-function countHint(count: number, free: number, perMatch: number): string {
-  if (free < perMatch) return "놀고 있는 사람이 모자라 이미 줄에 선 사람으로 다음 판을 미리 잡아요.";
-  const slots = count * perMatch;
-  if (slots < free) return `${slots}명이 1번, ${free - slots}명은 다음에.`;
-  const each = Math.floor(slots / free);
-  const extra = slots % free;
-  const base = `전원 ${each}번씩 들어갈 수 있는 수`;
-  const tail = extra > 0 ? ` (${extra}명은 ${each + 1}번)` : "";
-  const long = each >= 3 ? " · 대기열이 길어져요" : "";
-  return base + tail + long + ".";
+function roundHint(free: number, perMatch: number): string {
+  const rounds = Math.floor(free / perMatch);
+  if (rounds === 0) return "놀고 있는 사람이 모자라요. +1경기는 이미 줄에 선 사람으로 다음 판을 미리 잡아요.";
+  const rest = free - rounds * perMatch;
+  return rest === 0
+    ? `한 바퀴 = ${rounds}경기 · 놀고 있는 ${free}명 전원이 한 번씩.`
+    : `한 바퀴 = ${rounds}경기 · ${free - rest}명이 한 번씩, ${rest}명은 다음에.`;
 }
+
+const ROUND_HELP =
+  "놀고 있는 사람 전원이 한 번씩 들어가는 만큼 뽑아요. 복식은 4명, 단식은 2명이 한 경기예요. 4명(2명)으로 안 나눠떨어지면 남는 사람은 다음 바퀴에 먼저 들어가요.";
 
 /**
  * 대기열 — 순서 목록 하나.
@@ -123,23 +122,13 @@ export function MatchQueue({
    * "한 사람 한 번"이고, 두 번 들어갈 사람을 고르는 규칙이 따로 필요해진다.
    */
   const roundCount = Math.floor(free / perMatch);
-  const defaultCount = Math.max(1, roundCount);
-
-  /**
-   * 뽑을 경기 수. 기본은 한 바퀴(놀고 있는 인원 ÷ 경기당 인원)이고, 교사가 늘리거나
-   * 줄일 수 있다. 손으로 고친 값은 그 순간의 인원에 대한 판단이지 영구 설정이 아니다 —
-   * 인원이 바뀌어 기본값이 달라지면 버린다. 안 그러면 줄이 다 빠진 뒤에도 아까 고친
-   * 숫자가 남아 "26명인데 5경기"가 된다.
-   */
-  const [override, setOverride] = useState<{ count: number; base: number } | null>(null);
-  const count = override && override.base === defaultCount ? override.count : defaultCount;
-  const setCount = (n: number) => setOverride({ count: Math.max(1, n), base: defaultCount });
+  // [한 바퀴] 옆 물음표를 누르면 뜨는 말풍선.
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const fill = async (n: number) => {
     setFilling(true);
     // 종목은 세션 설정이다. 여기서는 경기 수만 정한다.
     await fillAssignmentQueue({ count: n, policy: preset });
-    setOverride(null);
     setFilling(false);
   };
 
@@ -233,11 +222,11 @@ export function MatchQueue({
       {canManage && !!assignmentSession?.player_ids?.length && (
         <div className={cn(queue.length > 0 && "mt-4 border-t border-border/30 pt-3")}>
           {/*
-            조작은 한 줄: [방식] · [한 바퀴] · [− N +][N경기]. 전부 같은 높이(h-9)라 한 묶음으로
+            조작은 한 줄: [방식] · [한 바퀴 ?] · [+1경기]. 전부 같은 높이(h-9)라 한 묶음으로
             읽히고, 버튼은 내용 너비만 차지한다 — 수업 중 한두 번 누르는 것이 화면의 1/8 을
             차지할 이유가 없다. 안내는 그 아래 한 문장.
           */}
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2">
             {/* 대진 방식 — 평소엔 기본값 그대로. 누르면 아래에 선택지가 펼쳐진다. */}
             <button
               type="button"
@@ -254,54 +243,48 @@ export function MatchQueue({
               <ChevronDown className={cn("size-3.5 transition-transform", presetOpen && "rotate-180")} />
             </button>
 
-            {/* 한 바퀴 — 숫자 없이. 놀고 있는 사람이 한 경기도 안 되면 바퀴가 없다. */}
-            <Button
-              onClick={() => fill(roundCount)}
-              disabled={filling || roundCount === 0}
-              className={cn("h-9 rounded-lg px-3 text-xs font-black", roundPrimary ? primaryBtn : secondaryBtn)}
-            >
-              <Sparkles className="mr-1 size-3.5" /> 한 바퀴
-            </Button>
-
-            {/* N경기 — 스테퍼와 버튼을 한 덩어리로 붙인다. 숫자가 버튼의 일부라는 뜻이다. */}
-            <div className="flex h-9 items-center overflow-hidden rounded-lg border border-border/40">
-              <button
-                type="button"
-                onClick={() => setCount(count - 1)}
-                disabled={filling || count <= 1}
-                aria-label="경기 수 줄이기"
-                className="flex h-full w-8 items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-30"
-              >
-                <Minus className="size-3.5" />
-              </button>
-              <span className="min-w-6 text-center text-xs font-black tabular-nums text-foreground">
-                {count}
-              </span>
-              <button
-                type="button"
-                onClick={() => setCount(count + 1)}
-                disabled={filling}
-                aria-label="경기 수 늘리기"
-                className="flex h-full w-8 items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-30"
-              >
-                <Plus className="size-3.5" />
-              </button>
+            {/* 한 바퀴 — 놀고 있는 사람이 한 경기도 안 되면 바퀴가 없다. 뜻은 물음표 말풍선에. */}
+            <div className="relative flex h-9 items-stretch overflow-visible rounded-lg">
               <Button
-                onClick={() => fill(count)}
-                disabled={filling}
+                onClick={() => fill(roundCount)}
+                disabled={filling || roundCount === 0}
+                className={cn("h-9 rounded-l-lg rounded-r-none px-3 text-xs font-black", roundPrimary ? primaryBtn : secondaryBtn)}
+              >
+                한 바퀴
+              </Button>
+              <button
+                type="button"
+                onClick={() => setHelpOpen((v) => !v)}
+                aria-label="한 바퀴가 뭔가요"
                 className={cn(
-                  "h-full rounded-none border-0 border-l border-border/40 px-3 text-xs font-black",
-                  roundPrimary ? secondaryBtn : primaryBtn,
+                  "flex w-7 items-center justify-center rounded-r-lg border-l text-muted-foreground transition-colors hover:text-foreground",
+                  roundPrimary ? "border-primary-foreground/20 bg-neon-blue/80 text-primary-foreground/80" : "border-border/40 border-y border-r",
                 )}
               >
-                {count}경기 뽑기
-              </Button>
+                <CircleHelp className="size-3.5" />
+              </button>
+              {helpOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setHelpOpen(false)} />
+                  <div className="absolute left-0 top-full z-20 mt-1.5 w-64 rounded-xl border border-border/50 bg-background p-3 text-[11px] leading-relaxed text-foreground shadow-xl animate-in fade-in slide-in-from-top-1 duration-150">
+                    {ROUND_HELP}
+                  </div>
+                </>
+              )}
             </div>
+
+            {/* +1경기 — 한 건. 누르는 횟수가 곧 경기 수라 숫자를 고를 필요가 없다.
+                놀고 있는 사람이 모자라도 뽑힌다(다음 판 미리 잡기). */}
+            <Button
+              onClick={() => fill(1)}
+              disabled={filling}
+              className={cn("h-9 rounded-lg px-3 text-xs font-black", roundPrimary ? secondaryBtn : primaryBtn)}
+            >
+              <Plus className="mr-0.5 size-3.5" /> 1경기
+            </Button>
           </div>
 
-          <p className="mt-1.5 text-[11px] text-muted-foreground">
-            {countHint(count, free, perMatch)}
-          </p>
+          <p className="mt-1.5 text-[11px] text-muted-foreground">{roundHint(free, perMatch)}</p>
 
           {presetOpen && (
             <div className="mt-2 flex flex-wrap items-center gap-1.5 animate-in fade-in slide-in-from-top-1 duration-150">
