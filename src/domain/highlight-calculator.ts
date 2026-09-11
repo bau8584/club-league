@@ -73,7 +73,7 @@ export type PlayerDayStat = {
    * 꺾었나"는 최댓값이 1에 몰려 열댓 명이 동점이 되지만, RP 차는 사람마다 갈린다.
    */
   bestUpsetGap: number;
-  /** 오늘 만난 상대들의 평균 RP. 승패와 무관한 축이다. 상대 RP를 하나도 모르면 null. */
+  /** 오늘 만난 상대들의 평균 RP(오늘 시작 시점). 승패와 무관한 축이다. 상대 RP를 하나도 모르면 null. */
   oppRpAvg: number | null;
   maxStreak: number;
   /** 오늘 오간 RP 합. rpDelta가 없으면 0이다. */
@@ -107,7 +107,7 @@ export type DayStats = {
   maxStreak: number;
   /** 평균 출전 수. `최다 출전`은 이 값을 **초과**해야 한다. */
   avgAppearances: number;
-  /** 그 날 뛴 학생들의 평균 RP. `강한 상대`는 이 값을 초과해야 한다. 아무도 RP를 모르면 null. */
+  /** 그 날 뛴 학생들의 평균 RP(오늘 시작 시점). `강한 상대`는 이 값을 초과해야 한다. 아무도 RP를 모르면 null. */
   avgPlayerRp: number | null;
   /** 최다승 — 사실 자체가 유일해야 하므로 배정에서 빼고 그대로 내보낸다. 동점이면 전원. */
   topWinners: { playerIds: string[]; wins: number } | null;
@@ -389,10 +389,21 @@ export function computeDayStats({
     }
   }
 
+  /**
+   * 오늘 시작 시점의 RP. `강한 상대`와 그 기준선(그 날 평균)은 이 값으로 잰다.
+   *
+   * 현재 RP를 쓰면 오늘 많이 이긴 학생이 실제보다 센 상대로 보인다 — 아침엔 1074였던
+   * 상대가 저녁엔 1124다. `깜짝 승리`가 경기 전 RP로 재는 것과 같은 이유다.
+   */
+  const rpAtDayStart = (id: string) => {
+    const rp = byId.get(id)?.rp;
+    return rp == null ? null : rp - (perPlayer.get(id)?.rpToday ?? 0);
+  };
+
   // 오늘 만난 상대의 평균 RP — 승패와 무관한 축. 더 센 상대와 붙기 시작한 것 자체가 개선이다.
   for (const s of perPlayer.values()) {
     const rps = [...(oppToday.get(s.id) ?? [])]
-      .map((id) => byId.get(id)?.rp)
+      .map(rpAtDayStart)
       .filter((v): v is number => v != null);
     s.oppRpAvg = rps.length > 0 ? rps.reduce((a, b) => a + b, 0) / rps.length : null;
   }
@@ -494,7 +505,7 @@ export function computeDayStats({
     avgAppearances: perPlayer.size > 0 ? slots / perPlayer.size : 0,
     avgPlayerRp: (() => {
       const rps = Array.from(perPlayer.keys())
-        .map((id) => byId.get(id)?.rp)
+        .map(rpAtDayStart)
         .filter((v): v is number => v != null);
       return rps.length > 0 ? rps.reduce((a, b) => a + b, 0) / rps.length : null;
     })(),

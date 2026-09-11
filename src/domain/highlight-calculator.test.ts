@@ -483,6 +483,26 @@ describe("computeAwards — 하루 한두 경기에서도 갈리는 축", () => 
     expect(cardFor(awards.cards, "강한 상대")?.playerId).toBe("brave");
   });
 
+  it("강한 상대는 오늘 시작 시점 RP로 잰다 — 오늘 오른 RP는 되돌린다", () => {
+    // hot 은 오늘 +200을 벌어 현재 1200이지만 아침엔 1000이었다. 아침 기준으로는 평균과 같아 강한 상대가 아니다.
+    const matches = day([
+      [["hot"], ["a"], 2, 0],
+      [["hot"], ["b"], 2, 0],
+    ]).map((m) => ({ ...m, rpDeltaByPlayer: { hot: 100 } }));
+    const { awards, day: d } = computeHighlights({
+      matches,
+      players: [
+        { id: "hot", rp: 1200 },
+        { id: "a", rp: 1000 },
+        { id: "b", rp: 1000 },
+      ],
+    });
+
+    expect(d.avgPlayerRp).toBe(1000);
+    expect(d.perPlayer.get("a")?.oppRpAvg).toBe(1000);
+    expect(cardFor(awards.cards, "강한 상대")).toBeNull();
+  });
+
   it("그 날 평균 RP를 넘는 상대를 만나지 않았으면 강한 상대는 없다", () => {
     const { awards } = computeHighlights({
       matches: day([
