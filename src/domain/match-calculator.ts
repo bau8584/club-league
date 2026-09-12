@@ -9,6 +9,45 @@ const TIER_RANKING: Record<TierName, number> = {
   Diamond: 5
 };
 
+// ── 상위 전용 보너스 (플래티넘·다이아) ──
+// 입력 경로(여기)와 수정 경로(league-store)가 같은 규칙을 쓰도록 순수 함수로 뺀다.
+
+const isUpper = (tier: TierName) => tier === "Platinum" || tier === "Diamond";
+const upperRp = (tier: TierName, plat: number | undefined, dia: number | undefined, fallback: number) =>
+  tier === "Diamond" ? (dia ?? plat ?? fallback) : (plat ?? fallback);
+
+/** 정상 결전 — 플래 이상이, 상대 팀에서 가장 센 사람이 나와 같은 티어 이상일 때 이기면. */
+export function rivalClashBonus(b: DynamicBonuses | undefined, myTier: TierName, maxOppTier: TierName | null): number {
+  if (!b?.rivalEnabled || !isUpper(myTier) || !maxOppTier) return 0;
+  if (TIER_RANKING[maxOppTier] < TIER_RANKING[myTier]) return 0;
+  return upperRp(myTier, b.rivalPlatinumRp, b.rivalDiamondRp, 6);
+}
+
+/** 상위 연승 — 일반 연승은 플래 이상을 제외하므로 여기서 따로 준다. 연승 기준(streakWins)은 공유. */
+export function upperStreakBonus(b: DynamicBonuses | undefined, myTier: TierName, streakAfterWin: number): number {
+  if (!b?.streakUpperEnabled || !isUpper(myTier)) return 0;
+  if (streakAfterWin < (b.streakWins ?? 3)) return 0;
+  return upperRp(myTier, b.streakUpperPlatinumRp, b.streakUpperDiamondRp, 5);
+}
+
+/**
+ * 멘토링 — 복식에서 짝과 티어가 벌어졌을 때. 위쪽(멘토)은 mentorMinTier 이상일 때만 받는다.
+ * 프리셋은 mentorMinTier=Platinum·menteeRp=0 으로 두어 "캐리(상위 전용)"로 쓴다.
+ */
+export function mentoringBonusOf(b: DynamicBonuses | undefined, myTier: TierName, partnerTier: TierName): number {
+  const m = b?.mentoring;
+  if (!m?.enabled) return 0;
+  const gap = Math.abs(TIER_RANKING[myTier] - TIER_RANKING[partnerTier]);
+  if (gap < (m.minTierGap ?? 1)) return 0;
+  if (TIER_RANKING[myTier] > TIER_RANKING[partnerTier]) {
+    const minTier = m.mentorMinTier ?? "Bronze";
+    if (TIER_RANKING[myTier] < TIER_RANKING[minTier]) return 0;
+    return upperRp(myTier, m.mentorRp, m.mentorDiamondRp, 10);
+  }
+  if (TIER_RANKING[myTier] < TIER_RANKING[partnerTier]) return m.menteeRp ?? 0;
+  return 0;
+}
+
 export interface CalculateMatchResultInput {
   students: Student[];
   matches: Match[];
@@ -207,7 +246,14 @@ export function calculateMatchResult(input: CalculateMatchResultInput): Calculat
     }
 
     let willOfSteelBonus = 0;
+    let rivalBonus = 0;
     if (won) {
+      // 정상 결전 — 상대 팀에서 가장 센 사람 기준. 언더독과 같은 눈으로 본다.
+      if (opponents.length > 0) {
+        const maxOppTier = getTier(Math.max(...opponents.map((o) => o.rp)), tierThresholds);
+        rivalBonus = rivalClashBonus(dynamicBonuses, playerTier, maxOppTier);
+      }
+
       if (dynamicBonuses?.underdogEnabled && opponents.length > 0) {
         const TIER_NUM: Record<TierName, number> = { Bronze: 0, Silver: 1, Gold: 2, Platinum: 3, Diamond: 4 };
         const myTierNum = TIER_NUM[playerTier as TierName] ?? 0;
@@ -263,6 +309,8 @@ export function calculateMatchResult(input: CalculateMatchResultInput): Calculat
           streakBonus = dynamicBonuses.streakRp ?? 10;
         }
       }
+      // 플래 이상은 위에서 빠지므로 상위 연승으로 받는다. 같은 streakBonus 칸에 담긴다.
+      streakBonus += upperStreakBonus(dynamicBonuses, playerTier, (student.currentStreak ?? 0) + 1);
 
       if (dynamicBonuses?.greatMatchEnabled) {
         const scoreDiff = Math.abs(scoreA - scoreB);
@@ -294,20 +342,7 @@ export function calculateMatchResult(input: CalculateMatchResultInput): Calculat
         if (partnerId) {
           const partner = students.find((s) => s.id === partnerId);
           if (partner) {
-            const partnerTier = getTier(partner.rp, tierThresholds);
-            const myTierRank = TIER_RANKING[playerTier] ?? 1;
-            const partnerTierRank = TIER_RANKING[partnerTier] ?? 1;
-            if (dynamicBonuses?.mentoring?.enabled) {
-              const minGap = dynamicBonuses.mentoring.minTierGap ?? 1;
-              const gap = Math.abs(myTierRank - partnerTierRank);
-              if (gap >= minGap) {
-                if (myTierRank > partnerTierRank) {
-                  mentoringBonus = dynamicBonuses.mentoring.mentorRp ?? 10;
-                } else if (myTierRank < partnerTierRank) {
-                  mentoringBonus = dynamicBonuses.mentoring.menteeRp ?? 15;
-                }
-              }
-            }
+            mentoringBonus = mentoringBonusOf(dynamicBonuses, playerTier, getTier(partner.rp, tierThresholds));
           }
         }
       }
@@ -384,7 +419,7 @@ export function calculateMatchResult(input: CalculateMatchResultInput): Calculat
     }
 
     const delta = won 
-      ? (baseWin + underdogBonus + freshnessBonus + streakBonus + greatMatchBonus + mentoringBonus + firstWinBonus + revengeBonus + willOfSteelBonus)
+      ? (baseWin + underdogBonus + freshnessBonus + streakBonus + greatMatchBonus + mentoringBonus + firstWinBonus + revengeBonus + willOfSteelBonus + rivalBonus)
       : (-baseLoss + freshnessBonus + lossComfortBonus + greatMatchBonus - (arrogancePenalty + crushingPenalty + revengeAllowedPenalty + championPenalty + swampPenalty));
 
     return {
@@ -395,7 +430,7 @@ export function calculateMatchResult(input: CalculateMatchResultInput): Calculat
       delta,
       underdogBonus,
       scoreDiffBonus: 0,
-      rivalBonus: 0,
+      rivalBonus,
       firstWinBonus,
       revengeBonus,
       freshnessBonus,
@@ -441,10 +476,10 @@ export function calculateMatchResult(input: CalculateMatchResultInput): Calculat
     scoreDiffBonusB: 0,
     scoreDiffBonusA2: 0,
     scoreDiffBonusB2: 0,
-    rivalBonusA: 0,
-    rivalBonusB: 0,
-    rivalBonusA2: 0,
-    rivalBonusB2: 0,
+    rivalBonusA: statA?.rivalBonus,
+    rivalBonusB: statB?.rivalBonus,
+    rivalBonusA2: statA2?.rivalBonus,
+    rivalBonusB2: statB2?.rivalBonus,
     firstWinBonusA: statA?.firstWinBonus,
     firstWinBonusB: statB?.firstWinBonus,
     firstWinBonusA2: statA2?.firstWinBonus,

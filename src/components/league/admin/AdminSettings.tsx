@@ -76,6 +76,32 @@ const BONUS_ENABLE_KEYS = [
   "greatMatchEnabled",
   "lossComfortEnabled",
   "willOfSteelEnabled",
+  "rivalEnabled",
+  "streakUpperEnabled",
+] as const;
+
+// 플래티넘·다이아 전용 보너스 카드. 값은 두 티어만 갖는다 — 골드 이하는 애초에 대상이 아니다.
+const UPPER_BONUS_CARDS = [
+  {
+    key: "rival",
+    title: "⚔️ 정상 결전",
+    desc: "같은 티어 이상의 상대를 이기면 보너스. 언더독은 위 티어만 쳐주는데, 상위끼리의 판이 여기.",
+    enabledKey: "rivalEnabled" as const,
+    tiers: [
+      { key: "rivalPlatinumRp" as const, label: "플래티넘", colorClass: "text-cyan-500", defaultVal: 6 },
+      { key: "rivalDiamondRp" as const, label: "다이아", colorClass: "text-purple-400", defaultVal: 8 },
+    ],
+  },
+  {
+    key: "streakUpper",
+    title: "🔥 상위 연승",
+    desc: "일반 연승 보너스는 플래티넘부터 빠집니다. 상위는 이 값으로 (연승 기준은 위와 같음).",
+    enabledKey: "streakUpperEnabled" as const,
+    tiers: [
+      { key: "streakUpperPlatinumRp" as const, label: "플래티넘", colorClass: "text-cyan-500", defaultVal: 5 },
+      { key: "streakUpperDiamondRp" as const, label: "다이아", colorClass: "text-purple-400", defaultVal: 6 },
+    ],
+  },
 ] as const;
 
 // 패널티 카드들의 개별 활성화 플래그 — '전체 활성화' 토글이 한 번에 켜고 끈다.
@@ -1153,8 +1179,72 @@ export function AdminSettings({
                   </div>
                 </BonusCardWrapper>
 
+                {/* 9~11. 상위 전용 — 플래티넘부터는 기본점이 줄고 연승·언더독이 빠져서 여기서 채운다. */}
+                <div className="md:col-span-2 mt-1 text-[10px] font-black text-muted-foreground">
+                  플래티넘·다이아 전용 보너스 <span className="font-normal">— 골드 이하는 받지 않습니다</span>
+                </div>
+                {UPPER_BONUS_CARDS.map((card) => (
+                  <BonusCardWrapper
+                    key={card.key}
+                    title={card.title}
+                    desc={card.desc}
+                    enabled={!!localDynamicBonuses[card.enabledKey]}
+                    onToggle={() => setLocalDynamicBonuses(prev => ({ ...prev, [card.enabledKey]: !prev[card.enabledKey] }))}
+                  >
+                    <div className="grid grid-cols-2 gap-2 text-[9px] text-center">
+                      {card.tiers.map((t) => (
+                        <div key={t.key}>
+                          <span className={t.colorClass}>{t.label}</span>
+                          <Input
+                            type="number"
+                            value={(localDynamicBonuses[t.key] as number | undefined) ?? t.defaultVal}
+                            disabled={!localDynamicBonuses[card.enabledKey]}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value, 10);
+                              setLocalDynamicBonuses(prev => ({ ...prev, [t.key]: isNaN(val) ? 0 : val }));
+                            }}
+                            className="w-10 h-7 text-center mt-0.5 font-mono p-0 bg-input border-border/30 text-neon-blue mx-auto"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </BonusCardWrapper>
+                ))}
+
+                {/* 캐리 — mentoring 객체를 쓴다(영수증의 mentoringBonus 칸). 멘토 최소 티어는 플래티넘 고정. */}
+                <BonusCardWrapper
+                  title="🤝 캐리"
+                  desc="복식에서 한 단계 이상 낮은 짝과 함께 이기면 보너스."
+                  enabled={!!localDynamicBonuses.mentoring?.enabled}
+                  onToggle={() => setLocalDynamicBonuses(prev => ({
+                    ...prev,
+                    mentoring: { mentorRp: 5, mentorDiamondRp: 7, menteeRp: 0, minTierGap: 1, mentorMinTier: "Platinum", ...prev.mentoring, enabled: !prev.mentoring?.enabled },
+                  }))}
+                >
+                  <div className="grid grid-cols-2 gap-2 text-[9px] text-center">
+                    {([["mentorRp", "플래티넘", "text-cyan-500", 5], ["mentorDiamondRp", "다이아", "text-purple-400", 7]] as const).map(([k, label, colorClass, def]) => (
+                      <div key={k}>
+                        <span className={colorClass}>{label}</span>
+                        <Input
+                          type="number"
+                          value={localDynamicBonuses.mentoring?.[k] ?? def}
+                          disabled={!localDynamicBonuses.mentoring?.enabled}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            setLocalDynamicBonuses(prev => ({
+                              ...prev,
+                              mentoring: { enabled: false, mentorRp: 5, menteeRp: 0, minTierGap: 1, mentorMinTier: "Platinum", ...prev.mentoring, [k]: isNaN(val) ? 0 : val },
+                            }));
+                          }}
+                          className="w-10 h-7 text-center mt-0.5 font-mono p-0 bg-input border-border/30 text-neon-blue mx-auto"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </BonusCardWrapper>
+
               </div>
-              
+
               {/* Save button at the bottom of Step 3 card */}
               <div className="flex justify-between items-center pt-2 border-t border-border/10">
                 <UnsavedBadge show={bonusDirty} />

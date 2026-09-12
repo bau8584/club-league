@@ -336,9 +336,9 @@ export function RecordMatch({
       items.push({
         id: "rivalBonus",
         icon: "⚔️",
-        label: "라이벌 격파",
+        label: "정상 결전",
         value: p.rivalBonus,
-        desc: "동등한 라이벌 매치 승리!"
+        desc: "같은 티어 이상의 강자를 꺾음 (플래티넘↑ 전용)"
       });
     }
 
@@ -403,9 +403,9 @@ export function RecordMatch({
       items.push({
         id: "mentoringBonus",
         icon: "🤝",
-        label: "멘토링",
+        label: "캐리",
         value: p.mentoringBonus,
-        desc: "하위 티어 파트너와 완벽한 협동!"
+        desc: "낮은 티어 짝과 함께 승리 (플래티넘↑ 전용)"
       });
     }
 

@@ -454,11 +454,28 @@ export type DynamicBonuses = {
   willOfSteel3Rp?: number;
   willOfSteel4Rp?: number;
   willOfSteel5Rp?: number;
+  /**
+   * 상위 전용 보너스 셋. 플래티넘부터는 기본점이 줄고(+13, +11) 패널티가 늘고 연승·언더독이
+   * 빠져서, 모멘턴 리그 실측으로 플래 본전 승률 57%·다이아 66%였다. 골드 이하는 건드리지 않고
+   * 위만 채운다(목표 플래 ~51%, 다이아 ~59%).
+   */
+  /** 정상 결전 — 플래 이상이 같은 티어 이상의 상대를 이기면. 언더독은 "위 티어"만 쳐준다. */
+  rivalEnabled?: boolean;
+  rivalPlatinumRp?: number;
+  rivalDiamondRp?: number;
+  /** 상위 연승 — 일반 연승(streakEnabled)은 플래 이상을 제외한다. 상위는 값을 따로 둔다. */
+  streakUpperEnabled?: boolean;
+  streakUpperPlatinumRp?: number;
+  streakUpperDiamondRp?: number;
   mentoring?: {
     enabled: boolean;
     mentorRp: number;
     menteeRp: number;
     minTierGap: number;
+    /** 멘토 보너스를 받는 최소 티어. 화면에선 "캐리(상위 전용)"로 노출되며 Platinum 고정. */
+    mentorMinTier?: TierName;
+    /** 다이아 멘토는 mentorRp 대신 이 값. 없으면 mentorRp. */
+    mentorDiamondRp?: number;
   };
 };
 

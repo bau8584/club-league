@@ -25,7 +25,9 @@ export const STANDARD_BONUSES: DynamicBonuses = {
   greatMatchEnabled: true, greatMatchRp: 8, greatMatchWin1Rp: 8, greatMatchLose1Rp: 4, greatMatchWin2Rp: 5, greatMatchLose2Rp: 2, greatMatchWin3Rp: 2, greatMatchLose3Rp: 0,
   lossComfortEnabled: true, lossComfortRp: 4, lossComfortMaxTier: "Silver",
   willOfSteelEnabled: true, willOfSteel3Rp: 8, willOfSteel4Rp: 12, willOfSteel5Rp: 16,
-  mentoring: { enabled: false, mentorRp: 10, menteeRp: 15, minTierGap: 1 },
+  rivalEnabled: true, rivalPlatinumRp: 6, rivalDiamondRp: 8,
+  streakUpperEnabled: true, streakUpperPlatinumRp: 5, streakUpperDiamondRp: 6,
+  mentoring: { enabled: true, mentorRp: 5, mentorDiamondRp: 7, menteeRp: 0, minTierGap: 1, mentorMinTier: "Platinum" },
 };
 export const STANDARD_PENALTIES: DynamicPenalties = {
   enabled: true, arrogance: true, crushing: true, revengeFail: false, championWeight: true, lossStreak: true,
@@ -72,14 +74,29 @@ const BONUS_SIG: (keyof DynamicBonuses)[] = [
   "underdogEnabled", "underdogDiff1Rp", "underdogDiff2Rp", "underdogDiff3Rp",
   "greatMatchEnabled", "lossComfortEnabled", "lossComfortRp", "lossComfortMaxTier",
   "willOfSteelEnabled", "willOfSteel3Rp", "willOfSteel4Rp", "willOfSteel5Rp",
+  "rivalEnabled", "rivalPlatinumRp", "rivalDiamondRp",
+  "streakUpperEnabled", "streakUpperPlatinumRp", "streakUpperDiamondRp",
 ];
+/** 멘토링은 중첩 객체라 BONUS_SIG 로 못 비교한다. 프리셋이 정하는 것만 따로 본다. */
+const MENTORING_SIG = ["enabled", "mentorRp", "mentorDiamondRp", "menteeRp"] as const;
 export const BONUS_PRESETS: Record<Exclude<BonusPreset, "custom">, { label: string; desc: string; fields: Partial<DynamicBonuses> }> = {
-  balanced: { label: "⚖️ 균형", desc: "기본. 적당한 참여 보상",
-    fields: { firstWinEnabled: true, firstWinRp: 12, freshnessEnabled: true, freshnessRp: 5, streakEnabled: true, streakRp: 8, revengeEnabled: true, revengeRp: 8, underdogEnabled: true, underdogDiff1Rp: 6, underdogDiff2Rp: 12, underdogDiff3Rp: 20, greatMatchEnabled: true, lossComfortEnabled: true, lossComfortRp: 4, lossComfortMaxTier: "Silver", willOfSteelEnabled: true, willOfSteel3Rp: 8, willOfSteel4Rp: 12, willOfSteel5Rp: 16 } },
+  /**
+   * 상위 전용 셋(정상 결전·상위 연승·캐리)의 눈금. 균형은 셋 다 켜서 플래 본전 ~51%.
+   * 독려는 캐리를 조금 올리고(강자가 약한 짝을 끌어주는 게 곧 독려) 상위 연승은 일반 연승과
+   * 같이 끈다. 경쟁은 실력만 남긴다 — 정상 결전만, 그것도 크게.
+   */
+  balanced: { label: "⚖️ 균형", desc: "기본. 적당한 참여 보상 + 상위 전용 보너스",
+    fields: { firstWinEnabled: true, firstWinRp: 12, freshnessEnabled: true, freshnessRp: 5, streakEnabled: true, streakRp: 8, revengeEnabled: true, revengeRp: 8, underdogEnabled: true, underdogDiff1Rp: 6, underdogDiff2Rp: 12, underdogDiff3Rp: 20, greatMatchEnabled: true, lossComfortEnabled: true, lossComfortRp: 4, lossComfortMaxTier: "Silver", willOfSteelEnabled: true, willOfSteel3Rp: 8, willOfSteel4Rp: 12, willOfSteel5Rp: 16,
+      rivalEnabled: true, rivalPlatinumRp: 6, rivalDiamondRp: 8, streakUpperEnabled: true, streakUpperPlatinumRp: 5, streakUpperDiamondRp: 6,
+      mentoring: { enabled: true, mentorRp: 5, mentorDiamondRp: 7, menteeRp: 0, minTierGap: 1, mentorMinTier: "Platinum" } } },
   encourage: { label: "🌱 하위 독려", desc: "하위권 좌절·이탈 방지. 언더독·위로·연패탈출↑, 연승은 끔",
-    fields: { firstWinEnabled: true, firstWinRp: 15, freshnessEnabled: true, freshnessRp: 8, streakEnabled: false, streakRp: 8, revengeEnabled: true, revengeRp: 8, underdogEnabled: true, underdogDiff1Rp: 8, underdogDiff2Rp: 16, underdogDiff3Rp: 26, greatMatchEnabled: true, lossComfortEnabled: true, lossComfortRp: 8, lossComfortMaxTier: "Platinum", willOfSteelEnabled: true, willOfSteel3Rp: 14, willOfSteel4Rp: 20, willOfSteel5Rp: 28 } },
-  competitive: { label: "🎯 경쟁·최소", desc: "순수 실력 반영·정확 등급. 진짜 실력인 언더독만 소폭",
-    fields: { firstWinEnabled: false, firstWinRp: 12, freshnessEnabled: false, freshnessRp: 5, streakEnabled: false, streakRp: 8, revengeEnabled: false, revengeRp: 8, underdogEnabled: true, underdogDiff1Rp: 4, underdogDiff2Rp: 8, underdogDiff3Rp: 12, greatMatchEnabled: false, lossComfortEnabled: false, lossComfortRp: 4, lossComfortMaxTier: "Silver", willOfSteelEnabled: false, willOfSteel3Rp: 8, willOfSteel4Rp: 12, willOfSteel5Rp: 16 } },
+    fields: { firstWinEnabled: true, firstWinRp: 15, freshnessEnabled: true, freshnessRp: 8, streakEnabled: false, streakRp: 8, revengeEnabled: true, revengeRp: 8, underdogEnabled: true, underdogDiff1Rp: 8, underdogDiff2Rp: 16, underdogDiff3Rp: 26, greatMatchEnabled: true, lossComfortEnabled: true, lossComfortRp: 8, lossComfortMaxTier: "Platinum", willOfSteelEnabled: true, willOfSteel3Rp: 14, willOfSteel4Rp: 20, willOfSteel5Rp: 28,
+      rivalEnabled: true, rivalPlatinumRp: 5, rivalDiamondRp: 6, streakUpperEnabled: false, streakUpperPlatinumRp: 4, streakUpperDiamondRp: 5,
+      mentoring: { enabled: true, mentorRp: 6, mentorDiamondRp: 8, menteeRp: 0, minTierGap: 1, mentorMinTier: "Platinum" } } },
+  competitive: { label: "🎯 경쟁·최소", desc: "순수 실력 반영·정확 등급. 언더독·정상 결전만",
+    fields: { firstWinEnabled: false, firstWinRp: 12, freshnessEnabled: false, freshnessRp: 5, streakEnabled: false, streakRp: 8, revengeEnabled: false, revengeRp: 8, underdogEnabled: true, underdogDiff1Rp: 4, underdogDiff2Rp: 8, underdogDiff3Rp: 12, greatMatchEnabled: false, lossComfortEnabled: false, lossComfortRp: 4, lossComfortMaxTier: "Silver", willOfSteelEnabled: false, willOfSteel3Rp: 8, willOfSteel4Rp: 12, willOfSteel5Rp: 16,
+      rivalEnabled: true, rivalPlatinumRp: 8, rivalDiamondRp: 10, streakUpperEnabled: false, streakUpperPlatinumRp: 5, streakUpperDiamondRp: 6,
+      mentoring: { enabled: false, mentorRp: 5, mentorDiamondRp: 7, menteeRp: 0, minTierGap: 1, mentorMinTier: "Platinum" } } },
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -154,9 +171,35 @@ export function detectWinlossPreset(ts: TierSettings, dWin: number | string, dLo
 export function detectBonusPreset(b: DynamicBonuses): BonusPreset {
   for (const k of ["balanced", "encourage", "competitive"] as const) {
     const merged = bonusesFromPreset(k);
-    if (BONUS_SIG.every((key) => (b as any)[key] === (merged as any)[key])) return k;
+    const flat = BONUS_SIG.every((key) => (b as any)[key] === (merged as any)[key]);
+    const mentoring = MENTORING_SIG.every((key) => (b.mentoring as any)?.[key] === (merged.mentoring as any)?.[key]);
+    if (flat && mentoring) return k;
   }
   return "custom";
+}
+
+/**
+ * 프리셋에 새 항목이 생겼을 때, 저장돼 있던 설정이 어느 프리셋이었는지 **옛 항목만으로** 알아내
+ * 새 항목을 그 프리셋 값으로 채운다. 안 그러면 새 항목이 빠진 옛 설정은 전부 "사용자 설정"이 되고,
+ * 리그마다 프리셋을 다시 골라야 새 보너스가 켜진다.
+ */
+export function fillNewBonusFields(b: DynamicBonuses): DynamicBonuses {
+  if (b.rivalEnabled !== undefined) return b;   // 이미 새 형식
+  const legacySig = BONUS_SIG.filter((k) => !String(k).startsWith("rival") && !String(k).startsWith("streakUpper"));
+  for (const k of ["balanced", "encourage", "competitive"] as const) {
+    const merged = bonusesFromPreset(k);
+    if (legacySig.every((key) => (b as any)[key] === (merged as any)[key])) {
+      const f = BONUS_PRESETS[k].fields;
+      return { ...b, rivalEnabled: f.rivalEnabled, rivalPlatinumRp: f.rivalPlatinumRp, rivalDiamondRp: f.rivalDiamondRp,
+        streakUpperEnabled: f.streakUpperEnabled, streakUpperPlatinumRp: f.streakUpperPlatinumRp, streakUpperDiamondRp: f.streakUpperDiamondRp,
+        mentoring: f.mentoring };
+    }
+  }
+  // 어느 프리셋도 아니면(사용자 설정) 균형의 상위 보너스만 얹는다 — 골드 이하는 그대로.
+  const f = BONUS_PRESETS.balanced.fields;
+  return { ...b, rivalEnabled: f.rivalEnabled, rivalPlatinumRp: f.rivalPlatinumRp, rivalDiamondRp: f.rivalDiamondRp,
+    streakUpperEnabled: f.streakUpperEnabled, streakUpperPlatinumRp: f.streakUpperPlatinumRp, streakUpperDiamondRp: f.streakUpperDiamondRp,
+    mentoring: b.mentoring?.enabled ? b.mentoring : f.mentoring };
 }
 export function detectPenaltyPreset(p: DynamicPenalties): PenaltyPreset {
   for (const k of ["balanced", "topcontrol", "lenient"] as const) {

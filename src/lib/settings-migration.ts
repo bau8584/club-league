@@ -1,5 +1,5 @@
 import type { TiersRecord, DecaySettingsRecord, DynamicPenalties, DynamicBonuses, TierName } from "./league-types";
-import { STANDARD_BONUSES, STANDARD_PENALTIES } from "./league-presets";
+import { STANDARD_BONUSES, STANDARD_PENALTIES, fillNewBonusFields } from "./league-presets";
 
 // 표준(약간 성장형) 기본 티어 — league-presets STANDARD 와 정합
 export const DEFAULT_TIERS: TiersRecord = {
@@ -123,12 +123,15 @@ export function migrateSettings(rawSettings: any): any {
 
   // 4. Migrate "dynamicBonuses"
   if (migrated.dynamicBonuses) {
+    // 상위 전용 보너스(정상 결전·상위 연승·캐리)가 없는 옛 설정은, 옛 항목으로 프리셋을 알아내
+    // 그 프리셋 값으로 채운다. 기본값을 그냥 덮으면 "경쟁" 리그도 "균형"의 상위 보너스를 받는다.
+    const filled = fillNewBonusFields(migrated.dynamicBonuses);
     migrated.dynamicBonuses = {
       ...DEFAULT_DYNAMIC_BONUSES,
-      ...migrated.dynamicBonuses,
+      ...filled,
       mentoring: {
         ...DEFAULT_DYNAMIC_BONUSES.mentoring,
-        ...(migrated.dynamicBonuses.mentoring || {})
+        ...(filled.mentoring || {})
       }
     };
   } else {

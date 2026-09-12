@@ -41,7 +41,12 @@ export function ScoreStrategyGuide({ rp }: { rp: number }) {
   if (db.greatMatchEnabled) bonuses.push({ icon: "🏅", label: "명승부 (접전)", value: `승 +${db.greatMatchWin1Rp ?? 10}/${db.greatMatchWin2Rp ?? 5}/${db.greatMatchWin3Rp ?? 2}`, desc: "1·2·3점차 접전 (패배도 소폭 보너스)" });
   if (db.lossComfortEnabled && TIER_RANK[tier] <= TIER_RANK[(db.lossComfortMaxTier ?? "Silver") as TierName]) bonuses.push({ icon: "🤗", label: "패배 위로", value: `+${db.lossComfortRp ?? 5}`, desc: "2연패 이상일 때 패배해도 위로 보너스" });
   if (db.willOfSteelEnabled) bonuses.push({ icon: "💎", label: "불굴의 의지", value: `+${db.willOfSteel3Rp ?? 10} ~ +${db.willOfSteel5Rp ?? 20}`, desc: "3연패 이상에서 탈출(승리) 시" });
-  if (db.mentoring?.enabled) bonuses.push({ icon: "🤝", label: "멘토링 (복식)", value: `멘토 +${db.mentoring.mentorRp ?? 10} · 멘티 +${db.mentoring.menteeRp ?? 15}`, desc: `티어차 ${db.mentoring.minTierGap ?? 1}+ 파트너와 복식 승리` });
+  // 상위 전용 — 이 티어가 받을 수 있는 것만 적는다. 안 받는 보너스가 표에 있으면 화면이 거짓말이 된다.
+  const upper = tier === "Platinum" || tier === "Diamond";
+  const uv = (p: number, d: number) => (tier === "Diamond" ? d : p);
+  if (upper && db.rivalEnabled) bonuses.push({ icon: "⚔️", label: "정상 결전", value: `+${uv(db.rivalPlatinumRp ?? 6, db.rivalDiamondRp ?? 8)}`, desc: "같은 티어 이상의 상대를 이기면" });
+  if (upper && db.streakUpperEnabled) bonuses.push({ icon: "⚡", label: "상위 연승", value: `+${uv(db.streakUpperPlatinumRp ?? 5, db.streakUpperDiamondRp ?? 6)}`, desc: `${db.streakWins ?? 3}연승 이상 유지하며 승리` });
+  if (db.mentoring?.enabled && TIER_RANK[tier] >= TIER_RANK[(db.mentoring.mentorMinTier ?? "Bronze") as TierName]) bonuses.push({ icon: "🤝", label: "캐리 (복식)", value: `+${uv(db.mentoring.mentorRp ?? 5, db.mentoring.mentorDiamondRp ?? db.mentoring.mentorRp ?? 5)}`, desc: `${db.mentoring.minTierGap ?? 1}단계 이상 낮은 짝과 복식 승리` });
 
   const dp: any = dynamicPenalties || {};
   const goldPlus = tier === "Gold" || tier === "Platinum" || tier === "Diamond";

@@ -3,7 +3,7 @@ import type { Student, Match, ScheduledMatch, AssignmentSession, Gender, TierNam
 import { studentKey, getTier, getTierSubdivision, getFullTierLabel, TIER_ORDER } from "./league-types";
 import { toast } from "sonner";
 import { supabase } from "../supabaseClient";
-import { calculateMatchResult } from "@/domain/match-calculator";
+import { calculateMatchResult, mentoringBonusOf, rivalClashBonus } from "@/domain/match-calculator";
 import {
   calculateAssignment,
   defaultPreset,
@@ -2042,6 +2042,7 @@ function useLeagueStoreInternal() {
       let freshnessBonus = 0;
       let streakBonus = 0;
       let mentoringBonus = 0;
+      let rivalBonus = 0;
       let greatMatchBonus = 0;
       let lossComfortBonus = 0;
 
@@ -2074,6 +2075,11 @@ function useLeagueStoreInternal() {
 
       let willOfSteelBonus = 0;
       if (won) {
+        if (opponents.length > 0) {
+          const maxOppTier = getTier(Math.max(...opponents.map((o) => o.rp)), tierThresholds);
+          rivalBonus = rivalClashBonus(dynamicBonuses, playerTier, maxOppTier);
+        }
+
         if (dynamicBonuses?.underdogEnabled && opponents.length > 0) {
           const TIER_NUM: Record<TierName, number> = { Bronze: 0, Silver: 1, Gold: 2, Platinum: 3, Diamond: 4 };
           const myTierNum = TIER_NUM[playerTier as TierName] ?? 0;
@@ -2153,20 +2159,7 @@ function useLeagueStoreInternal() {
           if (partnerId) {
             const partner = rolledBackStudents.find((s) => s.id === partnerId);
             if (partner) {
-              const partnerTier = getTier(partner.rp, tierThresholds);
-              const myTierRank = TIER_RANKING[playerTier] ?? 1;
-              const partnerTierRank = TIER_RANKING[partnerTier] ?? 1;
-              if (dynamicBonuses?.mentoring?.enabled) {
-                const minGap = dynamicBonuses.mentoring.minTierGap ?? 1;
-                const gap = Math.abs(myTierRank - partnerTierRank);
-                if (gap >= minGap) {
-                  if (myTierRank > partnerTierRank) {
-                    mentoringBonus = dynamicBonuses.mentoring.mentorRp ?? 10;
-                  } else if (myTierRank < partnerTierRank) {
-                    mentoringBonus = dynamicBonuses.mentoring.menteeRp ?? 15;
-                  }
-                }
-              }
+              mentoringBonus = mentoringBonusOf(dynamicBonuses, playerTier, getTier(partner.rp, tierThresholds));
             }
           }
         }
@@ -2243,7 +2236,7 @@ function useLeagueStoreInternal() {
       }
 
       const delta = won 
-        ? (baseWin + underdogBonus + freshnessBonus + streakBonus + greatMatchBonus + mentoringBonus + firstWinBonus + revengeBonus + willOfSteelBonus)
+        ? (baseWin + underdogBonus + freshnessBonus + streakBonus + greatMatchBonus + mentoringBonus + firstWinBonus + revengeBonus + willOfSteelBonus + rivalBonus)
         : (-baseLoss + freshnessBonus + lossComfortBonus + greatMatchBonus - (arrogancePenalty + crushingPenalty + revengeAllowedPenalty + championPenalty + swampPenalty));
 
       return {
@@ -2254,7 +2247,7 @@ function useLeagueStoreInternal() {
         delta,
         underdogBonus,
         scoreDiffBonus: 0,
-        rivalBonus: 0,
+        rivalBonus,
         firstWinBonus,
         revengeBonus,
         freshnessBonus,
@@ -2349,10 +2342,10 @@ function useLeagueStoreInternal() {
       scoreDiffBonusB: 0,
       scoreDiffBonusA2: 0,
       scoreDiffBonusB2: 0,
-      rivalBonusA: 0,
-      rivalBonusB: 0,
-      rivalBonusA2: 0,
-      rivalBonusB2: 0,
+      rivalBonusA: statA?.rivalBonus ?? 0,
+      rivalBonusB: statB?.rivalBonus ?? 0,
+      rivalBonusA2: statA2?.rivalBonus ?? 0,
+      rivalBonusB2: statB2?.rivalBonus ?? 0,
       firstWinBonusA: statA?.firstWinBonus ?? 0,
       firstWinBonusB: statB?.firstWinBonus ?? 0,
       firstWinBonusA2: statA2?.firstWinBonus ?? 0,
