@@ -7,6 +7,7 @@ import { classKeyOf, classLabel, type ScheduledMatch } from "@/lib/league-types"
 import { useQueueRows } from "@/lib/use-queue-rows";
 import { SessionRoster } from "./SessionRoster";
 import { ClubRoster } from "./ClubRoster";
+import { liveSession } from "@/lib/session-today";
 import { MatchQueue } from "./MatchQueue";
 
 /**
@@ -29,8 +30,10 @@ export function SessionCard({
   canReserve?: boolean;
   onRecordRow: (row: ScheduledMatch) => void;
 }) {
-  const { students, assignmentSession, matches, leagueType } = useLeagueStore();
+  const { students, assignmentSession: rawSession, matches, leagueType } = useLeagueStore();
   const isClub = leagueType !== "school";
+  // 동호회의 지난주 세션은 없는 것으로 본다.
+  const assignmentSession = liveSession(rawSession, isClub ? "club" : "school");
   const { queue, myTurn } = useQueueRows();
   // 명단 펼침. 세션이 없으면 접을 것이 없다 — 명단을 정하는 것이 지금 할 일이다.
   const [rosterOpen, setRosterOpen] = useState(false);

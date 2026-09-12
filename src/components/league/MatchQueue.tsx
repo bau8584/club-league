@@ -6,6 +6,7 @@ import { BellRing, Check, ChevronDown, ChevronRight, CircleHelp, ListChecks, Pen
 import { useLeagueStore } from "@/lib/league-store";
 import { teamsOf, useQueueRows } from "@/lib/use-queue-rows";
 import { sortStudentsForRoster, type ScheduledMatch, type Student } from "@/lib/league-types";
+import { liveSession } from "@/lib/session-today";
 import type { AssignmentPreset } from "@/domain/assignment-calculator";
 
 const dn = (s?: Student | null) => (s ? s.nickname || s.name : "?");
@@ -86,7 +87,7 @@ export function MatchQueue({
     myPlayerId,
     leagueType,
     levels,
-    assignmentSession,
+    assignmentSession: rawSession,
     fillAssignmentQueue,
     removeScheduledMatch,
     removeScheduledMatches,
@@ -97,6 +98,8 @@ export function MatchQueue({
     createReservation,
   } = useLeagueStore();
   const isClub = leagueType !== "school";
+  // 동호회의 지난주 세션은 없는 것으로 본다 — 명단이 없으니 뽑기 조작도 숨는다.
+  const assignmentSession = liveSession(rawSession, isClub ? "club" : "school");
 
   const [preset, setPreset] = useState<AssignmentPreset>(
     leagueType === "school" ? "diversity" : "balanced",
