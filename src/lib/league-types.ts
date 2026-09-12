@@ -64,7 +64,7 @@ export type ScheduledMatch = {
   player_a2_id: string | null;
   player_b2_id: string | null;
   court: string | null;
-  status: "waiting" | "called" | "done" | "cancelled" | "challenge";
+  status: "waiting" | "called" | "done" | "cancelled";
   player_ids?: string[] | null;      // 인원 소집 예약 참가자(팀 미정). 결과 입력 때 팀 확정.
   result_match_id?: string | null;   // 완료 시 연결된 실제 경기(matches) id
   notified_by?: string | null;       // 마지막으로 알림 보낸 선수 id

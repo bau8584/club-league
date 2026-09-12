@@ -165,7 +165,7 @@ export function MatchesTab({
     }
   };
 
-  // 예약(참가자 풀 player_ids) / 관리자 대진·수락된 도전장(팀 확정 player_a_id…) 양쪽의 참가자 id를 통일해 얻는다.
+  // 예약(참가자 풀 player_ids) / 관리자 대진(팀 확정 player_a_id…) 양쪽의 참가자 id를 통일해 얻는다.
   const participantsOf = useCallback(
     (r: (typeof scheduledMatches)[number]): string[] =>
       (r.player_ids?.length ?? 0) > 0
@@ -177,7 +177,7 @@ export function MatchesTab({
   );
   const isReservation = (r: (typeof scheduledMatches)[number]) => (r.player_ids?.length ?? 0) > 0;
 
-  // ── 예약 목록(전원 열람) ── 회원 예약 + 관리자 대진 + 수락된 도전장(모두 waiting|called)
+  // ── 예약 목록(전원 열람) ── 회원 예약 + 관리자 대진(모두 waiting|called)
   const reservations = useMemo(
     () =>
       scheduledMatches
@@ -205,7 +205,7 @@ export function MatchesTab({
     if (!activeReservation) return directInitials;
     const r = activeReservation;
     const type = r.match_type === "single" ? "single" : "double";
-    // 관리자 대진·수락된 도전장: 팀(A vs B)이 이미 확정 → 그대로 프리필
+    // 관리자 대진: 팀(A vs B)이 이미 확정 → 그대로 프리필
     if (!isReservation(r) && r.player_a_id && r.player_b_id) {
       if (type === "double" && r.player_a2_id && r.player_b2_id) {
         return {

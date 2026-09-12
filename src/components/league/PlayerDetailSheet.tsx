@@ -6,7 +6,7 @@ import { GenderMark } from "@/components/league/GenderMark";
 import { TitleBadge } from "@/components/league/TitleBadge";
 import { getFullTierLabel, isUnranked, type Student, type TierName } from "@/lib/league-types";
 import { cn } from "@/lib/utils";
-import { Swords, ChevronDown } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 
 function getWinStreak(recent: ("W" | "L")[]): number {
   let count = 0;
@@ -37,7 +37,7 @@ export function PlayerDetailSheet({
   students: Student[];
   thresholds?: Record<TierName, number>;
 }) {
-  const { matches, myPlayerId, createChallenge, getEquippedTitle, placementEnabled, placementGames } = useLeagueStore();
+  const { matches, myPlayerId, getEquippedTitle, placementEnabled, placementGames } = useLeagueStore();
   const [showLog, setShowLog] = useState(false);
 
   // 시트를 다시 열 때마다 전적 펼침 상태 초기화
@@ -108,7 +108,6 @@ export function PlayerDetailSheet({
   const unranked = isUnranked(student, placementEnabled, placementGames);
   const streak = getWinStreak(student.recent);
   const title = getEquippedTitle(student);
-  const canChallenge = !!myPlayerId && student.id !== myPlayerId;
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange}>
@@ -218,19 +217,6 @@ export function PlayerDetailSheet({
             </div>
           )}
 
-          {/* 도전장 보내기 */}
-          {canChallenge && (
-            <button
-              type="button"
-              onClick={async () => {
-                const ok = await createChallenge(student.id);
-                if (ok) onOpenChange(false);
-              }}
-              className="mt-5 flex w-full items-center justify-center gap-1.5 rounded-xl border border-amber-500/40 bg-amber-500/10 py-3 text-sm font-black text-amber-500 transition-all hover:bg-amber-500/20 active:scale-[0.98]"
-            >
-              <Swords className="size-4" /> 도전장 보내기
-            </button>
-          )}
         </div>
       </DrawerContent>
     </Drawer>

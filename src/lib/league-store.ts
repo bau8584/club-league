@@ -78,8 +78,6 @@ import {
   apiUpdateReservationPlayers,
   apiTouchReservationNotify,
   apiSaveMatchBreakdown,
-  apiCreateChallenge,
-  apiRespondChallenge
 } from "@/services/league-api";
 import { notifyPlayers } from "@/services/push-send";
 import {
@@ -3150,7 +3148,7 @@ function useLeagueStoreInternal() {
       opts?.teamSize ?? (assignmentSessionRef.current?.match_type === "single" ? 1 : 2);
     const preset: AssignmentPreset = opts?.policy ?? defaultPreset(leagueTypeRef.current);
 
-    // 큐 = 아직 결과가 안 들어온 행. 도전장(challenge)은 큐가 아니다.
+    // 큐 = 아직 결과가 안 들어온 행.
     const queue = scheduledMatches.filter((m) => m.status === "waiting" || m.status === "called");
     const queuedIds = new Set<string>();
     for (const m of queue) {
@@ -3407,45 +3405,6 @@ function useLeagueStoreInternal() {
     toast.success("알림을 보냈어요.");
     return true;
   }, [loadScheduled, myPlayerId, scheduledMatches, students]);
-
-  // 도전장 보내기 (회원) — 내 연동 선수가 상대를 지목
-  const createChallenge = useCallback(async (targetPlayerId: string): Promise<boolean> => {
-    const cid = currentClassIdRef.current;
-    if (!cid) return false;
-    if (!myPlayerId) { toast.error("연동된 선수가 없어 도전장을 보낼 수 없습니다."); return false; }
-    if (myPlayerId === targetPlayerId) { toast.error("자신에게는 도전할 수 없습니다."); return false; }
-    // 이미 진행 중인 도전장/예약(대기·호출)에 두 사람이 함께 있으면 중복 방지
-    const dup = scheduledMatches.some((m) => {
-      if (!(m.status === "challenge" || m.status === "waiting" || m.status === "called")) return false;
-      const parts = ((m.player_ids?.length ? m.player_ids : [m.player_a_id, m.player_b_id, m.player_a2_id, m.player_b2_id]).filter(Boolean)) as string[];
-      return parts.includes(myPlayerId) && parts.includes(targetPlayerId);
-    });
-    if (dup) { toast.error("이미 이 상대와 진행 중인 도전장/예약이 있어요."); return false; }
-    const { error } = await apiCreateChallenge({ classId: cid, challengerId: myPlayerId, targetId: targetPlayerId });
-    if (error) { toast.error("도전장 전송 실패: " + error.message); return false; }
-    await loadScheduled(cid);
-    notifyPlayers([targetPlayerId], {
-      title: "⚔️ 도전장 도착!", body: "당신에게 도전장이 왔습니다. 받아들이시겠어요?",
-      url: classPath(cid), tag: `chal-${targetPlayerId}`,
-    });
-    toast.success("도전장을 보냈습니다! ⚔️");
-    return true;
-  }, [myPlayerId, loadScheduled, scheduledMatches]);
-
-  // 도전장 응답 (지목당한 회원) — 수락(입장)/거절
-  const respondChallenge = useCallback(async (id: string, accept: boolean): Promise<boolean> => {
-    const cid = currentClassIdRef.current;
-    const m = scheduledMatches.find((x) => x.id === id);
-    const { error } = await apiRespondChallenge(id, accept);
-    if (error) { toast.error("응답 실패: " + error.message); return false; }
-    if (cid) await loadScheduled(cid);
-    if (accept && m) notifyPlayers([m.player_a_id, m.player_a2_id], {
-      title: "⚔️ 도전 수락!", body: "상대가 도전을 수락했어요. 코트로 입장하세요.",
-      url: cid ? classPath(cid) : "/", tag: `chal-accept-${id}`,
-    });
-    toast.success(accept ? "도전을 수락했습니다. 입장하세요!" : "도전을 거절했습니다.");
-    return true;
-  }, [loadScheduled, scheduledMatches]);
 
   // 호칭 인덱스: 이번 시즌 데이터로 리그 전체 호칭 보유 현황을 한 번에 계산
   const titleIndex = useMemo(
@@ -3844,8 +3803,6 @@ function useLeagueStoreInternal() {
     joinReservation,
     notifyReservation,
     saveMatchBreakdown,
-    createChallenge,
-    respondChallenge,
     tierSettings,
     setTierSettings,
     dynamicBonuses,

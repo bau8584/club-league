@@ -45,7 +45,7 @@ export function PushPrompt({ leagueId }: { leagueId?: string | null }) {
       const r = await enablePush(leagueId, myPlayerId);
       if (r.ok) {
         try { localStorage.setItem(KEY, JSON.stringify({ enabled: true })); } catch { /* ignore */ }
-        toast.success("경기 알림을 켰어요. 예약·도전장·결과가 오면 알려드릴게요!");
+        toast.success("경기 알림을 켰어요. 예약·결과가 오면 알려드릴게요!");
         setShow(false);
       } else if (r.reason === "denied") {
         toast.error("브라우저에서 알림이 차단됐어요. 주소창 옆 자물쇠 → 알림 허용으로 바꿔주세요.");
@@ -68,7 +68,7 @@ export function PushPrompt({ leagueId }: { leagueId?: string | null }) {
       </div>
       <div className="min-w-0 flex-1">
         <p className="text-sm font-black text-foreground">경기 알림을 켤까요?</p>
-        <p className="text-[11px] text-muted-foreground">예약·도전장·경기 결과가 오면 앱이 꺼져 있어도 바로 알려드려요.</p>
+        <p className="text-[11px] text-muted-foreground">예약·경기 결과가 오면 앱이 꺼져 있어도 바로 알려드려요.</p>
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
         <button type="button" onClick={enable} disabled={busy}

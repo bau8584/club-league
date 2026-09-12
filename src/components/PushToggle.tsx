@@ -59,7 +59,7 @@ export function PushToggle({ leagueId, variant = "icon" }: { leagueId?: string |
         toast.success("경기 알림을 껐습니다.");
       } else {
         const r = await enablePush(leagueId, myPlayerId);
-        if (r.ok) { setEnabled(true); toast.success("경기 알림을 켰습니다. 배정·도전장이 오면 알려드려요!"); }
+        if (r.ok) { setEnabled(true); toast.success("경기 알림을 켰습니다. 배정·예약이 오면 알려드려요!"); }
         else if (r.reason === "denied") toast.error("브라우저에서 알림이 차단되어 있어요. 사이트 알림 권한을 허용해 주세요.");
         else if (r.reason === "no-auth") toast.error("로그인 후 이용할 수 있어요.");
         else toast.error("알림을 켜지 못했어요. 잠시 후 다시 시도해 주세요.");

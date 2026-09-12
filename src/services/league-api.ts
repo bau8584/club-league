@@ -74,7 +74,7 @@ export async function apiFetchMatches(classId: string, season?: string) {
 /**
  * 큐 읽기. `sessionId`를 주면 그 세션의 줄만 본다(학교 — 옆 반 수업이 섞이면 안 된다).
  *
- * 세션 밖의 줄(session_id is null)은 함께 본다. 도전장과 회원 예약은 특정 수업에 속한
+ * 세션 밖의 줄(session_id is null)은 함께 본다. 회원 예약은 특정 수업에 속한
  * 것이 아니고, 마이그레이션 이전에 만들어진 줄도 여기 해당한다. 걸러내면 쓰던 큐가
  * 배포와 동시에 화면에서 사라진다.
  */
@@ -83,26 +83,9 @@ export async function apiFetchScheduledMatches(classId: string, sessionId?: stri
     .from("scheduled_matches")
     .select("*")
     .eq("league_id", classId)
-    .in("status", ["waiting", "called", "challenge"]);
+    .in("status", ["waiting", "called"]);
   if (sessionId) q = q.or(`session_id.eq.${sessionId},session_id.is.null`);
   return q.order("created_at", { ascending: true });
-}
-
-// 도전장 생성 (회원이 상대 지목) / 응답(수락→called, 거절→cancelled)
-export async function apiCreateChallenge(payload: {
-  classId: string; challengerId: string; targetId: string; matchType?: "single" | "double";
-}) {
-  return supabase.from("scheduled_matches").insert({
-    league_id: payload.classId,
-    player_a_id: payload.challengerId,
-    player_b_id: payload.targetId,
-    match_type: payload.matchType ?? "single",
-    status: "challenge",
-  });
-}
-
-export async function apiRespondChallenge(id: string, accept: boolean) {
-  return supabase.from("scheduled_matches").update({ status: accept ? "called" : "cancelled" }).eq("id", id);
 }
 
 export async function apiCreateScheduledMatch(payload: {
