@@ -1,28 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import {
-  CalendarPlus,
-  Megaphone,
-  Plus,
-  X,
-  Trophy,
-  ChevronRight,
-  ClipboardList,
-  Hourglass,
-  BellRing,
-  Target,
-  ChevronDown,
-} from "lucide-react";
+import { X, Trophy, ChevronRight, ClipboardList } from "lucide-react";
 import { useLeagueStore } from "@/lib/league-store";
 import { RecordMatch, type MatchResultData, type PlayerResult } from "./RecordMatch";
-import { MatchRecommend } from "./MatchRecommend";
 import { SessionCard } from "./SessionCard";
 import { getTier, type Match, type Student } from "@/lib/league-types";
-import { getTodayPlayerIds } from "@/lib/today-players";
 import { useLeagueTerms, useIsSchoolLeague } from "@/lib/league-terms";
 
 const dn = (s?: Student | null) => (s ? s.nickname || s.name : "?");
@@ -74,32 +59,6 @@ export function MatchesTab({
   } = useLeagueStore();
   const terms = useLeagueTerms();
   const isSchool = useIsSchoolLeague();
-  // school 은 학생 계정이 없어 예약이 "참가자를 모으는" 기능으로 동작하지 않는다.
-  // (푸시 구독은 auth.users 기반이라 학생에게 보낼 수 없고, 참가/나가기도 불가)
-  // 대신 교사가 다음 경기를 미리 담아두는 "대기 목록"으로는 그대로 쓸 수 있으므로
-  // 죽은 기능만 걷어내고 문구를 교사 어휘로 바꾼다.
-  const q = isSchool
-    ? {
-        section: "다음 경기 담기",
-        sectionDesc: "코트가 비면 하나씩 불러 진행하세요. 결과를 입력하면 목록에서 사라집니다.",
-        submit: "담기",
-        listTitle: "대기 중인 경기",
-        empty: "대기 중인 경기가 없습니다.",
-        cancelTitle: "대기 목록에서 뺄까요?",
-        cancelDesc: "이 경기를 빼면 목록에서 사라져요.",
-        cancelBtn: "대기 목록에서 빼기",
-      }
-    : {
-        section: "경기 예약",
-        sectionDesc: "참가자를 모으면 그들에게 알림이 갑니다. 팀은 코트에서 자유롭게.",
-        submit: "예약하기",
-        listTitle: "예약된 경기",
-        empty: "예약된 경기가 없습니다.",
-        cancelTitle: "예약을 정리할까요?",
-        cancelDesc: "이 예약을 취소하면 목록에서 사라져요.",
-        cancelBtn: "예약 통째로 취소",
-      };
-
   const readOnly = currentViewSeason !== "현재 시즌";
   const canReserve =
     (isClassManager || (matchInputMode !== "admin-only" && !!myPlayerId)) && !readOnly;
@@ -111,59 +70,6 @@ export function MatchesTab({
     students.forEach((s) => m.set(s.id, s)); // 활성 회원이 우선
     return m;
   }, [students, deletedById]);
-
-  // ── 예약 생성 폼 ──
-  const [reserveOpen, setReserveOpen] = useState(false); // 접기 기본
-  const [picked, setPicked] = useState<string[]>([]);
-  const [court, setCourt] = useState("");
-  const [search, setSearch] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  // 기본은 오늘 참여자만 후보에 노출, 해제하면 전체 회원
-  const [todayOnly, setTodayOnly] = useState(true);
-  // 관리자: 특정 예약에 사람 추가하기 위한 인라인 선택
-  const [addingTo, setAddingTo] = useState<string | null>(null);
-  const [addSearch, setAddSearch] = useState("");
-  // 예약 정리 확인 팝업 대상
-  const [confirmCancel, setConfirmCancel] = useState<(typeof scheduledMatches)[number] | null>(
-    null,
-  );
-
-  const todayPlayerIds = useMemo(() => getTodayPlayerIds(matches), [matches]);
-
-  const sortedStudents = useMemo(
-    () => [...students].sort((a, b) => dn(a).localeCompare(dn(b))),
-    [students],
-  );
-  const filteredStudents = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    let base = !q
-      ? sortedStudents
-      : sortedStudents.filter(
-          (s) => dn(s).toLowerCase().includes(q) || (s.group || "").toLowerCase().includes(q),
-        );
-    if (todayOnly) {
-      // 오늘 참여자 + (본인·이미 선택한 사람은 항상 유지해 선택 가능)
-      base = base.filter(
-        (s) => todayPlayerIds.has(s.id) || s.id === myPlayerId || picked.includes(s.id),
-      );
-    }
-    return base;
-  }, [sortedStudents, search, todayOnly, todayPlayerIds, myPlayerId, picked]);
-
-  const togglePick = (id: string) =>
-    setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
-
-  const submitReservation = async () => {
-    if (picked.length < 2) return toast.error("참가자를 2명 이상 선택하세요.");
-    setSubmitting(true);
-    const ok = await createReservation({ playerIds: picked, court: court.trim() || null });
-    setSubmitting(false);
-    if (ok) {
-      setPicked([]);
-      setCourt("");
-      setSearch("");
-    }
-  };
 
   // 예약(참가자 풀 player_ids) / 관리자 대진(팀 확정 player_a_id…) 양쪽의 참가자 id를 통일해 얻는다.
   const participantsOf = useCallback(
@@ -434,43 +340,6 @@ export function MatchesTab({
     return all;
   }, [matches, mineOnly, myPlayerId]);
 
-  // ── 매치 추천 (경기 탭 내 접힌 섹션) ──
-  const [recommendOpen, setRecommendOpen] = useState(false);
-  const [recSel, setRecSel] = useState<{
-    grade: number | null;
-    classNum: number | null;
-    studentId: string | null;
-  }>({ grade: null, classNum: null, studentId: null });
-  const [recMode, setRecMode] = useState<"class" | "otherClass" | "otherGrade">("class");
-  const [recTargetGrade, setRecTargetGrade] = useState<number | null>(null);
-  const [recTargetClass, setRecTargetClass] = useState<number | null>(null);
-
-  // 선수 로그인 시 추천 타겟을 본인으로 고정
-  useEffect(() => {
-    if (session?.role === "STUDENT" && myPlayerId) {
-      setRecSel({ grade: null, classNum: null, studentId: myPlayerId });
-    }
-  }, [session, myPlayerId]);
-
-  // 추천에서 대진 선택 → '경기 예약' 폼에 참가자 프리필 + 폼 펼치고 스크롤(예약으로 일원화)
-  //  순서 [본인, 파트너, 상대1, 상대2] = [A, A2, B, B2] → 나중에 결과 입력 시 팀 구성 복원됨.
-  const reserveFormRef = useRef<HTMLDivElement>(null);
-  const handleRecommendReserve = (
-    a: string,
-    b: string,
-    a2?: string,
-    b2?: string,
-    type?: "single" | "double",
-  ) => {
-    const ids = [a, a2, b, b2].filter(Boolean) as string[];
-    setPicked(ids);
-    setReserveOpen(true);
-    setRecommendOpen(false);
-    requestAnimationFrame(() =>
-      reserveFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
-    );
-  };
-
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
       {/* ── 경기 결과 입력 ── school: 버튼→팝업 대신 경기장 탭에 폼을 바로 노출 */}
@@ -555,7 +424,7 @@ export function MatchesTab({
       )}
       {/* ── 대기열 (동호회) ── 회원 예약·운영진 소집·뽑힌 대진이 한 목록. 학교는 위에서 그렸다. */}
       {!isSchool && !readOnly && (
-        <SessionCard canManage={isClassManager} onRecordRow={openQueueRow} />
+        <SessionCard canManage={isClassManager} canReserve={canReserve} onRecordRow={openQueueRow} />
       )}
 
       {canRecord && !isSchool && (
@@ -565,151 +434,6 @@ export function MatchesTab({
         >
           <Trophy className="mr-2 size-5" /> 경기 결과 입력하기
         </Button>
-      )}
-
-      {/* ── 매치 추천 (접힌 섹션) ── 학교 리그는 잠시 숨김 */}
-      {!readOnly && !isSchool && (
-        <Card className="border border-border/40 bg-card/50 p-5 shadow-lg backdrop-blur">
-          <button
-            type="button"
-            onClick={() => setRecommendOpen((v) => !v)}
-            className="flex w-full items-center justify-between text-left"
-          >
-            <div className="flex items-center gap-2.5">
-              <div className="flex size-9 items-center justify-center rounded-xl bg-neon-blue/15 text-neon-blue">
-                <Target className="size-5" />
-              </div>
-              <div>
-                <h2 className="text-base font-black tracking-tight text-foreground">매치 추천</h2>
-                <p className="text-[11px] text-muted-foreground">
-                  실력이 비슷한 상대를 찾아 대진을 잡아 보세요.
-                </p>
-              </div>
-            </div>
-            <ChevronDown
-              className={cn(
-                "size-5 shrink-0 text-muted-foreground transition-transform",
-                recommendOpen && "rotate-180",
-              )}
-            />
-          </button>
-          {recommendOpen && (
-            <div className="mt-4 border-t border-border/30 pt-4 animate-in fade-in slide-in-from-top-1 duration-150">
-              <MatchRecommend
-                students={students}
-                matches={matches}
-                onSelectRecommendedMatch={handleRecommendReserve}
-                canReserve={canReserve}
-                sel={recSel}
-                onSelChange={setRecSel}
-                mode={recMode}
-                onModeChange={setRecMode}
-                targetGrade={recTargetGrade}
-                onTargetGradeChange={setRecTargetGrade}
-                targetClass={recTargetClass}
-                onTargetClassChange={setRecTargetClass}
-                thresholds={tierThresholds}
-                onUpdateGender={updateStudentGender}
-                isStudentView={session?.role === "STUDENT"}
-                isReadOnly={readOnly}
-              />
-            </div>
-          )}
-        </Card>
-      )}
-
-      {/* ── 경기 예약 / 다음 경기 담기 (접힌 섹션) ── 학교 리그는 사용성이 낮아 잠시 숨김 */}
-      {canReserve && !isSchool && (
-        <Card
-          ref={reserveFormRef}
-          className="border border-border/40 bg-card/50 p-5 shadow-lg backdrop-blur"
-        >
-          <button
-            type="button"
-            onClick={() => setReserveOpen((v) => !v)}
-            className="flex w-full items-center justify-between text-left"
-          >
-            <div className="flex items-center gap-2.5">
-              <div className="flex size-9 items-center justify-center rounded-xl bg-neon-blue/15 text-neon-blue">
-                <CalendarPlus className="size-5" />
-              </div>
-              <div>
-                <h2 className="text-base font-black tracking-tight text-foreground">{q.section}</h2>
-                <p className="text-[11px] text-muted-foreground">{q.sectionDesc}</p>
-              </div>
-            </div>
-            <ChevronDown
-              className={cn(
-                "size-5 shrink-0 text-muted-foreground transition-transform",
-                reserveOpen && "rotate-180",
-              )}
-            />
-          </button>
-          {reserveOpen && (
-            <div className="mt-4 border-t border-border/30 pt-4 animate-in fade-in slide-in-from-top-1 duration-150">
-              <Input
-                value={court}
-                onChange={(e) => setCourt(e.target.value)}
-                placeholder="코트/메모 (선택)"
-                className="mb-2 h-9 w-full border-border/50 bg-input text-xs"
-              />
-
-              <div className="mb-2 flex items-center gap-2">
-                <Input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="참가자 검색..."
-                  className="h-9 flex-1 border-border/50 bg-input text-xs"
-                />
-                <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-[11px] font-bold text-muted-foreground select-none">
-                  <input
-                    type="checkbox"
-                    checked={todayOnly}
-                    onChange={(e) => setTodayOnly(e.target.checked)}
-                    className="size-3.5 accent-neon-blue"
-                  />
-                  오늘 참여자만
-                </label>
-              </div>
-
-              <div className="max-h-48 overflow-y-auto rounded-xl border border-border/30 p-2">
-                <div className="flex flex-wrap gap-1.5">
-                  {filteredStudents.map((s) => {
-                    const on = picked.includes(s.id);
-                    return (
-                      <button
-                        key={s.id}
-                        onClick={() => togglePick(s.id)}
-                        className={cn(
-                          "rounded-full border px-2.5 py-1 text-xs font-bold transition-all",
-                          on
-                            ? "border-neon-blue/50 bg-neon-blue/20 text-neon-blue"
-                            : "border-border/40 text-muted-foreground hover:text-foreground",
-                        )}
-                      >
-                        {dn(s)}
-                        {s.group ? ` · ${s.group}` : ""}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="mt-3 flex items-center justify-between">
-                <span className="text-xs font-bold text-muted-foreground">
-                  선택 {picked.length}명
-                </span>
-                <Button
-                  onClick={submitReservation}
-                  disabled={submitting || picked.length < 2}
-                  className="h-9 rounded-xl bg-neon-blue px-4 text-xs font-black text-primary-foreground hover:bg-neon-blue/90"
-                >
-                  <Plus className="mr-1 size-4" /> {q.submit}
-                </Button>
-              </div>
-            </div>
-          )}
-        </Card>
       )}
 
       {/* ── 경기 결과 보기 (맨 아래 · 입력 버튼과 수미상관) ── 클릭 시 팝업. 학교 리그는 잠시 숨김 */}

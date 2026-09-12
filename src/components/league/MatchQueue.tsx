@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { BellRing, Check, ChevronDown, ChevronRight, CircleHelp, ListChecks, Pencil, Plus, UserPlus, X } from "lucide-react";
+import { BellRing, Check, ChevronDown, ChevronRight, CircleHelp, ListChecks, Pencil, Plus, UserPlus, Users, X } from "lucide-react";
 import { useLeagueStore } from "@/lib/league-store";
 import { teamsOf, useQueueRows } from "@/lib/use-queue-rows";
 import { sortStudentsForRoster, type ScheduledMatch, type Student } from "@/lib/league-types";
@@ -71,9 +71,12 @@ const ROUND_HELP =
  */
 export function MatchQueue({
   canManage,
+  canReserve = false,
   onRecordRow,
 }: {
   canManage: boolean;
+  /** 회원이 직접 줄을 만들 수 있는가(동호회 예약). */
+  canReserve?: boolean;
   /** 줄의 [결과 입력] — 4명이 확정이므로 선수 선택 없이 바로 점수판으로 간다. */
   onRecordRow: (row: ScheduledMatch) => void;
 }) {
@@ -91,6 +94,7 @@ export function MatchQueue({
     joinReservation,
     leaveReservation,
     notifyReservation,
+    createReservation,
   } = useLeagueStore();
   const isClub = leagueType !== "school";
 
@@ -109,6 +113,8 @@ export function MatchQueue({
   const [addRow, setAddRow] = useState<ScheduledMatch | null>(null);
   // 회원이 자기 줄에서 나가기 확인.
   const [confirmLeave, setConfirmLeave] = useState<ScheduledMatch | null>(null);
+  // 사람을 골라 줄 만들기(동호회 예약) 팝업.
+  const [reserveOpen, setReserveOpen] = useState(false);
   // 알림 보낸 뒤 잠깐 잠근다(스토어가 1분 쿨다운을 강제하지만 버튼도 같이 죽인다).
   const now = Date.now();
   // 여러 줄 빼기 — 고르는 중이면 Set, 아니면 null. 한 줄씩 × 를 누르면 폰에서 N번 확인해야 한다.
@@ -335,6 +341,19 @@ export function MatchQueue({
 
       {/* 관리자가 아니고 줄도 없으면 카드 머리글이 이미 "아직 없어요"를 말한다. */}
 
+      {!canManage && isClub && canReserve && (
+        <button
+          type="button"
+          onClick={() => setReserveOpen(true)}
+          className={cn(
+            "flex h-10 w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-neon-blue/40 text-xs font-black text-neon-blue transition-colors hover:bg-neon-blue/5",
+            queue.length > 0 && "mt-3",
+          )}
+        >
+          <Users className="size-4" /> 같이 칠 사람 모으기
+        </button>
+      )}
+
       {canManage && picking && (
         <div className="mt-4 flex items-center gap-2 border-t border-border/30 pt-3">
           <span className="text-xs font-bold text-muted-foreground">
@@ -420,6 +439,18 @@ export function MatchQueue({
               <Plus className="mr-0.5 size-3.5" /> 1경기
             </Button>
 
+            {/* 사람을 직접 골라 줄 만들기 — 동호회의 소집 예약. 알고리즘이 모르는 사정
+                (손님 접대, 곧 가야 하는 사람)은 매번 있다. */}
+            {isClub && (
+              <Button
+                onClick={() => setReserveOpen(true)}
+                disabled={filling}
+                className={cn("h-9 rounded-lg px-3 text-xs font-black", secondaryBtn)}
+              >
+                <Users className="mr-1 size-3.5" /> 골라 넣기
+              </Button>
+            )}
+
             {/* 여러 줄 빼기 — 줄이 있을 때만. 오른쪽 끝, 아이콘만(드물게 쓴다). */}
             {queue.length > 0 && (
               <button
@@ -495,6 +526,21 @@ export function MatchQueue({
           nameOf={(id) => dn(byId.get(id))}
           onAdd={(id) => joinReservation(addRow.id, id)}
           onClose={() => setAddRow(null)}
+        />,
+        document.body,
+      )}
+
+      {reserveOpen && createPortal(
+        <ReserveDialog
+          candidates={(assignmentSession?.player_ids?.length
+            ? assignmentSession.player_ids.map((id) => byId.get(id)).filter((s): s is Student => !!s)
+            : []
+          )}
+          everyone={students}
+          myPlayerId={canManage ? null : myPlayerId}
+          nameOf={(id) => dn(byId.get(id))}
+          onSubmit={(ids) => createReservation({ playerIds: ids })}
+          onClose={() => setReserveOpen(false)}
         />,
         document.body,
       )}
@@ -869,6 +915,153 @@ function PoolAddDialog({
               )}
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 사람을 골라 줄 만들기 — 동호회의 소집 예약. 2~4명을 고르면 팀 미정 줄로 들어간다.
+ *
+ * 후보는 오늘 참석 명단이 기본이고, [전체 회원]으로 넓힐 수 있다(아직 안 켠 사람을 부를 때).
+ * 회원 본인이 만들 때는 본인이 미리 들어가 있고 뺄 수 없다 — 본인이 든 경기만 예약할 수 있다.
+ */
+function ReserveDialog({
+  candidates,
+  everyone,
+  myPlayerId,
+  nameOf,
+  onSubmit,
+  onClose,
+}: {
+  candidates: Student[];
+  everyone: Student[];
+  /** 회원이 만들 때 본인 id. 운영진은 null. */
+  myPlayerId: string | null;
+  nameOf: (id: string) => string;
+  onSubmit: (playerIds: string[]) => Promise<boolean>;
+  onClose: () => void;
+}) {
+  const [all, setAll] = useState(candidates.length === 0);
+  const [picked, setPicked] = useState<string[]>(myPlayerId ? [myPlayerId] : []);
+  const [search, setSearch] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const base = all ? everyone : candidates;
+  const list = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const sorted = [...base].sort((a, b) => nameOf(a.id).localeCompare(nameOf(b.id), "ko"));
+    return q ? sorted.filter((s) => nameOf(s.id).toLowerCase().includes(q)) : sorted;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [base, search]);
+
+  const toggle = (id: string) => {
+    if (id === myPlayerId) return;
+    setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : p.length >= 4 ? p : [...p, id]));
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[85] flex items-start justify-center overflow-y-auto bg-black/70 p-4 backdrop-blur-sm animate-in fade-in duration-150"
+      onClick={onClose}
+    >
+      <div
+        className="relative my-4 flex w-full max-w-2xl flex-col rounded-2xl border border-border/50 bg-background shadow-2xl sm:my-8"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-2.5 px-4 pt-4 sm:px-6 sm:pt-5">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-neon-blue/15 text-neon-blue">
+            <Users className="size-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-base font-black tracking-tight text-foreground">
+              {myPlayerId ? "같이 칠 사람 모으기" : "사람 골라 넣기"}
+            </h3>
+            <p className="text-[11px] text-muted-foreground">2~4명. 팀은 코트에서 정해요.</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="닫기"
+            className="flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+          >
+            <X className="size-5" />
+          </button>
+        </div>
+
+        <div className="space-y-3 px-4 py-4 sm:px-6">
+          <div className="flex items-center gap-2">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="이름 검색"
+              className="h-9 min-w-0 flex-1 rounded-lg border border-border/50 bg-input px-3 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-neon-blue/50"
+            />
+            {candidates.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setAll((v) => !v)}
+                className={cn(
+                  "h-9 shrink-0 rounded-lg border px-3 text-xs font-black transition-all",
+                  all ? "border-neon-blue/50 bg-neon-blue/20 text-neon-blue" : "border-border/40 text-muted-foreground hover:text-foreground",
+                )}
+              >
+                전체 회원
+              </button>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-border/30 bg-input/30 p-2">
+            <div className="mb-2 px-1 text-xs font-bold text-muted-foreground">
+              고른 사람 <span className="font-black text-foreground">{picked.length}</span>명
+              {picked.length > 0 && (
+                <span className="ml-1.5 font-normal">— {picked.map(nameOf).join(" · ")}</span>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-4">
+              {list.map((s) => {
+                const on = picked.includes(s.id);
+                const locked = s.id === myPlayerId;
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => toggle(s.id)}
+                    disabled={locked}
+                    className={cn(
+                      "flex h-9 min-w-0 items-center gap-1.5 rounded-lg border px-2.5 text-sm font-bold transition-all active:scale-95",
+                      on
+                        ? "border-neon-blue/50 bg-neon-blue/15 text-neon-blue"
+                        : "border-border/40 bg-background text-foreground hover:border-border",
+                      locked && "opacity-70",
+                    )}
+                  >
+                    <span className="min-w-0 flex-1 truncate text-left">{nameOf(s.id)}</span>
+                    {s.group && <span className="shrink-0 text-[10px] font-black opacity-70">{s.group}</span>}
+                  </button>
+                );
+              })}
+              {list.length === 0 && (
+                <p className="col-span-full py-4 text-center text-xs text-muted-foreground">없어요.</p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="sticky bottom-0 rounded-b-2xl border-t border-border/30 bg-background/95 px-4 py-3 backdrop-blur sm:px-6">
+          <Button
+            onClick={async () => {
+              setBusy(true);
+              const ok = await onSubmit(picked);
+              setBusy(false);
+              if (ok) onClose();
+            }}
+            disabled={busy || picked.length < 2}
+            className="h-11 w-full rounded-xl bg-neon-blue text-sm font-black text-primary-foreground hover:bg-neon-blue/90"
+          >
+            {picked.length < 2 ? "2명 이상 고르세요" : `${picked.length}명으로 줄 만들기`}
+          </Button>
         </div>
       </div>
     </div>

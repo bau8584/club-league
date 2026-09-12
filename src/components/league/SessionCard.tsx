@@ -21,9 +21,12 @@ import { MatchQueue } from "./MatchQueue";
  */
 export function SessionCard({
   canManage,
+  canReserve = false,
   onRecordRow,
 }: {
   canManage: boolean;
+  /** 회원이 직접 줄을 만들 수 있는가(동호회 예약). 운영진은 항상 가능. */
+  canReserve?: boolean;
   onRecordRow: (row: ScheduledMatch) => void;
 }) {
   const { students, assignmentSession, matches, leagueType } = useLeagueStore();
@@ -85,7 +88,7 @@ export function SessionCard({
             </p>
           </div>
         </div>
-        <MatchQueue canManage={false} onRecordRow={onRecordRow} />
+        <MatchQueue canManage={false} canReserve={canReserve} onRecordRow={onRecordRow} />
       </Card>
     );
   }
@@ -104,7 +107,7 @@ export function SessionCard({
             {hasSession
               ? `${sessionText ? `${sessionText} · ` : ""}참석 ${present.length}명${idleCount > 0 ? ` (미출전 ${idleCount})` : ""}`
               : isClub
-                ? "오늘 온 사람을 정하면 그 명단으로 대진을 뽑아요."
+                ? "오늘 온 사람을 정하세요."
                 : "출석을 정하면 그 명단으로 대진을 뽑아요."}
           </p>
         </div>
@@ -120,7 +123,7 @@ export function SessionCard({
           )}
         >
           <ClipboardCheck className="size-3.5" />
-          {hasSession ? (isClub ? "오늘 참석" : "명단 바꾸기") : isClub ? "오늘 참석 정하기" : "출석 정하기"}
+          {hasSession ? (isClub ? "오늘 참석" : "명단 바꾸기") : isClub ? "오늘 참석" : "출석 정하기"}
         </button>
       </div>
 
