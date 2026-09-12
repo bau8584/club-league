@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useRef, useCallback } from "react";
+import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { TierBadge } from "./TierBadge";
@@ -131,7 +131,12 @@ export function RecordMatch({
    */
   onDirtyChange?: (dirty: boolean) => void;
 }) {
-  const { isSyncing, placementEnabled, placementGames, isClassOwner, saveMatchBreakdown, currentClassId } = useLeagueStore();
+  const { isSyncing, placementEnabled, placementGames, isClassOwner, saveMatchBreakdown, currentClassId, assignmentSession } = useLeagueStore();
+  // 오늘 출석한 사람들 — 명단에서 맨 위로 올린다.
+  const presentIds = useMemo(
+    () => new Set(assignmentSession?.player_ids ?? []),
+    [assignmentSession],
+  );
   const terms = useLeagueTerms();
   const isSchool = useIsSchoolLeague();
   // 학교 리그는 대부분 1:1 매치 위주라 단식을 기본값으로 시작한다.
@@ -1432,6 +1437,7 @@ export function RecordMatch({
                 title={slotTitle(activeSlot)}
                 taken={takenInfo}
                 onTakenTap={flashSlot}
+                presentIds={presentIds}
                 onBack={() => setActiveSlot(null)}
                 onClear={
                   act.value.studentId && !(activeSlot === "A" && !!lockedPlayerId)
@@ -2227,7 +2233,7 @@ function Slot({ accent, label, player, active, locked, onOpen, onClear, threshol
 }
 
 // 선수 선택 picker: 검색 → 레벨 칩 → 선수 목록 (한 번에 1개만 펼쳐짐)
-function PlayerPicker({ students, accent, group, onPick, thresholds, placementEnabled, placementGames, canAddMember, filter, onFilterChange, title, onBack, onClear, taken, onTakenTap }: {
+function PlayerPicker({ students, accent, group, onPick, thresholds, placementEnabled, placementGames, canAddMember, filter, onFilterChange, title, onBack, onClear, taken, onTakenTap, presentIds }: {
   students: Student[]; accent: Accent; group: string | null;
   onPick: (group: string, studentId: string) => void; thresholds?: Record<string, number>;
   placementEnabled: boolean; placementGames: number; canAddMember?: boolean;
@@ -2243,6 +2249,8 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
   taken?: Map<string, { slot: string; label: string; accent: Accent }>;
   /** 이미 들어간 선수를 눌렀을 때. 대진 띠의 그 자리를 번쩍이게 하는 데 쓴다. */
   onTakenTap?: (slot: string) => void;
+  /** 오늘 출석한 사람들. 명단 맨 위로 올린다 — 안 온 사람 사이에서 찾게 하지 않는다. */
+  presentIds?: Set<string>;
 }) {
   const terms = useLeagueTerms();
   const isSchool = useIsSchoolLeague();
@@ -2311,10 +2319,22 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
         const nk = (s.nickname || "").toLowerCase();
         return n.includes(q) || nk.includes(q);
       })
-      .sort((x, y) => (isSchool
-        ? ((x.grade ?? 0) - (y.grade ?? 0)) || ((x.classNum ?? 0) - (y.classNum ?? 0)) || ((x.studentNo ?? 0) - (y.studentNo ?? 0))
-        : 0) || (x.nickname || x.name).localeCompare(y.nickname || y.name, "ko"));
-  }, [students, grp, search, isSchool, gradeF, classF]);
+      .sort((x, y) => {
+        // 출석한 사람이 먼저다. 결과를 넣는 건 거의 언제나 지금 여기 있는 사람이라,
+        // 안 온 스무 명 사이에서 찾게 두면 매번 헛손질이 된다. 그 안에서는 원래 순서.
+        if (presentIds && presentIds.size > 0) {
+          const px = presentIds.has(x.id) ? 0 : 1;
+          const py = presentIds.has(y.id) ? 0 : 1;
+          if (px !== py) return px - py;
+        }
+        return (isSchool
+          ? ((x.grade ?? 0) - (y.grade ?? 0)) || ((x.classNum ?? 0) - (y.classNum ?? 0)) || ((x.studentNo ?? 0) - (y.studentNo ?? 0))
+          : 0) || (x.nickname || x.name).localeCompare(y.nickname || y.name, "ko");
+      });
+  }, [students, grp, search, isSchool, gradeF, classF, presentIds]);
+  // 출석자와 그 외 사이에 선을 긋는다. 순서만 바꾸면 왜 이 순서인지 알 수 없다.
+  const presentCount = presentIds && presentIds.size > 0 ? roster.filter((s) => presentIds.has(s.id)).length : 0;
+  const showDivider = presentCount > 0 && presentCount < roster.length;
 
   return (
     <Card className={cn("flex h-full min-h-0 flex-col border p-3 backdrop-blur", a.border)}>
@@ -2393,15 +2413,23 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
       )}
       {/* 명단이 길어도 이 칸 안에서만 스크롤한다(페이지가 따라 내려가지 않도록). */}
       <div className="mt-1 grid max-h-[55vh] min-h-0 flex-1 grid-cols-[repeat(auto-fill,minmax(max(5.5rem,calc((100%_-_2rem)/5)),1fr))] gap-2 overflow-y-auto pr-1 lg:max-h-[46vh] lg:grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] lg:gap-2.5">
-        {roster.map((s) => {
+        {roster.map((s, idx) => {
+          const divider = showDivider && idx === presentCount ? (
+            <div key="__absent" className="col-span-full mt-1 flex items-center gap-2 text-[10px] font-bold text-muted-foreground">
+              <span className="h-px flex-1 bg-border/60" />
+              오늘 안 온 사람
+              <span className="h-px flex-1 bg-border/60" />
+            </div>
+          ) : null;
           // 이미 대진에 들어간 선수는 그 팀 색으로 잠근다. 같은 사람을 두 자리에
           // 넣는 건 언제나 잘못된 입력인데, 지금까지는 네 명을 다 고르고 점수까지
           // 넣은 뒤 등록할 때에야 걸렸다.
           const here = taken?.get(s.id);
           const ta = here ? ACCENT[here.accent] : null;
           return (
+          <React.Fragment key={s.id}>
+          {divider}
           <button
-            key={s.id}
             type="button"
             aria-disabled={!!here}
             onClick={() => {
@@ -2439,6 +2467,7 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
               )}
             </div>
           </button>
+          </React.Fragment>
           );
         })}
         {roster.length === 0 && !canAddMember && (
