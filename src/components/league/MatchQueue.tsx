@@ -979,7 +979,11 @@ function ReserveDialog({
             <h3 className="text-base font-black tracking-tight text-foreground">
               {myPlayerId ? "같이 칠 사람 모으기" : "사람 골라 넣기"}
             </h3>
-            <p className="text-[11px] text-muted-foreground">2~4명. 팀은 코트에서 정해요.</p>
+            <p className="text-[11px] text-muted-foreground">
+              {myPlayerId
+                ? "2~4명. 팀은 코트에서 정해요."
+                : "2~4명. 이미 코트에 들어간 팀도 여기로 넣어 두세요 — 그래야 다른 대진에 안 뽑혀요."}
+            </p>
           </div>
           <button
             type="button"
