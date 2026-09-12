@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { Check, ChevronDown, ChevronRight, CircleHelp, ListChecks, Pencil, Plus, X } from "lucide-react";
+import { BellRing, Check, ChevronDown, ChevronRight, CircleHelp, ListChecks, Pencil, Plus, UserPlus, X } from "lucide-react";
 import { useLeagueStore } from "@/lib/league-store";
 import { teamsOf, useQueueRows } from "@/lib/use-queue-rows";
 import { sortStudentsForRoster, type ScheduledMatch, type Student } from "@/lib/league-types";
@@ -88,7 +88,11 @@ export function MatchQueue({
     removeScheduledMatch,
     removeScheduledMatches,
     replaceQueuePlayer,
+    joinReservation,
+    leaveReservation,
+    notifyReservation,
   } = useLeagueStore();
+  const isClub = leagueType !== "school";
 
   const [preset, setPreset] = useState<AssignmentPreset>(
     leagueType === "school" ? "diversity" : "balanced",
@@ -101,6 +105,12 @@ export function MatchQueue({
   const [confirmRemove, setConfirmRemove] = useState<ScheduledMatch | null>(null);
   // 사람 바꾸기 팝업 대상 줄.
   const [editRow, setEditRow] = useState<ScheduledMatch | null>(null);
+  // 팀 미정 줄(동호회 소집 예약)에 사람 더하기 팝업 대상 줄.
+  const [addRow, setAddRow] = useState<ScheduledMatch | null>(null);
+  // 회원이 자기 줄에서 나가기 확인.
+  const [confirmLeave, setConfirmLeave] = useState<ScheduledMatch | null>(null);
+  // 알림 보낸 뒤 잠깐 잠근다(스토어가 1분 쿨다운을 강제하지만 버튼도 같이 죽인다).
+  const now = Date.now();
   // 여러 줄 빼기 — 고르는 중이면 Set, 아니면 null. 한 줄씩 × 를 누르면 폰에서 N번 확인해야 한다.
   const [picking, setPicking] = useState<Set<string> | null>(null);
   const [confirmBulk, setConfirmBulk] = useState(false);
@@ -186,11 +196,53 @@ export function MatchQueue({
               mine ? "border-neon-blue/40 bg-neon-blue/5" : "border-border/30 bg-input/40",
             );
 
-            // 볼 수만 있는 사람에게는 목록일 뿐이다. 누를 것이 없으니 버튼으로 만들지 않는다.
+            // 팀 미정 줄(동호회 소집 예약)의 공통 조각 — 알림 버튼. 참가자와 운영진이 누른다.
+            const cooling = !!r.notified_at && now - new Date(r.notified_at).getTime() < 60_000;
+            const notifyBtn = isClub && !confirmed && (mine || canManage) && (
+              <button
+                type="button"
+                onClick={() => notifyReservation(r.id)}
+                disabled={cooling}
+                aria-label="참가자에게 알림"
+                className={cn(
+                  "flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2 text-[11px] font-black transition-colors",
+                  cooling
+                    ? "border-border/30 text-muted-foreground/50"
+                    : "border-amber-500/40 bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-400",
+                )}
+              >
+                <BellRing className="size-3.5" />
+                {cooling ? "잠시 후" : "알림"}
+              </button>
+            );
+
+            // 볼 수만 있는 사람에게는 목록일 뿐이다 — 학교는 그렇다.
+            // 동호회 회원은 줄을 만드는 쪽이라 팀 미정 줄에서 참가·알림·나가기를 할 수 있다.
             if (!canManage) {
+              const canJoin = isClub && !confirmed && !!myPlayerId && !mine;
               return (
-                <div key={r.id} className={cn(rowStyle, "pr-3")}>
+                <div key={r.id} className={cn(rowStyle, isClub && !confirmed ? "pr-1" : "pr-3")}>
                   {names}
+                  {canJoin && (
+                    <button
+                      type="button"
+                      onClick={() => joinReservation(r.id)}
+                      className="flex h-8 shrink-0 items-center gap-1 rounded-lg bg-neon-blue px-2.5 text-[11px] font-black text-primary-foreground hover:bg-neon-blue/90"
+                    >
+                      <Plus className="size-3.5" /> 참가
+                    </button>
+                  )}
+                  {notifyBtn}
+                  {isClub && !confirmed && mine && (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmLeave(r)}
+                      aria-label="이 줄에서 나가기"
+                      className="flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive"
+                    >
+                      <X className="size-4" />
+                    </button>
+                  )}
                 </div>
               );
             }
@@ -246,6 +298,17 @@ export function MatchQueue({
                 </button>
                 {/* 사람 바꾸기는 연필로. 이름을 눌러 바꾸게 하면 폰에서 이름이 행 대부분이라
                     결과 입력하려다 바꾸기 창이 뜬다 — 행 누르기의 뜻은 하나여야 한다. */}
+                {isClub && !confirmed && (
+                  <button
+                    type="button"
+                    onClick={() => setAddRow(r)}
+                    aria-label="사람 더하기"
+                    className="flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground/60 transition-colors hover:bg-muted/40 hover:text-foreground"
+                  >
+                    <UserPlus className="size-4" />
+                  </button>
+                )}
+                {notifyBtn}
                 {confirmed && (
                   <button
                     type="button"
@@ -419,6 +482,59 @@ export function MatchQueue({
           onReplace={(from, to) => replaceQueuePlayer(editRow.id, from, to)}
           onClose={() => setEditRow(null)}
         />,
+        document.body,
+      )}
+
+      {addRow && createPortal(
+        <PoolAddDialog
+          row={queue.find((r) => r.id === addRow.id) ?? addRow}
+          candidates={(assignmentSession?.player_ids?.length
+            ? assignmentSession.player_ids.map((id) => byId.get(id)).filter((s): s is Student => !!s)
+            : students
+          )}
+          nameOf={(id) => dn(byId.get(id))}
+          onAdd={(id) => joinReservation(addRow.id, id)}
+          onClose={() => setAddRow(null)}
+        />,
+        document.body,
+      )}
+
+      {confirmLeave && createPortal(
+        <div
+          className="fixed inset-0 z-[85] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-in fade-in duration-150"
+          onClick={() => setConfirmLeave(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl border border-border/50 bg-background p-5 shadow-2xl animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-black text-foreground">이 줄에서 나갈까요?</h3>
+            <p className="mt-1.5 truncate text-xs font-bold text-muted-foreground">
+              {teamsOf(confirmLeave).pool.map((id) => dn(byId.get(id))).join(" · ")}
+            </p>
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+              나만 빠져요. 내가 빠져서 혼자만 남으면 줄은 저절로 사라져요.
+            </p>
+            <div className="mt-4 flex flex-col gap-2">
+              <Button
+                onClick={async () => {
+                  await leaveReservation(confirmLeave.id);
+                  setConfirmLeave(null);
+                }}
+                className="h-10 rounded-xl bg-destructive text-sm font-black text-white hover:bg-destructive/90"
+              >
+                나갈게요
+              </Button>
+              <button
+                type="button"
+                onClick={() => setConfirmLeave(null)}
+                className="mt-0.5 rounded-lg py-2 text-xs font-bold text-muted-foreground hover:text-foreground"
+              >
+                그대로 둘게요
+              </button>
+            </div>
+          </div>
+        </div>,
         document.body,
       )}
 
@@ -669,6 +785,87 @@ function QueueEditDialog({
                 <p className="col-span-full py-4 text-center text-xs text-muted-foreground">
                   바꿔 넣을 사람이 없어요.
                 </p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 팀 미정 줄(동호회 소집 예약)에 사람 더하기. 누르면 바로 들어가고 닫힌다.
+ * 후보는 오늘 참석 명단, 명단이 없으면 회원 전체.
+ */
+function PoolAddDialog({
+  row,
+  candidates,
+  nameOf,
+  onAdd,
+  onClose,
+}: {
+  row: ScheduledMatch;
+  candidates: Student[];
+  nameOf: (id: string) => string;
+  onAdd: (playerId: string) => Promise<boolean>;
+  onClose: () => void;
+}) {
+  const inRow = new Set(teamsOf(row).pool);
+  const [busy, setBusy] = useState(false);
+  const list = sortStudentsForRoster(candidates).filter((s) => !inRow.has(s.id));
+  return (
+    <div
+      className="fixed inset-0 z-[85] flex items-start justify-center overflow-y-auto bg-black/70 p-4 backdrop-blur-sm animate-in fade-in duration-150"
+      onClick={onClose}
+    >
+      <div
+        className="relative my-4 w-full max-w-2xl rounded-2xl border border-border/50 bg-background shadow-2xl sm:my-8"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-2.5 px-4 pt-4 sm:px-6 sm:pt-5">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-neon-blue/15 text-neon-blue">
+            <UserPlus className="size-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-base font-black tracking-tight text-foreground">
+              {seqMark(row.seq) ? `${seqMark(row.seq)} 사람 더하기` : "사람 더하기"}
+            </h3>
+            <p className="truncate text-[11px] text-muted-foreground">
+              지금: {teamsOf(row).pool.map(nameOf).join(" · ")}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="닫기"
+            className="flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+          >
+            <X className="size-5" />
+          </button>
+        </div>
+        <div className="px-4 py-4 sm:px-6">
+          <div className="rounded-xl border border-border/30 bg-input/30 p-2">
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-4">
+              {list.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  disabled={busy}
+                  onClick={async () => {
+                    setBusy(true);
+                    const ok = await onAdd(s.id);
+                    setBusy(false);
+                    if (ok) onClose();
+                  }}
+                  className="flex h-9 min-w-0 items-center gap-1.5 rounded-lg border border-border/40 bg-background px-2.5 text-sm font-bold text-foreground transition-all hover:border-neon-blue/50 hover:text-neon-blue active:scale-95"
+                >
+                  <span className="min-w-0 flex-1 truncate text-left">{nameOf(s.id)}</span>
+                  {s.group && <span className="shrink-0 text-[10px] font-black opacity-70">{s.group}</span>}
+                </button>
+              ))}
+              {list.length === 0 && (
+                <p className="col-span-full py-4 text-center text-xs text-muted-foreground">더할 사람이 없어요.</p>
               )}
             </div>
           </div>

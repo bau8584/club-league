@@ -3065,9 +3065,11 @@ function useLeagueStoreInternal() {
     const started = (data as AssignmentSession) ?? null;
     setAssignmentSession(started);
     assignmentSessionRef.current = started;   // 바로 아래 loadScheduled 가 이 값으로 큐를 거른다
+    // 세션 밖의 내 줄까지 지우는 건 학교만. 동호회에서 세션 밖의 줄은 오늘 운영진이 직접
+    // 넣은 소집 예약이라, "오늘 운동 시작"이 그걸 지우면 방금 한 일을 되돌리는 셈이 된다.
     const { error: clearError } = await apiClearQueue(cid, {
       sessionId: started?.id ?? null,
-      myUid: myUidRef.current,
+      myUid: leagueTypeRef.current === "school" ? myUidRef.current : null,
     });
     if (clearError) { toast.error("대기열 정리 실패: " + clearError.message); return false; }
     await loadScheduled(cid);

@@ -6,6 +6,7 @@ import { useLeagueStore } from "@/lib/league-store";
 import { classKeyOf, classLabel, type ScheduledMatch } from "@/lib/league-types";
 import { useQueueRows } from "@/lib/use-queue-rows";
 import { SessionRoster } from "./SessionRoster";
+import { ClubRoster } from "./ClubRoster";
 import { MatchQueue } from "./MatchQueue";
 
 /**
@@ -25,7 +26,8 @@ export function SessionCard({
   canManage: boolean;
   onRecordRow: (row: ScheduledMatch) => void;
 }) {
-  const { students, assignmentSession, matches } = useLeagueStore();
+  const { students, assignmentSession, matches, leagueType } = useLeagueStore();
+  const isClub = leagueType !== "school";
   const { queue, myTurn } = useQueueRows();
   // 명단 펼침. 세션이 없으면 접을 것이 없다 — 명단을 정하는 것이 지금 할 일이다.
   const [rosterOpen, setRosterOpen] = useState(false);
@@ -101,7 +103,9 @@ export function SessionCard({
           <p className="truncate text-[11px] text-muted-foreground">
             {hasSession
               ? `${sessionText ? `${sessionText} · ` : ""}참석 ${present.length}명${idleCount > 0 ? ` (미출전 ${idleCount})` : ""}`
-              : "출석을 정하면 그 명단으로 대진을 뽑아요."}
+              : isClub
+                ? "오늘 온 사람을 정하면 그 명단으로 대진을 뽑아요."
+                : "출석을 정하면 그 명단으로 대진을 뽑아요."}
           </p>
         </div>
         {/* 명단은 수업당 한 번 정한다. 지각·조퇴나 반 교체는 여기서 다시 연다. */}
@@ -116,11 +120,15 @@ export function SessionCard({
           )}
         >
           <ClipboardCheck className="size-3.5" />
-          {hasSession ? "명단 바꾸기" : "출석 정하기"}
+          {hasSession ? (isClub ? "오늘 참석" : "명단 바꾸기") : isClub ? "오늘 참석 정하기" : "출석 정하기"}
         </button>
       </div>
 
-      <SessionRoster open={rosterOpen} onOpenChange={setRosterOpen} />
+      {isClub ? (
+        <ClubRoster open={rosterOpen} onOpenChange={setRosterOpen} />
+      ) : (
+        <SessionRoster open={rosterOpen} onOpenChange={setRosterOpen} />
+      )}
 
       <MatchQueue canManage onRecordRow={onRecordRow} />
     </Card>

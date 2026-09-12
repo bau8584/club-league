@@ -553,6 +553,11 @@ export function MatchesTab({
           </div>
         </div>
       )}
+      {/* ── 대기열 (동호회) ── 회원 예약·운영진 소집·뽑힌 대진이 한 목록. 학교는 위에서 그렸다. */}
+      {!isSchool && !readOnly && (
+        <SessionCard canManage={isClassManager} onRecordRow={openQueueRow} />
+      )}
+
       {canRecord && !isSchool && (
         <Button
           onClick={() => openResultInput(null)}
@@ -702,177 +707,6 @@ export function MatchesTab({
                   <Plus className="mr-1 size-4" /> {q.submit}
                 </Button>
               </div>
-            </div>
-          )}
-        </Card>
-      )}
-
-      {/* ── 예약 목록 / 대기 중인 경기 (전원 열람) ── 학교 리그는 사용성이 낮아 잠시 숨김 */}
-      {!isSchool && (
-        <Card className="border border-border/40 bg-card/50 p-5 shadow-lg backdrop-blur">
-          <div className="mb-3 flex items-center gap-2">
-            <Megaphone className="size-4 text-amber-500" />
-            <span className="text-sm font-black text-foreground">
-              {q.listTitle} ({reservations.length})
-            </span>
-          </div>
-          {reservations.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-border/30 py-6 text-center text-[11px] text-muted-foreground">
-              {q.empty}
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {reservations.map((r) => {
-                const ids = participantsOf(r);
-                const names = ids.map((id) => dn(byId.get(id))).join(" · ");
-                const mine = !!myPlayerId && ids.includes(myPlayerId);
-                const roster = isReservation(r);
-                const notifier = r.notified_by ? dn(byId.get(r.notified_by)) : null;
-                const cooling =
-                  !!r.notified_at && Date.now() - new Date(r.notified_at).getTime() < 60_000;
-                // 알림 버튼: 참가자 또는 관리자
-                // school 은 학생 푸시 구독이 존재할 수 없어 알림이 아무에게도 가지 않는다.
-                const canNotify = (mine || isClassManager) && !readOnly && !isSchool;
-                const addable = students.filter(
-                  (s) =>
-                    !ids.includes(s.id) &&
-                    (!addSearch.trim() ||
-                      dn(s).toLowerCase().includes(addSearch.trim().toLowerCase())),
-                );
-                return (
-                  <div
-                    key={r.id}
-                    className={cn(
-                      "rounded-xl border px-3 py-2.5",
-                      mine ? "border-neon-blue/40 bg-neon-blue/5" : "border-border/30 bg-input/40",
-                    )}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="flex shrink-0 items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-black text-amber-500">
-                        <Hourglass className="size-3" /> 예약
-                      </span>
-                      <span className="min-w-0 flex-1 truncate text-sm font-bold text-foreground">
-                        {names}
-                      </span>
-                      {r.court && (
-                        <span className="shrink-0 text-[10px] text-muted-foreground">
-                          {r.court}
-                        </span>
-                      )}
-                      {mine && (
-                        <span className="shrink-0 rounded-full bg-neon-blue/15 px-1.5 text-[9px] font-black text-neon-blue">
-                          참가
-                        </span>
-                      )}
-                    </div>
-
-                    {notifier && (
-                      <p className="mt-1 text-[10px] font-bold text-neon-green">
-                        🔔 {notifier}님이 알림을 보냈어요{cooling ? " · 방금" : ""}
-                      </p>
-                    )}
-
-                    <div className="mt-2 flex items-center justify-between gap-2">
-                      <span className="shrink-0 text-[10px] text-muted-foreground">
-                        {fmtWhen(r.created_at)}
-                      </span>
-                      <div className="flex flex-wrap items-center justify-end gap-1.5">
-                        {/* 알림 보내기: 참가자/관리자 모두, 1분 쿨다운(store 에서 강제) */}
-                        {canNotify && (
-                          <Button
-                            onClick={() => notifyReservation(r.id)}
-                            size="sm"
-                            disabled={cooling}
-                            className={cn(
-                              "h-7 rounded-lg px-2.5 text-[10px] font-black text-white",
-                              cooling ? "bg-amber-500/40" : "bg-amber-500 hover:bg-amber-500/90",
-                            )}
-                          >
-                            <BellRing className="mr-0.5 size-3" /> {cooling ? "잠시 후" : "알림"}
-                          </Button>
-                        )}
-                        {/* 참가 / 나가기 (인원 소집 예약만) */}
-                        {roster && myPlayerId && !mine && (
-                          <Button
-                            onClick={() => joinReservation(r.id)}
-                            size="sm"
-                            className="h-7 rounded-lg bg-neon-blue px-2.5 text-[10px] font-black text-white hover:bg-neon-blue/90"
-                          >
-                            <Plus className="mr-0.5 size-3" /> 참가
-                          </Button>
-                        )}
-                        {/* 관리자: 사람 추가 */}
-                        {roster && isClassManager && !readOnly && (
-                          <Button
-                            onClick={() => {
-                              setAddingTo(addingTo === r.id ? null : r.id);
-                              setAddSearch("");
-                            }}
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 rounded-lg border border-border/50 px-2 text-[10px] font-black text-muted-foreground hover:text-foreground"
-                          >
-                            <Plus className="size-3" /> 추가
-                          </Button>
-                        )}
-                        {canRecord && (
-                          <Button
-                            onClick={() => openResultInput(r)}
-                            size="sm"
-                            className="h-7 rounded-lg bg-neon-green px-2.5 text-[10px] font-black text-white hover:bg-neon-green/90"
-                          >
-                            <Trophy className="mr-0.5 size-3" /> 결과 입력
-                          </Button>
-                        )}
-                        {/* 취소/나가기: 눌러서 팝업으로 선택. 관리자는 아무 예약이나, 회원은 본인 참가 예약만 */}
-                        {(isClassManager || (roster && canReserve && mine)) && (
-                          <Button
-                            onClick={() => setConfirmCancel(r)}
-                            variant="ghost"
-                            size="icon"
-                            className="size-7 text-muted-foreground hover:text-destructive"
-                            title="예약 취소 / 나가기"
-                          >
-                            <X className="size-4" />
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* 관리자 사람 추가 인라인 선택 */}
-                    {addingTo === r.id && (
-                      <div className="mt-2 rounded-lg border border-border/40 bg-background/40 p-2">
-                        <Input
-                          value={addSearch}
-                          onChange={(e) => setAddSearch(e.target.value)}
-                          placeholder={`추가할 ${terms.member} 검색...`}
-                          className="mb-2 h-8 border-border/50 bg-input text-xs"
-                        />
-                        <div className="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto">
-                          {addable.slice(0, 40).map((s) => (
-                            <button
-                              key={s.id}
-                              onClick={async () => {
-                                const ok = await joinReservation(r.id, s.id);
-                                if (ok) setAddingTo(null);
-                              }}
-                              className="rounded-full border border-border/40 px-2.5 py-1 text-xs font-bold text-muted-foreground hover:border-neon-blue/50 hover:text-neon-blue"
-                            >
-                              {dn(s)}
-                              {s.group ? ` · ${s.group}` : ""}
-                            </button>
-                          ))}
-                          {addable.length === 0 && (
-                            <span className="text-[11px] text-muted-foreground">
-                              추가할 {terms.member}이 없어요.
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
             </div>
           )}
         </Card>
@@ -1032,63 +866,6 @@ export function MatchesTab({
         />
       )}
 
-      {/* 예약 정리 확인 팝업 — 전체 취소 / 나만 빠지기 */}
-      {confirmCancel &&
-        (() => {
-          const r = confirmCancel;
-          const ids = participantsOf(r);
-          const iAmIn = !!myPlayerId && ids.includes(myPlayerId) && isReservation(r);
-          return (
-            <div
-              className="fixed inset-0 z-[85] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-in fade-in duration-150"
-              onClick={() => setConfirmCancel(null)}
-            >
-              <div
-                className="w-full max-w-sm rounded-2xl border border-border/50 bg-background p-5 shadow-2xl animate-in zoom-in-95 duration-150"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <h3 className="text-base font-black text-foreground">{q.cancelTitle}</h3>
-                <p className="mt-1.5 truncate text-xs font-bold text-muted-foreground">
-                  {ids.map((id) => dn(byId.get(id))).join(" · ")}
-                </p>
-                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                  {iAmIn
-                    ? "예약을 통째로 접거나, 나만 살짝 빠질 수 있어요. 내가 빠져서 혼자만 남으면 예약은 저절로 사라져요."
-                    : q.cancelDesc}
-                </p>
-                <div className="mt-4 flex flex-col gap-2">
-                  {iAmIn && (
-                    <Button
-                      onClick={async () => {
-                        await leaveReservation(r.id);
-                        setConfirmCancel(null);
-                      }}
-                      className="h-10 rounded-xl bg-neon-blue text-sm font-black text-white hover:bg-neon-blue/90"
-                    >
-                      나만 빠질게요
-                    </Button>
-                  )}
-                  <Button
-                    onClick={async () => {
-                      await cancelReservation(r.id);
-                      setConfirmCancel(null);
-                    }}
-                    className="h-10 rounded-xl bg-destructive text-sm font-black text-white hover:bg-destructive/90"
-                  >
-                    {q.cancelBtn}
-                  </Button>
-                  <button
-                    type="button"
-                    onClick={() => setConfirmCancel(null)}
-                    className="mt-0.5 rounded-lg py-2 text-xs font-bold text-muted-foreground hover:text-foreground"
-                  >
-                    그대로 둘게요
-                  </button>
-                </div>
-              </div>
-            </div>
-          );
-        })()}
     </div>
   );
 }
