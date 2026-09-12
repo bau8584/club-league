@@ -30,7 +30,7 @@ const PENALTY_ITEMS = [
   },
   {
     key: "crushing",
-    title: "💥 굴욕적 완패 (5점 차 이상 완패)",
+    title: "💥 굴욕적 완패",
     stateKey: "crushing" as const,
     tierKeys: { Gold: "crushingGold", Platinum: "crushingPlatinum", Diamond: "crushingDiamond" } as const,
   },
@@ -313,6 +313,7 @@ export function AdminSettings({
     arroganceGold: 20,
     arrogancePlatinum: 30,
     arroganceDiamond: 40,
+    crushingMargin: 10,
     crushingGold: 10,
     crushingPlatinum: 15,
     crushingDiamond: 20,
@@ -1227,7 +1228,25 @@ export function AdminSettings({
                         : "border-border/30 bg-muted/15 opacity-70"
                     )}>
                       <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-foreground">{item.title}</span>
+                        <span className="text-[11px] font-bold text-foreground">
+                          {item.title}
+                          {item.key === "crushing" && (
+                            // 몇 점차부터 완패인가. 5로 두면 21점제에서 패배의 절반이 완패가 된다.
+                            <span className="ml-1 font-normal text-muted-foreground">
+                              (<input
+                                type="number"
+                                min={1}
+                                disabled={!localDynamicPenalties.crushing}
+                                value={localDynamicPenalties.crushingMargin ?? 10}
+                                onChange={(e) => {
+                                  const val = parseInt(e.target.value, 10);
+                                  setLocalDynamicPenalties(prev => ({ ...prev, crushingMargin: isNaN(val) || val < 1 ? 1 : val }));
+                                }}
+                                className="mx-0.5 h-5 w-9 rounded border border-border/30 bg-input text-center font-mono text-[11px] text-foreground"
+                              />점 차 이상 완패)
+                            </span>
+                          )}
+                        </span>
                         <ToggleSwitch
                           checked={localDynamicPenalties[item.stateKey]}
                           onChange={() => setLocalDynamicPenalties(prev => ({ ...prev, [item.stateKey]: !prev[item.stateKey] }))}

@@ -28,12 +28,12 @@ export const STANDARD_BONUSES: DynamicBonuses = {
   mentoring: { enabled: false, mentorRp: 10, menteeRp: 15, minTierGap: 1 },
 };
 export const STANDARD_PENALTIES: DynamicPenalties = {
-  enabled: true, arrogance: true, crushing: true, revengeFail: true, championWeight: true, lossStreak: true,
-  arroganceGold: 15, arrogancePlatinum: 25, arroganceDiamond: 35,
-  crushingGold: 8, crushingPlatinum: 12, crushingDiamond: 16,
-  revengeAllowedGold: 8, revengeAllowedPlatinum: 12, revengeAllowedDiamond: 16,
-  championGold: 4, championPlatinum: 9, championDiamond: 15,
-  swampGold2: 4, swampGold3: 8, swampPlatinum2: 8, swampPlatinum3: 13, swampDiamond2: 13, swampDiamond3: 22,
+  enabled: true, arrogance: true, crushing: true, revengeFail: false, championWeight: true, lossStreak: true,
+  arroganceGold: 10, arrogancePlatinum: 18, arroganceDiamond: 25,
+  crushingMargin: 10, crushingGold: 6, crushingPlatinum: 9, crushingDiamond: 12,
+  revengeAllowedGold: 4, revengeAllowedPlatinum: 6, revengeAllowedDiamond: 8,
+  championGold: 0, championPlatinum: 4, championDiamond: 8,
+  swampGold2: 0, swampGold3: 4, swampPlatinum2: 4, swampPlatinum3: 8, swampDiamond2: 8, swampDiamond3: 13,
   redCardPenalty: 10,
 };
 
@@ -88,18 +88,29 @@ export const BONUS_PRESETS: Record<Exclude<BonusPreset, "custom">, { label: stri
 export type PenaltyPreset = "balanced" | "topcontrol" | "lenient" | "custom";
 const PENALTY_SIG: (keyof DynamicPenalties)[] = [
   "arrogance", "arroganceGold", "arrogancePlatinum", "arroganceDiamond",
-  "crushing", "crushingGold", "crushingPlatinum", "crushingDiamond",
+  "crushing", "crushingMargin", "crushingGold", "crushingPlatinum", "crushingDiamond",
   "revengeFail", "revengeAllowedGold", "revengeAllowedPlatinum", "revengeAllowedDiamond",
   "championWeight", "championGold", "championPlatinum", "championDiamond",
   "lossStreak", "swampGold2", "swampGold3", "swampPlatinum2", "swampPlatinum3", "swampDiamond2", "swampDiamond3",
 ];
 export const PENALTY_PRESETS: Record<Exclude<PenaltyPreset, "custom">, { label: string; desc: string; fields: Partial<DynamicPenalties> }> = {
-  balanced: { label: "⚖️ 균형", desc: "기본. 적당한 상위 견제",
-    fields: { enabled: true, arrogance: true, arroganceGold: 15, arrogancePlatinum: 25, arroganceDiamond: 35, crushing: true, crushingGold: 8, crushingPlatinum: 12, crushingDiamond: 16, revengeFail: true, revengeAllowedGold: 8, revengeAllowedPlatinum: 12, revengeAllowedDiamond: 16, championWeight: true, championGold: 4, championPlatinum: 9, championDiamond: 15, lossStreak: true, swampGold2: 4, swampGold3: 8, swampPlatinum2: 8, swampPlatinum3: 13, swampDiamond2: 13, swampDiamond3: 22 } },
-  topcontrol: { label: "🛡️ 상위 견제·하드", desc: "다이아·플래 과다 시. 상위가 미끄러지면 더 깎임",
-    fields: { enabled: true, arrogance: true, arroganceGold: 22, arrogancePlatinum: 36, arroganceDiamond: 50, crushing: true, crushingGold: 10, crushingPlatinum: 16, crushingDiamond: 22, revengeFail: true, revengeAllowedGold: 10, revengeAllowedPlatinum: 16, revengeAllowedDiamond: 22, championWeight: true, championGold: 9, championPlatinum: 16, championDiamond: 26, lossStreak: true, swampGold2: 7, swampGold3: 13, swampPlatinum2: 13, swampPlatinum3: 20, swampDiamond2: 20, swampDiamond3: 32 } },
+  /**
+   * 세 프리셋의 눈금은 모멘턴 리그 실측(2026-09, 영수증 233건)으로 잡았다.
+   *
+   * 원래 균형은 골드 이상 패배의 86%에 복수 허용, 100%에 챔피언 무게, 53%에 완패가 붙어
+   * "예외 감점"이 아니라 "패배 기본점"이 되어 있었다(플래 본전 승률 68%). 41명이 매주 같은
+   * 사람과 붙는 동호회에선 "전에 이긴 상대에게 진다"가 일상이라 복수 허용은 균형에서 끈다.
+   * 챔피언 무게는 골드를 면제한다 — 골드는 안착 구간이지 상위가 아니다.
+   *
+   * 본전 승률(실측 발동 빈도 기준): 균형 골드 43%·플래 57%·다이아 66%,
+   * 하드 골드 47%·플래 63%·다이아 72%. 하드의 정체성은 복수 허용·챔피언 무게가 켜져 있다는 것.
+   */
+  balanced: { label: "⚖️ 균형", desc: "기본. 예외적인 패배만 감점. 플래 본전 승률 약 57%",
+    fields: { enabled: true, arrogance: true, arroganceGold: 10, arrogancePlatinum: 18, arroganceDiamond: 25, crushing: true, crushingMargin: 10, crushingGold: 6, crushingPlatinum: 9, crushingDiamond: 12, revengeFail: false, revengeAllowedGold: 4, revengeAllowedPlatinum: 6, revengeAllowedDiamond: 8, championWeight: true, championGold: 0, championPlatinum: 4, championDiamond: 8, lossStreak: true, swampGold2: 0, swampGold3: 4, swampPlatinum2: 4, swampPlatinum3: 8, swampDiamond2: 8, swampDiamond3: 13 } },
+  topcontrol: { label: "🛡️ 상위 견제·하드", desc: "복수 허용·챔피언 무게까지. 플래 본전 승률 약 63%",
+    fields: { enabled: true, arrogance: true, arroganceGold: 15, arrogancePlatinum: 25, arroganceDiamond: 35, crushing: true, crushingMargin: 10, crushingGold: 8, crushingPlatinum: 12, crushingDiamond: 16, revengeFail: true, revengeAllowedGold: 4, revengeAllowedPlatinum: 6, revengeAllowedDiamond: 8, championWeight: true, championGold: 0, championPlatinum: 6, championDiamond: 10, lossStreak: true, swampGold2: 2, swampGold3: 4, swampPlatinum2: 6, swampPlatinum3: 10, swampDiamond2: 10, swampDiamond3: 16 } },
   lenient: { label: "🍃 관대", desc: "져도 손해 적게. 캐주얼·이탈 방지(행동 위반만)",
-    fields: { enabled: true, arrogance: false, arroganceGold: 15, arrogancePlatinum: 25, arroganceDiamond: 35, crushing: false, crushingGold: 8, crushingPlatinum: 12, crushingDiamond: 16, revengeFail: false, revengeAllowedGold: 8, revengeAllowedPlatinum: 12, revengeAllowedDiamond: 16, championWeight: false, championGold: 4, championPlatinum: 9, championDiamond: 15, lossStreak: false, swampGold2: 4, swampGold3: 8, swampPlatinum2: 8, swampPlatinum3: 13, swampDiamond2: 13, swampDiamond3: 22 } },
+    fields: { enabled: true, arrogance: false, arroganceGold: 10, arrogancePlatinum: 18, arroganceDiamond: 25, crushing: false, crushingMargin: 10, crushingGold: 6, crushingPlatinum: 9, crushingDiamond: 12, revengeFail: false, revengeAllowedGold: 4, revengeAllowedPlatinum: 6, revengeAllowedDiamond: 8, championWeight: false, championGold: 0, championPlatinum: 4, championDiamond: 8, lossStreak: false, swampGold2: 0, swampGold3: 4, swampPlatinum2: 4, swampPlatinum3: 8, swampDiamond2: 8, swampDiamond3: 13 } },
 };
 
 // ─────────────────────────────────────────────────────────────

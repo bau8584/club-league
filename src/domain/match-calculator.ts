@@ -349,7 +349,7 @@ export function calculateMatchResult(input: CalculateMatchResultInput): Calculat
           else if (playerTier === "Diamond") arrogancePenalty = dynamicPenalties.arroganceDiamond ?? 40;
         }
 
-        if (dynamicPenalties?.crushing && Math.abs(scoreA - scoreB) >= 5) {
+        if (dynamicPenalties?.crushing && Math.abs(scoreA - scoreB) >= (dynamicPenalties.crushingMargin ?? 10)) {
           if (playerTier === "Gold") crushingPenalty = dynamicPenalties.crushingGold ?? 10;
           else if (playerTier === "Platinum") crushingPenalty = dynamicPenalties.crushingPlatinum ?? 15;
           else if (playerTier === "Diamond") crushingPenalty = dynamicPenalties.crushingDiamond ?? 20;

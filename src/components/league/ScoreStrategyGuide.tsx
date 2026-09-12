@@ -65,7 +65,7 @@ export function ScoreStrategyGuide({ rp }: { rp: number }) {
   if (db.underdogEnabled) tips.push("나보다 높은 티어에 도전해 이기면 추가 RP (언더독).");
   if (db.freshnessEnabled) tips.push("안 만나본 새 상대와 붙으면 매번 신규 매치 보너스.");
   if (dp.enabled && goldPlus && dp.arrogance) tips.push("나보다 2티어 이상 낮은 상대에겐 지면 큰 감점 — 방심 금지.");
-  if (dp.enabled && goldPlus && dp.crushing) tips.push("질 것 같으면 점수차라도 줄이기 — 5점차 완패는 추가 감점.");
+  if (dp.enabled && goldPlus && dp.crushing) tips.push(`질 것 같으면 점수차라도 줄이기 — ${dp.crushingMargin ?? 10}점차 완패는 추가 감점.`);
   if (decayActive) tips.push(`${ds.inactiveDays}일 이상 경기가 없으면 RP가 깎입니다 — 꾸준히 플레이.`);
 
   return (

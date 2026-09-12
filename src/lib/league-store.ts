@@ -404,6 +404,17 @@ function useLeagueStoreInternal() {
         // Last 5 matches form (W or L)
         const recent = studentMatches.slice(0, 5).map((m) => (isWinnerSide(m) ? "W" : "L"));
 
+        // 마지막 경기·마지막 승리일. 경기 하나가 저장될 때마다 이 목록이 다시 만들어지는데,
+        // 여기서 안 채우면 둘 다 undefined 로 돌아간다 — 그러면 "오늘 첫 승" 보너스가 매 승리마다
+        // 붙고(모멘턴 리그 실측: 승리 176건 중 166건), 휴면 감점은 아무에게도 안 걸린다.
+        // 날짜 키는 경기 기록 시 쓰는 것과 같은 로컬 YYYY-MM-DD 다.
+        const lastMatch = studentMatches[0];
+        const lastWin = studentMatches.find(isWinnerSide);
+        const localYmd = (iso: string) => {
+          const d = new Date(iso);
+          return new Date(d.getTime() - d.getTimezoneOffset() * 60 * 1000).toISOString().split("T")[0];
+        };
+
         // Current streak
         let currentStreak = 0;
         for (const m of studentMatches) {
@@ -438,6 +449,8 @@ function useLeagueStoreInternal() {
           losses,
           recent,
           currentStreak,
+          lastMatchDate: lastMatch?.date,
+          lastWinDate: lastWin ? localYmd(lastWin.date) : undefined,
         };
       });
 
@@ -2195,7 +2208,7 @@ function useLeagueStoreInternal() {
             else if (playerTier === "Diamond") arrogancePenalty = dynamicPenalties.arroganceDiamond ?? 40;
           }
 
-          if (dynamicPenalties?.crushing && Math.abs(nextScoreA - nextScoreB) >= 5) {
+          if (dynamicPenalties?.crushing && Math.abs(nextScoreA - nextScoreB) >= (dynamicPenalties.crushingMargin ?? 10)) {
             if (playerTier === "Gold") crushingPenalty = dynamicPenalties.crushingGold ?? 10;
             else if (playerTier === "Platinum") crushingPenalty = dynamicPenalties.crushingPlatinum ?? 15;
             else if (playerTier === "Diamond") crushingPenalty = dynamicPenalties.crushingDiamond ?? 20;

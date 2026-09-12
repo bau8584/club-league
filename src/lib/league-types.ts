@@ -472,6 +472,11 @@ export type DynamicPenalties = {
   arroganceGold: number;
   arrogancePlatinum: number;
   arroganceDiamond: number;
+  /**
+   * 완패로 보는 점수차. 21점제 배드민턴에서 5점차는 접전이라, 5로 두면 골드 이상 패배의
+   * 절반이 완패로 잡혔다(모멘턴 리그 실측 53%). 기본 10.
+   */
+  crushingMargin: number;
   crushingGold: number;
   crushingPlatinum: number;
   crushingDiamond: number;
