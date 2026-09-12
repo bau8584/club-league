@@ -9,7 +9,7 @@ import { TitleBadge } from "@/components/league/TitleBadge";
 import { PlayerDetailSheet } from "@/components/league/PlayerDetailSheet";
 import { FilterChip } from "@/components/league/FilterChip";
 import { cn } from "@/lib/utils";
-import { Search, SlidersHorizontal, ChevronDown, X } from "lucide-react";
+import { Search, SlidersHorizontal, ChevronDown, ChevronRight, X } from "lucide-react";
 import { getTier, isUnranked, schoolAxesOf, TIER_ORDER, TIER_STYLES, type TierName, type Student } from "@/lib/league-types";
 import type { TitleDef } from "@/lib/title-calculator";
 import { useIsSchoolLeague } from "@/lib/league-terms";
@@ -291,6 +291,7 @@ export function Leaderboard({
                 <th className="px-4 py-3 text-left">티어</th>
                 <th className="px-4 py-3 text-center hidden md:table-cell">최근 5경기</th>
                 <th className="px-4 py-3 text-right hidden sm:table-cell">승률</th>
+                <th className="w-8" aria-label="자세히" />
               </tr>
             </thead>
             <tbody>
@@ -306,7 +307,7 @@ export function Leaderboard({
                 />
               ))}
               {visible.length === 0 && (
-                <tr><td colSpan={5} className="px-4 py-10 text-center text-muted-foreground">조건에 맞는 선수가 없습니다.</td></tr>
+                <tr><td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">조건에 맞는 선수가 없습니다.</td></tr>
               )}
             </tbody>
           </table>
@@ -358,22 +359,31 @@ const LeaderboardRow = memo(function LeaderboardRow({
   const total = s.wins + s.losses;
   const winRate = total === 0 ? 0 : Math.round((s.wins / total) * 100);
   const streak = getWinStreak(s.recent);
+  // 이름 글자만 눌리게 두었더니 그게 눌린다는 걸 아무도 몰랐다. 행 전체를 누르게 하고,
+  // 오른쪽 끝에 ›를 두어 "들어갈 수 있다"를 보이게 한다.
   return (
-    <tr className="border-b border-border/30 transition-colors hover:bg-accent/40">
+    <tr
+      role="button"
+      tabIndex={0}
+      onClick={() => onSelect(s)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect(s);
+        }
+      }}
+      className="cursor-pointer border-b border-border/30 transition-colors hover:bg-accent/40 active:bg-accent/60 focus-visible:bg-accent/40 focus-visible:outline-none"
+    >
       <td className="px-2 py-3 font-bold tabular-nums w-10 sm:w-14">
         {unranked ? <span className="text-muted-foreground/60">??</span> : <RankBadge rank={rank!} />}
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-2 font-semibold">
           <GenderMark gender={s.gender} />
-          <button
-            type="button"
-            onClick={() => onSelect(s)}
-            className="flex items-center gap-1.5 text-left transition-colors hover:text-neon-blue active:scale-[0.98]"
-          >
+          <span className="flex items-center gap-1.5">
             {title ? <TitleBadge title={title} /> : null}
             <span>{s.nickname || s.name}</span>
-          </button>
+          </span>
           {streak >= 3 && (
             <span
               className="inline-flex items-center gap-0.5 rounded-full bg-orange-500/15 px-2 py-0.5 text-[10px] font-black text-orange-500 ring-1 ring-orange-500/30"
@@ -410,6 +420,9 @@ const LeaderboardRow = memo(function LeaderboardRow({
       <td className="px-4 py-3 text-right tabular-nums hidden sm:table-cell">
         <span className="font-semibold">{winRate}%</span>
         <span className="ml-1 text-xs text-muted-foreground">({s.wins}W {s.losses}L)</span>
+      </td>
+      <td className="w-8 pr-3 text-right text-muted-foreground/60">
+        <ChevronRight className="inline size-4" aria-hidden />
       </td>
     </tr>
   );
