@@ -106,6 +106,10 @@ export function MatchesTab({
   // (예약 결과 입력은 참가자가 이미 정해져 있으므로 고정하지 않음)
   const lockedPlayerId =
     !isClassManager && matchInputMode === "free" && !activeReservation ? myPlayerId : null;
+  // 운영진은 남의 경기도 넣어야 해서 잠글 수 없다. 대신 본인을 미리 넣어 두고 ✕로 뺄 수
+  // 있게 한다. 학교 선생님은 선수가 아니라(myPlayerId 없음) 해당 없다.
+  // 대기열에서 넘어온 경기는 참가자가 이미 정해져 있으므로 넣지 않는다.
+  const defaultPlayerId = isClassManager && !activeReservation ? myPlayerId : null;
 
   const initials = useMemo(() => {
     if (!activeReservation) return directInitials;
@@ -371,6 +375,7 @@ export function MatchesTab({
             rpVariables={rpVariables}
             onUpdateGender={updateStudentGender}
             lockedPlayerId={lockedPlayerId}
+            defaultPlayerId={defaultPlayerId}
             onDirtyChange={setFormDirty}
             onCloseResult={() => {
               if (!lastRecordWasQueued.current) return;
@@ -567,6 +572,7 @@ export function MatchesTab({
               rpVariables={rpVariables}
               onUpdateGender={updateStudentGender}
               lockedPlayerId={lockedPlayerId}
+              defaultPlayerId={defaultPlayerId}
               onCloseResult={() => {
                 setRecordOpen(false);
                 setActiveReservation(null);

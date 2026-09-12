@@ -89,12 +89,19 @@ export function RecordMatch({
   rpVariables,
   onUpdateGender,
   lockedPlayerId,
+  defaultPlayerId,
   presetResult,
   onCloseResult,
   onDirtyChange,
 }: {
   students: Student[];
   lockedPlayerId?: string | null; // 설정 시 슬롯 A를 이 선수로 고정(일반회원 본인 경기 기록)
+  /**
+   * 슬롯 A에 미리 넣어 두는 선수(운영진 본인). 잠그지 않는다 — ✕로 빼면 남의 경기다.
+   * 운영진은 남의 경기도 넣어야 해서 잠글 수 없었는데, 그러다 보니 자기 경기를 넣을
+   * 때마다 명단에서 자기 이름을 찾아야 했다. 기본은 나, 아니면 ✕ 한 번.
+   */
+  defaultPlayerId?: string | null;
   // 설정 시 입력 폼 대신 저장된 결과(영수증)를 그대로 띄우는 '뷰 전용' 모드
   presetResult?: MatchResultData | null;
   onCloseResult?: () => void;
@@ -641,10 +648,12 @@ export function RecordMatch({
   useEffect(() => {
     if (!onDirtyChange) return;
     const sig = slotSig(a.studentId, a2.studentId, b.studentId, b2.studentId, scoreA, scoreB);
-    // 슬롯 A가 본인으로 고정된 경우(일반회원 본인 경기)는 사람이 고른 게 아니다.
+    // 슬롯 A가 본인으로 고정됐거나(일반회원) 미리 채워진 경우(운영진)는 사람이 고른 게
+    // 아니다. 이걸 "손댄 것"으로 치면 대기열 줄을 누를 때마다 덮어쓸지 묻게 된다.
+    const autoA = lockedPlayerId ?? defaultPlayerId;
     const onlyLocked =
-      !!lockedPlayerId &&
-      a.studentId === lockedPlayerId &&
+      !!autoA &&
+      a.studentId === autoA &&
       !a2.studentId &&
       !b.studentId &&
       !b2.studentId &&
@@ -652,7 +661,7 @@ export function RecordMatch({
       !scoreB;
     const touched = !!(a.studentId || a2.studentId || b.studentId || b2.studentId || scoreA || scoreB);
     onDirtyChange(touched && !onlyLocked && sig !== appliedSigRef.current);
-  }, [a.studentId, a2.studentId, b.studentId, b2.studentId, scoreA, scoreB, lockedPlayerId, onDirtyChange]);
+  }, [a.studentId, a2.studentId, b.studentId, b2.studentId, scoreA, scoreB, lockedPlayerId, defaultPlayerId, onDirtyChange]);
 
   // 일반회원 본인 경기: 슬롯 A를 항상 본인으로 고정
   useEffect(() => {
@@ -660,6 +669,18 @@ export function RecordMatch({
     const me = students.find((s) => s.id === lockedPlayerId);
     if (me) setA({ group: me.group ?? null, studentId: me.id });
   }, [lockedPlayerId, students]);
+
+  // 운영진 본인 경기: 폼이 비어 있을 때 슬롯 A에 본인을 미리 넣는다.
+  // ✕로 뺐으면 이번 경기 동안은 다시 넣지 않는다 — 빼자마자 도로 들어오면 못 쓴다.
+  // 등록이 끝나 폼이 새로 비면 다시 넣는다(다음 경기).
+  const defaultDismissedRef = useRef(false);
+  const formEmpty =
+    !a.studentId && !a2.studentId && !b.studentId && !b2.studentId && !scoreA && !scoreB;
+  useEffect(() => {
+    if (!defaultPlayerId || lockedPlayerId || !formEmpty || defaultDismissedRef.current) return;
+    const me = students.find((s) => s.id === defaultPlayerId);
+    if (me) setA({ group: me.group ?? null, studentId: me.id });
+  }, [defaultPlayerId, lockedPlayerId, formEmpty, students]);
 
   // A선수 또는 B선수 및 파트너 선택 시 성별이 "U"이거나 없을 때 모달 팝업 트리거
   useEffect(() => {
@@ -934,6 +955,7 @@ export function RecordMatch({
     setShowModal(true);
 
     // 6. Reset name selectors and scores but retain grade & class selections
+    defaultDismissedRef.current = false;   // 다음 경기 — 본인 미리 넣기를 다시 켠다
     setA({ group: a.group, studentId: null });
     setA2({ group: a2.group, studentId: null });
     setB({ group: b.group, studentId: null });
@@ -1241,15 +1263,21 @@ export function RecordMatch({
         const renderSlot = (key: "A" | "A2" | "B" | "B2", label: string) => {
           const sl = slots[key];
           const locked = !!lockedPlayerId && key === "A";
+          const isDefaultMe = key === "A" && !!defaultPlayerId && sl.value.studentId === defaultPlayerId;
           return (
             <Slot
               accent={sl.accent}
-              label={locked ? "나" : label}
+              label={locked ? "나" : isDefaultMe ? `${label} · 나` : label}
               player={sl.player}
               active={activeSlot === key}
               locked={locked}
               onOpen={() => { if (!locked) setActiveSlot(activeSlot === key ? null : key); }}
-              onClear={() => { if (locked) return; sl.set(empty); if (activeSlot === key) setActiveSlot(null); }}
+              onClear={() => {
+                if (locked) return;
+                if (key === "A") defaultDismissedRef.current = true;
+                sl.set(empty);
+                if (activeSlot === key) setActiveSlot(null);
+              }}
               thresholds={thresholds}
               placementEnabled={placementEnabled}
               placementGames={placementGames}
@@ -1408,6 +1436,7 @@ export function RecordMatch({
                 onClear={
                   act.value.studentId && !(activeSlot === "A" && !!lockedPlayerId)
                     ? () => {
+                        if (activeSlot === "A") defaultDismissedRef.current = true;
                         act.set(empty);
                         setActiveSlot(null);
                       }

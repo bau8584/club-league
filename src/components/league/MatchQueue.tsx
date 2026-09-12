@@ -382,31 +382,14 @@ export function MatchQueue({
       {canManage && !picking && !!assignmentSession?.player_ids?.length && (
         <div className={cn(queue.length > 0 && "mt-4 border-t border-border/30 pt-3")}>
           {/*
-            조작은 한 줄: [방식] · [한 바퀴 ?] · [+1경기]. 전부 같은 높이(h-9)라 한 묶음으로
-            읽히고, 버튼은 내용 너비만 차지한다 — 수업 중 한두 번 누르는 것이 화면의 1/8 을
-            차지할 이유가 없다. 안내는 그 아래 한 문장.
+            두 층. 1층은 실제 동작 버튼만 같은 너비로 — 폰 폭에서도 글자가 꺾이지 않게 셋까지.
+            2층은 설정(방식)과 안내 한 줄. 방식은 수업당 한 번 건드리는 것이라 버튼 층에 둘 이유가 없다.
           */}
-          <div className="flex items-center gap-2">
-            {/* 대진 방식 — 평소엔 기본값 그대로. 누르면 아래에 선택지가 펼쳐진다. */}
-            <button
-              type="button"
-              onClick={() => setPresetOpen((v) => !v)}
-              className={cn(
-                "flex h-9 items-center gap-1 rounded-lg border px-2.5 text-xs font-black transition-all",
-                presetOpen
-                  ? "border-neon-blue/50 text-neon-blue"
-                  : "border-border/40 text-foreground hover:border-border",
-              )}
-            >
-              <span className="font-bold text-muted-foreground">방식</span>
-              {currentPreset.label}
-              <ChevronDown className={cn("size-3.5 transition-transform", presetOpen && "rotate-180")} />
-            </button>
-
-            {/* 한 바퀴 — 놀고 있는 사람이 한 경기도 안 되면 바퀴가 없다. 뜻은 물음표 말풍선에. */}
+          <div className="flex items-stretch gap-2">
+            {/* 한 바퀴 — 놀고 있는 사람이 한 경기도 안 되면 바퀴가 없다. 뜻은 물음표로. */}
             <div
               className={cn(
-                "relative flex h-9 items-stretch overflow-hidden rounded-lg",
+                "relative flex h-10 flex-1 items-stretch overflow-hidden rounded-lg",
                 roundPrimary ? "bg-neon-blue text-primary-foreground" : "border border-border/40 text-foreground",
                 (filling || roundCount === 0) && "opacity-50",
               )}
@@ -415,7 +398,7 @@ export function MatchQueue({
                 type="button"
                 onClick={() => fill(roundCount)}
                 disabled={filling || roundCount === 0}
-                className="px-3 text-xs font-black transition-colors hover:bg-black/5 disabled:cursor-not-allowed"
+                className="min-w-0 flex-1 whitespace-nowrap px-2 text-xs font-black transition-colors hover:bg-black/5 disabled:cursor-not-allowed"
               >
                 한 바퀴
               </button>
@@ -424,7 +407,7 @@ export function MatchQueue({
                 onClick={() => setHelpOpen((v) => !v)}
                 aria-label="한 바퀴가 뭔가요"
                 className={cn(
-                  "flex w-7 items-center justify-center border-l transition-colors hover:bg-black/5",
+                  "flex w-8 shrink-0 items-center justify-center border-l transition-colors hover:bg-black/5",
                   roundPrimary ? "border-white/25" : "border-border/40 text-muted-foreground",
                 )}
               >
@@ -437,7 +420,7 @@ export function MatchQueue({
             <Button
               onClick={() => fill(1)}
               disabled={filling}
-              className={cn("h-9 rounded-lg px-3 text-xs font-black", roundPrimary ? secondaryBtn : primaryBtn)}
+              className={cn("h-10 flex-1 whitespace-nowrap rounded-lg px-2 text-xs font-black", roundPrimary ? secondaryBtn : primaryBtn)}
             >
               <Plus className="mr-0.5 size-3.5" /> 1경기
             </Button>
@@ -448,7 +431,7 @@ export function MatchQueue({
               <Button
                 onClick={() => setReserveOpen(true)}
                 disabled={filling}
-                className={cn("h-9 rounded-lg px-3 text-xs font-black", secondaryBtn)}
+                className={cn("h-10 flex-1 whitespace-nowrap rounded-lg px-2 text-xs font-black", secondaryBtn)}
               >
                 <Users className="mr-1 size-3.5" /> 골라 넣기
               </Button>
@@ -460,24 +443,39 @@ export function MatchQueue({
                 type="button"
                 onClick={() => setPicking(new Set())}
                 aria-label="여러 줄 골라서 빼기"
-                className="ml-auto flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/40 text-muted-foreground transition-colors hover:text-foreground"
+                className="flex w-10 shrink-0 items-center justify-center rounded-lg border border-border/40 text-muted-foreground transition-colors hover:text-foreground"
               >
                 <ListChecks className="size-4" />
               </button>
             )}
           </div>
 
-          {helpOpen ? (
+          {/* 2층 — 방식(설정) · 안내. 물음표를 눌렀으면 안내 자리에 설명이 온다. */}
+          <div className="mt-2 flex items-start gap-1.5 text-[11px] text-muted-foreground">
             <button
               type="button"
-              onClick={() => setHelpOpen(false)}
-              className="mt-1.5 w-full rounded-lg border border-border/40 bg-input/40 p-2.5 text-left text-[11px] leading-relaxed text-foreground animate-in fade-in duration-150"
+              onClick={() => setPresetOpen((v) => !v)}
+              className={cn(
+                "flex shrink-0 items-center gap-0.5 font-black transition-colors",
+                presetOpen ? "text-neon-blue" : "text-foreground hover:text-neon-blue",
+              )}
             >
-              {ROUND_HELP}
+              <span className="font-bold text-muted-foreground">방식</span>&nbsp;{currentPreset.label}
+              <ChevronDown className={cn("size-3.5 transition-transform", presetOpen && "rotate-180")} />
             </button>
-          ) : (
-            <p className="mt-1.5 text-[11px] text-muted-foreground">{roundHint(free, perMatch)}</p>
-          )}
+            <span className="shrink-0">·</span>
+            {helpOpen ? (
+              <button
+                type="button"
+                onClick={() => setHelpOpen(false)}
+                className="min-w-0 flex-1 text-left leading-relaxed text-foreground animate-in fade-in duration-150"
+              >
+                {ROUND_HELP}
+              </button>
+            ) : (
+              <span className="min-w-0 flex-1">{roundHint(free, perMatch)}</span>
+            )}
+          </div>
 
           {presetOpen && (
             <div className="mt-2 flex flex-wrap items-center gap-1.5 animate-in fade-in slide-in-from-top-1 duration-150">
