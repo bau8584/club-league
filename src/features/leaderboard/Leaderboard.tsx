@@ -287,11 +287,11 @@ export function Leaderboard({
             <thead>
               <tr className="border-b border-border/60 bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
                 <th className="px-2 py-3 text-left w-10 sm:w-14">순위</th>
-                <th className="px-4 py-3 text-left">닉네임</th>
-                <th className="px-4 py-3 text-left">티어</th>
+                <th className="px-2 py-3 text-left sm:px-4">닉네임</th>
+                <th className="px-2 py-3 text-left sm:px-4">티어</th>
                 <th className="px-4 py-3 text-center hidden md:table-cell">최근 5경기</th>
                 <th className="px-4 py-3 text-right hidden sm:table-cell">승률</th>
-                <th className="w-8" aria-label="자세히" />
+                <th className="w-6" aria-label="자세히" />
               </tr>
             </thead>
             <tbody>
@@ -377,16 +377,18 @@ const LeaderboardRow = memo(function LeaderboardRow({
       <td className="px-2 py-3 font-bold tabular-nums w-10 sm:w-14">
         {unranked ? <span className="text-muted-foreground/60">??</span> : <RankBadge rank={rank!} />}
       </td>
-      <td className="px-4 py-3">
-        <div className="flex items-center gap-2 font-semibold">
-          <GenderMark gender={s.gender} />
-          <span className="flex items-center gap-1.5">
-            {title ? <TitleBadge title={title} /> : null}
-            <span>{s.nickname || s.name}</span>
-          </span>
+      {/* 폰에서는 이 칸이 180px쯤이라 성별·칭호·이름·연승이 한 줄에 안 들어간다.
+          한 줄로 묶어 두면 브라우저가 줄일 수 있는 것부터 줄여 이름이 "감/자"처럼
+          글자 중간에서 꺾였다. 글자는 절대 안 끊고(nowrap), 넘치면 항목째 아랫줄로
+          내린다(flex-wrap). 칭호와 이름 사이가 갈릴 수는 있어도 글자가 갈리진 않는다. */}
+      <td className="px-2 py-3 sm:px-4">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-semibold whitespace-nowrap">
+          <GenderMark gender={s.gender} className="shrink-0" />
+          {title ? <TitleBadge title={title} /> : null}
+          <span>{s.nickname || s.name}</span>
           {streak >= 3 && (
             <span
-              className="inline-flex items-center gap-0.5 rounded-full bg-orange-500/15 px-2 py-0.5 text-[10px] font-black text-orange-500 ring-1 ring-orange-500/30"
+              className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-orange-500/15 px-2 py-0.5 text-[10px] font-black text-orange-500 ring-1 ring-orange-500/30"
               title={`${streak}연승 중! 🔥`}
             >
               🔥 {streak}연승
@@ -394,7 +396,7 @@ const LeaderboardRow = memo(function LeaderboardRow({
           )}
         </div>
       </td>
-      <td className="px-4 py-3">
+      <td className="px-2 py-3 whitespace-nowrap sm:px-4">
         <TierBadge rp={s.rp} thresholds={thresholds} unranked={unranked} />
       </td>
       <td className="px-4 py-3 hidden md:table-cell">
@@ -421,7 +423,7 @@ const LeaderboardRow = memo(function LeaderboardRow({
         <span className="font-semibold">{winRate}%</span>
         <span className="ml-1 text-xs text-muted-foreground">({s.wins}W {s.losses}L)</span>
       </td>
-      <td className="w-8 pr-3 text-right text-muted-foreground/60">
+      <td className="w-6 pr-2 text-right text-muted-foreground/60">
         <ChevronRight className="inline size-4" aria-hidden />
       </td>
     </tr>
