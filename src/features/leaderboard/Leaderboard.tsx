@@ -87,7 +87,25 @@ export function Leaderboard({
 
   // 이중 보안 상태 및 자동 잠금 훅
   const [isUnlocked, setIsUnlocked] = useState(false);
-  const { session, placementEnabled, placementGames, getEquippedTitle } = useLeagueStore();
+  const { session, placementEnabled, placementGames, getEquippedTitle, matches } = useLeagueStore();
+
+  // 🔥 연승 배지는 "지금 뜨겁다"는 뜻이다. 연승 자체는 마지막부터 이어진 승수라 날짜를
+  // 모르니, 3주 전에 5연승 하고 안 나온 사람도 불이 켜져 있었다. 연승 숫자는 그대로
+  // 두고(다음에 이기면 이어지는 기록이고 RP 보너스에도 물려 있다), 배지만 식힌다 —
+  // 마지막 경기가 14일 안일 때만 보인다. 동호회가 보통 주 1~2회니 한 번 빠진 사람까지는
+  // 살려 두는 폭이다. 다시 나와서 뛰면 그대로 돌아온다.
+  const lastPlayedAt = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const x of matches ?? []) {
+      const t = new Date(x.date).getTime();
+      for (const id of [x.playerAId, x.playerBId, x.playerA2Id, x.playerB2Id]) {
+        if (id) m.set(id, Math.max(m.get(id) ?? 0, t));
+      }
+    }
+    return m;
+  }, [matches]);
+  const STREAK_FRESH_MS = 14 * 24 * 60 * 60 * 1000;
+  const freshSince = Date.now() - STREAK_FRESH_MS;
   const isDemo = session?.loginId === "guest" || session?.schoolName?.includes("꿈나무");
 
   useEffect(() => {
@@ -303,6 +321,7 @@ export function Leaderboard({
                   unranked={unranked}
                   thresholds={thresholds}
                   title={getEquippedTitle(s)}
+                  streakFresh={(lastPlayedAt.get(s.id) ?? 0) >= freshSince}
                   onSelect={openDetail}
                 />
               ))}
@@ -347,6 +366,7 @@ const LeaderboardRow = memo(function LeaderboardRow({
   unranked,
   thresholds,
   title,
+  streakFresh,
   onSelect,
 }: {
   student: Student;
@@ -354,11 +374,13 @@ const LeaderboardRow = memo(function LeaderboardRow({
   unranked: boolean;
   thresholds?: Record<TierName, number>;
   title: TitleDef | null;
+  /** 최근 14일 안에 뛰었는가. 아니면 연승 배지를 숨긴다(연승 숫자는 그대로). */
+  streakFresh: boolean;
   onSelect: (s: Student) => void;
 }) {
   const total = s.wins + s.losses;
   const winRate = total === 0 ? 0 : Math.round((s.wins / total) * 100);
-  const streak = getWinStreak(s.recent);
+  const streak = streakFresh ? getWinStreak(s.recent) : 0;
   // 이름 글자만 눌리게 두었더니 그게 눌린다는 걸 아무도 몰랐다. 행 전체를 누르게 하고,
   // 오른쪽 끝에 ›를 두어 "들어갈 수 있다"를 보이게 한다.
   return (

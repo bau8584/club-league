@@ -39,8 +39,12 @@ export function TitleBadge({
   interactive?: boolean;
 }) {
   const s = TITLE_RARITY_STYLE[title.rarity];
+  // 폰 순위표에서 칸을 제일 많이 먹는 게 이 칩이다("주르륵 미끄러지는"은 이름의
+  // 네 배). 자간을 줄이고, 일곱 글자 이상이면 글자도 한 단계 작게 해 폭을 아낀다.
+  const long = title.name.length >= 7;
   const chipClass = cn(
-    "inline-flex shrink-0 items-center gap-0.5 rounded-full border px-2 py-0.5 text-[10px] font-black ring-1",
+    "inline-flex shrink-0 items-center gap-0.5 rounded-full border py-0.5 font-black tracking-tight ring-1",
+    long ? "px-1.5 text-[9px]" : "px-2 text-[10px]",
     s.chip,
     s.text,
     className
