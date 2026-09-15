@@ -2530,6 +2530,25 @@ function useLeagueStoreInternal() {
     return true;
   }, []);
 
+  // 종목 저장 (소유자/공동방장). 값만 바뀌므로 경기·점수엔 영향이 없다.
+  const saveSport = useCallback(async (next: string): Promise<boolean> => {
+    const cid = currentClassIdRef.current;
+    if (!cid) return false;
+    if (!isClassOwnerRef.current) { toast.error("권한이 없습니다. 방장만 종목을 바꿀 수 있습니다."); return false; }
+    const value = next.trim();
+    try {
+      const { data: currentClass } = await apiFetchClassSettings(cid);
+      const { error } = await apiUpdateClassSettings(cid, { ...(currentClass?.settings || {}), sport: value });
+      if (error) throw error;
+      setSport(value);
+      return true;
+    } catch (err: any) {
+      console.error("Failed to save sport:", err.message);
+      toast.error("종목 저장에 실패했습니다: " + err.message);
+      return false;
+    }
+  }, []);
+
   const saveLeagueSettings = useCallback(async (
     newTitle: string, 
     newBonuses: ActiveBonuses, 
@@ -3758,7 +3777,8 @@ function useLeagueStoreInternal() {
     matches,
     title,
     setTitle,
-    saveLeagueName, 
+    saveLeagueName,
+    saveSport,
     matchInputMode,
     saveMatchInputMode,
     placementEnabled,

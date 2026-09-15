@@ -95,3 +95,24 @@ export function getSportPreset(sport: string | null | undefined): SportPreset | 
   if (!sport) return undefined;
   return SPORT_PRESETS.find((p) => p.sport === sport.trim());
 }
+
+/**
+ * 학교 리그 종목 목록. 동호회 목록(SPORT_OPTIONS)은 급수 프리셋이 있는 종목이라 배드민턴·탁구
+ * 같은 것뿐인데, 실제 학교 리그 98개의 종목은 배드민턴 26 · 공기놀이 16 · 오목 6 · 줄넘기 3 ·
+ * 가위바위보 3 · 알까기 2 …로 갈렸다(2026-09-15). 목록에 없어 직접 입력하다 보니 "공기"와
+ * "공기놀이"가 따로 생겼다. 많이 쓰는 것부터, 표기는 하나로.
+ */
+export const SCHOOL_SPORT_OPTIONS: string[] = [
+  "배드민턴", "공기놀이", "오목", "알까기", "줄넘기", "가위바위보", "팔씨름",
+  "탁구", "피클볼", "컬링", "체스", "볼링", "스피드 스택스", "보드게임",
+];
+
+/**
+ * 팀 종목 — 이 앱은 1:1·2:2 경기만 기록한다. 개설 폼에서 골랐을 때 한 줄 알려 준다.
+ * 실제로 배구·풋살·발야구·피구를 고른 리그가 있었다.
+ */
+const TEAM_SPORT_WORDS = ["배구", "풋살", "축구", "발야구", "야구", "피구", "농구", "핸드볼", "가가볼"];
+export function isTeamSport(sport: string | null | undefined): boolean {
+  const s = (sport ?? "").trim();
+  return !!s && TEAM_SPORT_WORDS.some((w) => s.includes(w));
+}

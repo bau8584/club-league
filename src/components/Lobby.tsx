@@ -40,7 +40,7 @@ import { cn } from "@/lib/utils";
 import { type Class } from "@/lib/league-types";
 import type { LeagueInsert } from "@/lib/database.types";
 import { LEAGUE_BUNDLES, buildBundleSettings, type BundleKey } from "@/lib/league-presets";
-import { SPORT_OPTIONS, getSportPreset } from "@/domain/sport-levels";
+import { SPORT_OPTIONS, SCHOOL_SPORT_OPTIONS, getSportPreset, isTeamSport } from "@/domain/sport-levels";
 import { QRCodeSVG } from "qrcode.react";
 import { ThemePicker } from "@/components/ThemePicker";
 import { useTheme, isDarkTheme } from "@/lib/use-theme";
@@ -193,7 +193,7 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
   };
 
   const handleDeleteLeague = async (leagueId: string, leagueName: string) => {
-    if (!window.confirm(`정말로 [${leagueName}] 리그를 삭제하시겠습니까?\n삭제된 리그는 복구할 수 없습니다.`)) {
+    if (!window.confirm(`정말로 [${leagueName}] 리그를 삭제하시겠습니까?\n삭제된 리그는 복구할 수 없습니다.\n\n이름·종목만 바꾸려는 거라면 지우지 않아도 돼요 — 관리자 → 리그 설정에서 바꿀 수 있어요.`)) {
       return;
     }
 
@@ -761,7 +761,7 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
                           autoFocus
                           value={newSport}
                           onChange={(e) => setNewSport(e.target.value)}
-                          placeholder="종목 직접 입력"
+                          placeholder={newLeagueType === "school" ? "예: 공기놀이, 알까기, 오목, 팔씨름…" : "종목 직접 입력"}
                           className="h-10 border-border/60 bg-background/40 focus:border-neon-blue transition-all"
                         />
                       ) : (
@@ -779,9 +779,13 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
                           className="h-10 w-full rounded-md border border-border/60 bg-background/40 px-2 text-sm focus:border-neon-blue transition-all"
                         >
                           <option value="">종목 선택</option>
-                          {SPORT_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+                          {/* 학교는 급수 프리셋과 무관하게 실제 많이 쓰는 종목부터. 개설 뒤 관리자 → 리그 설정에서 바꿀 수 있다. */}
+                          {(newLeagueType === "school" ? SCHOOL_SPORT_OPTIONS : SPORT_OPTIONS).map((s) => <option key={s} value={s}>{s}</option>)}
                           <option value="__custom__">+ 직접 입력</option>
                         </select>
+                      )}
+                      {isTeamSport(newSport) && (
+                        <p className="text-[11px] text-loss">이 앱은 1:1·2:2 경기만 기록해요. 팀 종목은 결과 입력이 맞지 않을 수 있어요.</p>
                       )}
                     </div>
                   </div>
