@@ -23,7 +23,7 @@ main ─────●──────●──────●─────
 - 처음엔 작업 하나 = 브랜치 하나(`fix/gender-optional`, `feat/roster-parser` — 둘 다 합쳐짐). 그 뒤로는 **단일 `work` 브랜치**에서 이어서 작업한다 — 여러 세션이 같은 폴더를 쓰므로 브랜치를 갈아타면 서로의 작업 트리를 흔든다. 같은 브랜치에서 파일만 안 겹치게.
 - 합치기 전 0번의 확인 두 가지. 통과하면 `main`에 합치고 배포.
 - 배포 직전 태그: `git tag deploy-YYYY-MM-DD`. 문제 생기면 그 태그로 되돌려 재배포. (주의: 현재 `deploy-2026-09-15` 태그는 3-1·3-2를 합치기 **전** 커밋 `29d06da`를 가리킨다. 다음 배포 땐 합친 뒤에 찍을 것.)
-- **배포 방식(확인됨)**: Cloudflare Workers Builds가 GitHub에 연결돼 있다. `main` 푸시 = **즉시 배포**. 다른 브랜치 푸시 = **미리보기 버전만** 생성(배포 아님, 실사용자 영향 없음). 미리보기 주소는 대시보드 → club-league → Settings → Domains & Routes → **Preview URLs**가 켜져 있어야 뜬다. 첫 브랜치 푸시 후 Deployments 탭에서 링크 확인, 없으면 스위치 켜기.
+- **배포 방식(확인됨)**: Cloudflare Workers Builds가 GitHub에 연결돼 있다. `main` 푸시 = **즉시 배포**. 다른 브랜치 푸시 = **미리보기 버전만** 생성(배포 아님, 실사용자 영향 없음). 미리보기 주소는 **브랜치 이름이 앞에 붙는다**: work 브랜치 = https://work-club-league.bau8584.workers.dev/ (배포본은 https://club-league.bau8584.workers.dev/). 안 뜨면 대시보드 → club-league → Settings → Domains & Routes → **Preview URLs** 스위치 확인.
 - **미리보기도 진짜 DB를 쓴다.** 환경변수가 `main`과 같아서 미리보기에서 경기를 넣으면 실제 리그에 들어간다. 미리보기에서는 읽기만, 쓰기 테스트(경기 입력·명단 등록)는 **테스트용 리그를 따로 개설**해서. 청림초 컬링 리그는 눈으로만 비교.
 
 ## 2. DB에서 확인한 사실
