@@ -7,6 +7,7 @@ import { Users, Save, Trash2, ShieldAlert, HelpCircle, RotateCcw, ChevronDown, C
 import { cn } from "@/lib/utils";
 import { useLeagueStore } from "@/lib/league-store";
 import { useLeagueTerms, useIsSchoolLeague, useGenderEnabled } from "@/lib/league-terms";
+import { parseRosterDetailed } from "@/domain/roster-parser";
 import {
   classKeyOf,
   classLabel,
@@ -38,69 +39,6 @@ export interface AdminStudentManageProps {
 type RowDraft = { name: string; nickname: string; group: string; gender: Gender; rp: number; birthYearInput: string; gradeInput: string; classInput: string; noInput: string };
 
 type DeletedStudent = { id: string; name: string; nickname: string; group: string | null; rp: number };
-
-// 한 줄 = 한 명. 칸은 탭/콤마(그리고 school 모드에선 공백)로 구분.
-//   club  : 1칸 → 닉네임 / 2칸 → 레벨, 닉네임
-//   school: "3 2 15 홍길동" 또는 "3학년 2반 15번 홍길동" → 학년/반/번호/이름
-type ParsedRow = { nickname: string; group: string | null; grade: number | null; classNum: number | null; studentNo: number | null };
-function parseRoster(text: string, isSchool = false): ParsedRow[] {
-  const out: ParsedRow[] = [];
-  for (const rawLine of text.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line) continue;
-    if (isSchool) {
-      // 앞쪽 숫자 칸으로 학년/반/번호를 읽는다.
-      //   단위(학년·반·번)가 붙어 있으면 그 뜻을 그대로 따르고,
-      //   단위가 전혀 없으면 "번호가 이름 바로 앞"이라는 관례로 오른쪽부터 채운다.
-      //   3 2 15 홍길동 → 학년·반·번호 / 2 15 홍길동 → 반·번호 / 15 홍길동 → 번호
-      //   단위가 없는 두 숫자는 "3학년 2반 홍길동"처럼 번호 없는 명단과 구별할 수
-      //   없으므로, 그런 명단은 단위를 붙여야 정확히 인식된다.
-      const cells = line.split(/[\t,\s]+/).map((c) => c.trim()).filter(Boolean);
-      let grade: number | null = null, classNum: number | null = null, studentNo: number | null = null;
-      const bare: number[] = [];
-      let i = 0;
-      for (; i < cells.length; i++) {
-        const m = cells[i].match(/^(\d+)(학년|반|번)?$/);
-        if (!m) break;
-        const v = Number(m[1]);
-        if (m[2] === "학년") grade = v;
-        else if (m[2] === "반") classNum = v;
-        else if (m[2] === "번") studentNo = v;
-        else bare.push(v);
-      }
-      const name = cells.slice(i).join(" ").trim();
-      if (!name) continue;
-      if (grade === null && classNum === null && studentNo === null) {
-        // 단위가 하나도 없을 때만 위치로 판단한다(오른쪽 = 번호).
-        if (bare.length >= 3) { grade = bare[0]; classNum = bare[1]; studentNo = bare[2]; }
-        else if (bare.length === 2) { classNum = bare[0]; studentNo = bare[1]; }
-        else if (bare.length === 1) { studentNo = bare[0]; }
-      } else {
-        // 단위가 섞여 있으면 남은 숫자를 비어 있는 축에 학년→반→번호 순으로 채운다.
-        for (const v of bare) {
-          if (grade === null) grade = v;
-          else if (classNum === null) classNum = v;
-          else if (studentNo === null) studentNo = v;
-        }
-      }
-      out.push({ nickname: name, group: null, grade, classNum, studentNo });
-      continue;
-    }
-    const cells = line.split(/[\t,]/).map((c) => c.trim()).filter((c) => c.length > 0);
-    if (cells.length === 0) continue;
-    let nickname = "";
-    let group: string | null = null;
-    if (cells.length === 1) {
-      nickname = cells[0];
-    } else {
-      group = cells[0];
-      nickname = cells[1];
-    }
-    if (!nickname) continue;
-    out.push({ nickname, group: group || null, grade: null, classNum: null, studentNo: null });
-  }
-  return out;
-}
 
 export function AdminStudentManage({ students, onDeleteStudent, onDeleteStudents, thresholds }: AdminStudentManageProps) {
   const terms = useLeagueTerms();
@@ -176,7 +114,19 @@ export function AdminStudentManage({ students, onDeleteStudent, onDeleteStudents
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
   const [importing, setImporting] = useState(false);
-  const pastePreview = useMemo(() => parseRoster(pasteText, isSchool), [pasteText, isSchool]);
+  const pasteParsed = useMemo(() => parseRosterDetailed(pasteText, isSchool), [pasteText, isSchool]);
+  const pastePreview = pasteParsed.rows;
+  // 등록 전에 눈에 띄어야 하는 것들. 고촌초(성별 줄이 학생 20명)·충무공(한 줄 통째가 이름) 사고는
+  // 숫자 한 줄로는 안 보였다. 표로 보여 주고 이상한 줄 수를 세어 붉게 적는다.
+  const pasteIssues = useMemo(() => {
+    const rows = pastePreview;
+    const nameless = rows.filter((p) => p.nameless).length;
+    // 이름에 글자가 없거나(숫자·기호뿐), 이름이 너무 길다(한 줄 통째가 이름으로 들어온 경우).
+    const oddName = rows.filter((p) => !p.nameless && (!/[가-힣a-zA-Z]/.test(p.nickname) || p.nickname.length > 12)).length;
+    const noNumber = isSchool ? rows.filter((p) => p.studentNo == null).length : 0;
+    const withGender = rows.filter((p) => p.gender).length;
+    return { nameless, oddName, noNumber, withGender, skipped: pasteParsed.skipped };
+  }, [pastePreview, pasteParsed.skipped, isSchool]);
 
   // 개인 추가
   const [addOpen, setAddOpen] = useState(false);
@@ -306,6 +256,8 @@ export function AdminStudentManage({ students, onDeleteStudent, onDeleteStudents
       const res = await upsertStudents(parsed.map((p) => ({
         name: p.nickname, group: p.group, nickname: p.nickname,
         grade: p.grade, classNum: p.classNum, studentNo: p.studentNo,
+        // 성별 칸이 있던 줄만 넘긴다. 없는 줄은 키를 안 만들어 기존 성별이 남는다.
+        ...(p.gender ? { gender: p.gender } : {}),
       })));
       if (res) toast.success(`명단을 반영했습니다. (추가 ${res.added ?? 0}명, 유지 ${res.kept ?? 0}명)`);
       setPasteText("");
@@ -355,15 +307,10 @@ export function AdminStudentManage({ students, onDeleteStudent, onDeleteStudents
             <span>
               {isSchool ? (
                 <>
-                  한 줄에 한 명씩, 앞의 숫자 개수에 맞춰 알아서 인식합니다.<br />
-                  · <b className="text-foreground">3 2 15 홍길동</b> → 학년·반·번호·이름<br />
-                  · <b className="text-foreground">2 15 홍길동</b> → 반·번호·이름<br />
-                  · <b className="text-foreground">15 홍길동</b> → 번호·이름<br />
-                  · <b className="text-foreground">홍길동</b> → 이름만<br />
-                  <b className="text-foreground">번호가 없는 명단</b>은 단위를 붙여 주세요 —
-                  <b className="text-foreground">3학년 2반 홍길동</b>처럼요.
-                  (단위가 없으면 맨 뒤 숫자를 번호로 읽습니다)<br />
-                  비운 항목은 아래 표에서 채울 수 있어요.
+                  {/* 규칙은 하나다 — 그대로 붙여넣기. 학번·붙은 번호·번호만 같은 예외는 파서가 알아서 하고
+                      결과는 아래 표가 보여 주므로 여기서 설명하지 않는다. */}
+                  <b className="text-foreground">나이스 학급명렬표나 출석부를 복사해서 그대로 붙여넣으세요.</b> 한 줄에 한 명이면 됩니다.<br />
+                  어떻게 읽혔는지 아래 표에서 확인하고 등록하세요. 비운 칸은 등록 후 표에서 채울 수 있어요.
                 </>
               ) : (
                 <>
@@ -378,11 +325,62 @@ export function AdminStudentManage({ students, onDeleteStudent, onDeleteStudents
             value={pasteText}
             onChange={(e) => setPasteText(e.target.value)}
             rows={6}
-            placeholder={isSchool ? "예시)\n3 2 15 홍길동\n3학년 2반 16번 김철수\n3 2 17 이영희" : "예시)\nA조, 길동이\nA조, 철수\n영희"}
+            placeholder={isSchool ? "예시)\n5학년 12반 1 강우준 남\n5학년 12반 2 김서연 여\n15 홍길동\n홍길동" : "예시)\nA조, 길동이\nA조, 철수\n영희"}
             className="w-full rounded-lg bg-input border border-border/30 p-3 text-xs font-code leading-relaxed focus:outline-none focus:ring-1 focus:ring-neon-blue"
           />
+          {/* 미리보기 표 — 등록 버튼을 누르기 전에 잘못 읽힌 줄이 눈에 띄어야 한다. */}
+          {pastePreview.length > 0 && (
+            <div className="max-h-64 overflow-auto rounded-lg border border-border/30 bg-background/40">
+              <table className="w-full text-[11px]">
+                <thead className="sticky top-0 bg-muted/80 text-[10px] uppercase tracking-wider text-muted-foreground backdrop-blur">
+                  <tr>
+                    {isSchool ? (
+                      <>
+                        <th className="px-2 py-1.5 text-center font-bold">학년</th>
+                        <th className="px-2 py-1.5 text-center font-bold">반</th>
+                        <th className="px-2 py-1.5 text-center font-bold">번호</th>
+                      </>
+                    ) : (
+                      <th className="px-2 py-1.5 text-left font-bold">레벨</th>
+                    )}
+                    <th className="px-2 py-1.5 text-left font-bold">{terms.nameLabel}</th>
+                    {(genderEnabled || pasteIssues.withGender > 0) && <th className="px-2 py-1.5 text-center font-bold">성별</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {pastePreview.map((p, i) => {
+                    const odd = !p.nameless && (!/[가-힣a-zA-Z]/.test(p.nickname) || p.nickname.length > 12);
+                    return (
+                      <tr key={i} className={cn("border-t border-border/20", odd && "bg-loss/10", p.nameless && "text-muted-foreground")}>
+                        {isSchool ? (
+                          <>
+                            <td className="px-2 py-1 text-center tabular-nums">{p.grade ?? ""}</td>
+                            <td className="px-2 py-1 text-center tabular-nums">{p.classNum ?? ""}</td>
+                            <td className={cn("px-2 py-1 text-center tabular-nums", p.studentNo == null && "text-loss")}>{p.studentNo ?? "—"}</td>
+                          </>
+                        ) : (
+                          <td className="px-2 py-1">{p.group ?? ""}</td>
+                        )}
+                        <td className={cn("px-2 py-1 font-bold", odd && "text-loss")}>{p.nickname}</td>
+                        {(genderEnabled || pasteIssues.withGender > 0) && (
+                          <td className="px-2 py-1 text-center">{p.gender === "M" ? "남" : p.gender === "F" ? "여" : ""}</td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] text-muted-foreground">미리보기: <b className="text-foreground">{pastePreview.length}명</b> 인식됨</span>
+            <span className="text-[11px] text-muted-foreground">
+              <b className="text-foreground">{pastePreview.length}명</b> 인식됨
+              {pasteIssues.skipped.length > 0 && <> · {pasteIssues.skipped.length}줄 건너뜀{pasteIssues.skipped.some((s) => s.reason === "header") ? "(머리글)" : ""}</>}
+              {pasteIssues.withGender > 0 && <> · 성별 {pasteIssues.withGender}명</>}
+              {pasteIssues.nameless > 0 && <> · 번호만 {pasteIssues.nameless}명</>}
+              {pasteIssues.oddName > 0 && <b className="text-loss"> · 이름이 이상한 줄 {pasteIssues.oddName}</b>}
+              {isSchool && pasteIssues.noNumber > 0 && pasteIssues.noNumber < pastePreview.length && <b className="text-loss"> · 번호 없는 줄 {pasteIssues.noNumber}</b>}
+            </span>
             <Button onClick={handleImport} disabled={pastePreview.length === 0 || importing}
               className="h-8 px-4 bg-neon-blue hover:bg-neon-blue/80 text-primary-foreground font-black text-[11px] rounded-lg disabled:opacity-40">
               <Save className="size-3.5 mr-1" /> 명단 등록 ({pastePreview.length})
