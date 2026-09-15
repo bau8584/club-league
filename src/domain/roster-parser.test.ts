@@ -166,6 +166,26 @@ describe("parseRoster — 새 형식 (school)", () => {
     expect(parseRoster("3학년 2 15 홍길동", true)).toEqual([r("홍길동", 3, 2, 15)]);
   });
 
+  it("점수·RP 열이 딸려 와도 학번으로 오해하지 않는다(학년·반·번호가 전부 1 이상일 때만 학번)", () => {
+    expect(parseRoster("1 홍길동 1000\n홍길동 1200\n2 김철수 100", true)).toEqual([
+      r("홍길동", null, null, 1),
+      r("홍길동", null, null, null),
+      r("김철수", null, null, 2),
+    ]);
+  });
+
+  it("이름 뒤에 붙은 한두 자리 숫자는 번호다", () => {
+    expect(parseRoster("홍길동 25", true)).toEqual([r("홍길동", null, null, 25)]);
+  });
+
+  it("성별 글자로 시작하는 이름은 이름이다", () => {
+    expect(parseRoster("남궁민\n여진구\n15 남궁민 남", true)).toEqual([
+      r("남궁민", null, null, null),
+      r("여진구", null, null, null),
+      r("남궁민", null, null, 15, { gender: "M" }),
+    ]);
+  });
+
   it("성별이 없는 줄엔 gender 키를 만들지 않는다(다시 붙여넣어도 기존 성별을 지우지 않게)", () => {
     const [row] = parseRoster("15 홍길동", true);
     expect("gender" in row).toBe(false);

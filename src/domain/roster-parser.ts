@@ -115,19 +115,25 @@ function isDate(cell: string): boolean {
 /**
  * 나이스 학번(3~5자리)을 학년/반/번호로 나눈다. 첫 자리 학년, 끝 두 자리 번호가 원칙이고
  * 세 자리는 한 자리씩(619 → 6학년 1반 9번). 네 자리는 반 한 자리 + 번호 두 자리를 먼저 보고
- * (6110 → 6-1-10), 번호가 0이면 반 두 자리 + 번호 한 자리로 본다(6110 은 6-11-0 이 아니다).
+ * (6110 → 6-1-10), 안 되면 반 두 자리 + 번호 한 자리로 본다.
+ *
+ * 학년·반·번호가 전부 1 이상이어야 학번이다. 1000, 1200, 100 같은 건 점수·RP 열이 딸려 온
+ * 것이지 학번이 아니다 — 이걸 학번으로 읽으면 "1학년 0반"이 조용히 생긴다. 그런 칸은 버린다.
  */
 function splitStudentId(digits: string): { grade: number; classNum: number; studentNo: number } | null {
   const n = digits.length;
   if (n < 3 || n > 5) return null;
   const grade = Number(digits[0]);
-  if (n === 3) return { grade, classNum: Number(digits[1]), studentNo: Number(digits[2]) };
+  const valid = (id: { grade: number; classNum: number; studentNo: number }) =>
+    id.grade >= 1 && id.classNum >= 1 && id.studentNo >= 1 ? id : null;
+  if (n === 3) return valid({ grade, classNum: Number(digits[1]), studentNo: Number(digits[2]) });
   if (n === 4) {
-    const a = { grade, classNum: Number(digits[1]), studentNo: Number(digits.slice(2)) };
-    if (a.studentNo >= 1) return a;
-    return { grade, classNum: Number(digits.slice(1, 3)), studentNo: Number(digits[3]) };
+    return (
+      valid({ grade, classNum: Number(digits[1]), studentNo: Number(digits.slice(2)) }) ??
+      valid({ grade, classNum: Number(digits.slice(1, 3)), studentNo: Number(digits[3]) })
+    );
   }
-  return { grade, classNum: Number(digits.slice(1, 3)), studentNo: Number(digits.slice(3)) };
+  return valid({ grade, classNum: Number(digits.slice(1, 3)), studentNo: Number(digits.slice(3)) });
 }
 
 /** "5학년12반" 처럼 단위가 연달아 붙은 칸을 "5학년" "12반" 으로 벌린다. 뒤에 글자가 남으면 그것도 한 칸. */
