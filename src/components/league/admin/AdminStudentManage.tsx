@@ -306,11 +306,10 @@ export function AdminStudentManage({ students, onDeleteStudent, onDeleteStudents
             <span>
               {isSchool ? (
                 <>
-                  <b className="text-foreground">나이스 학급명렬표나 출석부를 그대로</b> 붙여넣으세요. 한 줄에 한 명, 머리글 줄은 알아서 건너뜁니다.<br />
-                  · <b className="text-foreground">5학년12반 1 강우준 남 2015.03.02</b> → 학년·반·번호·이름·성별 (생년월일은 버림)<br />
-                  · <b className="text-foreground">3 2 15 홍길동</b> / <b className="text-foreground">15 홍길동</b> / <b className="text-foreground">20전진형</b> / <b className="text-foreground">619최건희</b>(학번) / <b className="text-foreground">홍길동</b><br />
-                  · 이름 없이 <b className="text-foreground">번호만</b> 넣으면 "5번"으로 등록돼요.<br />
-                  아래 표에서 어떻게 읽혔는지 확인하고 등록하세요. 비운 항목은 등록 후 표에서 채울 수 있어요.
+                  {/* 규칙은 하나다 — 그대로 붙여넣기. 학번·붙은 번호·번호만 같은 예외는 파서가 알아서 하고
+                      결과는 아래 표가 보여 주므로 여기서 설명하지 않는다. */}
+                  <b className="text-foreground">나이스 학급명렬표나 출석부를 복사해서 그대로 붙여넣으세요.</b> 한 줄에 한 명이면 됩니다.<br />
+                  어떻게 읽혔는지 아래 표에서 확인하고 등록하세요. 비운 칸은 등록 후 표에서 채울 수 있어요.
                 </>
               ) : (
                 <>
@@ -325,7 +324,7 @@ export function AdminStudentManage({ students, onDeleteStudent, onDeleteStudents
             value={pasteText}
             onChange={(e) => setPasteText(e.target.value)}
             rows={6}
-            placeholder={isSchool ? "예시)\n3 2 15 홍길동\n3학년 2반 16번 김철수\n3 2 17 이영희" : "예시)\nA조, 길동이\nA조, 철수\n영희"}
+            placeholder={isSchool ? "예시)\n5학년 12반 1 강우준 남\n5학년 12반 2 김서연 여\n15 홍길동\n홍길동" : "예시)\nA조, 길동이\nA조, 철수\n영희"}
             className="w-full rounded-lg bg-input border border-border/30 p-3 text-xs font-code leading-relaxed focus:outline-none focus:ring-1 focus:ring-neon-blue"
           />
           {/* 미리보기 표 — 등록 버튼을 누르기 전에 잘못 읽힌 줄이 눈에 띄어야 한다. */}
