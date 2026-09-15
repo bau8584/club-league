@@ -324,6 +324,29 @@ describe("그룹 제약(남녀 따로) — groupOf", () => {
     expect(fMatch.relaxedPlayerIds).toEqual([]);
   });
 
+  it("미지정은 아껴 쓴다 — 남 3·여 3·미지정 2 복식이면 1명씩 붙여 2경기", () => {
+    for (const policy of ["diversity", "balanced", "skill"] as const) {
+      for (const seed of [0, 1, 2, 3]) {
+        const out = calculateAssignment({ ...gendered(3, 3, 2), count: 2, policy, seed });
+        expect(out.matches).toHaveLength(2);
+        expect(out.shortfall).toBe(0);
+        for (const m of out.matches) {
+          expect(groupsIn(m).size).toBe(1);
+          expect(flat(m).filter((id) => id.startsWith("u"))).toHaveLength(1);
+        }
+      }
+    }
+  });
+
+  it("미지정이 많아도 한 바퀴를 채운다 — 남 8·여 7·미지정 9 복식 6경기", () => {
+    for (const seed of [0, 5, 9]) {
+      const out = calculateAssignment({ ...gendered(8, 7, 9), count: 6, seed });
+      expect(out.shortfall).toBe(0);
+      // 미지정끼리만 붙은 경기(그룹 0개)도 섞인 것은 아니다.
+      for (const m of out.matches) expect(groupsIn(m).size).toBeLessThanOrEqual(1);
+    }
+  });
+
   it("groupOf 없이 돌리면 이전 계산기와 결과가 같다(스냅샷)", () => {
     // groupOf 를 도입하기 직전 코드로 뽑아 둔 결과. 섞어서 모드는 한 글자도 달라지면 안 된다.
     const rated = (n: number): AssignmentPlayer[] =>

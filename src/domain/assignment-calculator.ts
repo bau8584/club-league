@@ -260,6 +260,12 @@ interface CostParts {
   homogeneity: number;
   /** 큐에 든 사람을 완화로 다시 쓴 대가. 어떤 프리셋에서도 항상 1순위다. */
   relax: number;
+  /**
+   * 그룹 없는 사람(성별 미지정)을 몇 명 썼는가. 그룹 제약이 있을 때만 0이 아니다.
+   * 미지정은 남녀 어느 쪽에나 붙을 수 있는 귀한 자리라, 같은 조건이면 덜 쓰는 조합을
+   * 골라야 나중에 다른 쪽이 인원이 안 모여 못 뽑는 일이 줄어든다.
+   */
+  ungrouped: number;
   /** 동점을 결정론적으로 가르는 미세값. */
   jitter: number;
 }
@@ -272,6 +278,7 @@ function costParts(
   w: AssignmentWeights,
   relaxed: Set<string>,
   jitter: Map<string, number>,
+  groupOf: Map<string, string>,
 ): CostParts {
   let diversity = 0;
   for (const team of [teamA, teamB]) {
@@ -307,13 +314,24 @@ function costParts(
   let play = 0;
   let relax = 0;
   let jit = 0;
+  let ungrouped = 0;
   for (const id of members) {
     play += w.playCount * (stats.playCount.get(id) ?? 0);
     if (relaxed.has(id)) relax += w.busyReuse;
     jit += (jitter.get(id) ?? 0) * 0.001;
+    if (groupOf.size > 0 && !groupOf.has(id)) ungrouped++;
   }
 
-  return { diversity, play, balance, gap, homogeneity: gap + spreadSum, relax, jitter: jit };
+  return {
+    diversity,
+    play,
+    balance,
+    gap,
+    homogeneity: gap + spreadSum,
+    relax,
+    ungrouped,
+    jitter: jit,
+  };
 }
 
 /** 사전식 비교용 키. 앞자리부터 순서대로 비교하고, 같으면 다음 자리로 넘어간다. */
@@ -331,6 +349,7 @@ function sortKey(
         parts.gap > balanceLimit ? 1 : 0,
         parts.diversity,
         parts.play,
+        parts.ungrouped,
         parts.balance,
         parts.jitter,
       ];
@@ -341,13 +360,22 @@ function sortKey(
         Math.round(parts.homogeneity / skillGranularity),
         parts.diversity,
         parts.play,
+        parts.ungrouped,
         parts.balance,
         parts.jitter,
       ];
     case "balanced":
     default:
       // 하나의 가중합. 세 항목이 서로를 밀고 당긴다.
-      return [parts.relax + parts.diversity + parts.play + parts.balance + parts.jitter];
+      // 미지정 아끼기는 지터보다만 큰 미세값 — 다른 항목이 같을 때만 갈리게.
+      return [
+        parts.relax +
+          parts.diversity +
+          parts.play +
+          parts.balance +
+          parts.ungrouped * 0.01 +
+          parts.jitter,
+      ];
   }
 }
 
@@ -524,7 +552,7 @@ export function calculateAssignment(input: AssignmentInput): AssignmentOutput {
           const group = [anchor, ...rest];
           if (groupOf.size > 0 && mixesGroups(group)) continue;
           for (const [teamA, teamB] of splitsOf(group, teamSize)) {
-            const parts = costParts(teamA, teamB, stats, ratings, w, relaxed, jitter);
+            const parts = costParts(teamA, teamB, stats, ratings, w, relaxed, jitter, groupOf);
             const key = sortKey(parts, preset, balanceLimit, skillGranularity);
             if (!found || compareKeys(key, found.key) < 0) {
               found = {

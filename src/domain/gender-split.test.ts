@@ -15,6 +15,14 @@ describe("separateRoundCount", () => {
     // 남 4·여 3·U 1 → 여자 쪽에 붙어야 2경기.
     expect(separateRoundBreakdown({ m: 4, f: 3, u: 1 }, 4)).toEqual({ m: 1, f: 1 });
   });
+  it("미지정을 양쪽에 나눠 붙여야 최대가 나오는 경우도 센다", () => {
+    // 남 3·여 3·U 2 → 1명씩 붙여 2경기. 한쪽에 몰면 1경기뿐이다.
+    expect(separateRoundCount({ m: 3, f: 3, u: 2 }, 4)).toBe(2);
+    // 남 8·여 7·U 9 복식 → 6경기 (a=4: 3 + 3).
+    expect(separateRoundCount({ m: 8, f: 7, u: 9 }, 4)).toBe(6);
+    // 단식: 남 1·여 1·U 2 → 2경기.
+    expect(separateRoundCount({ m: 1, f: 1, u: 2 }, 2)).toBe(2);
+  });
 });
 
 describe("genderGroupOf", () => {

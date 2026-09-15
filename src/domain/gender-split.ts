@@ -32,24 +32,29 @@ export function countByGender(
 }
 
 /**
- * 따로 모드의 한 바퀴 = 남 바퀴 + 여 바퀴. 미지정은 어느 쪽에 붙느냐로 한 경기가
- * 갈릴 수 있어 두 경우 중 큰 쪽을 잡는다. 실제보다 많이 잡혀도 계산기가 인원이
- * 안 모이면 shortfall 로 멈추니 안전하다.
+ * 따로 모드의 한 바퀴 = 남 바퀴 + 여 바퀴. 미지정은 남자 쪽에 a명, 여자 쪽에 (u-a)명으로
+ * 갈라 붙일 수 있고 그 나누기에 따라 경기 수가 달라지므로, 모든 나누기 중 가장 많이
+ * 나오는 쪽을 잡는다(남 3·여 3·미지정 2 → 1명씩 붙여 2경기). 실제보다 많이 잡혀도
+ * 계산기가 인원이 안 모이면 shortfall 로 멈추니 안전하다.
  */
-export function separateRoundCount(free: GenderCounts, perMatch: number): number {
-  const withM = Math.floor((free.m + free.u) / perMatch) + Math.floor(free.f / perMatch);
-  const withF = Math.floor(free.m / perMatch) + Math.floor((free.f + free.u) / perMatch);
-  return Math.max(withM, withF);
-}
-
-/** 따로 모드일 때 남/여 각각 몇 경기인지(안내 문구용). 미지정은 남는 쪽에 붙는 셈으로 센다. */
 export function separateRoundBreakdown(
   free: GenderCounts,
   perMatch: number,
 ): { m: number; f: number } {
-  const withM = { m: Math.floor((free.m + free.u) / perMatch), f: Math.floor(free.f / perMatch) };
-  const withF = { m: Math.floor(free.m / perMatch), f: Math.floor((free.f + free.u) / perMatch) };
-  return withM.m + withM.f >= withF.m + withF.f ? withM : withF;
+  let best = { m: 0, f: 0 };
+  for (let a = 0; a <= free.u; a++) {
+    const cand = {
+      m: Math.floor((free.m + a) / perMatch),
+      f: Math.floor((free.f + free.u - a) / perMatch),
+    };
+    if (cand.m + cand.f > best.m + best.f) best = cand;
+  }
+  return best;
+}
+
+export function separateRoundCount(free: GenderCounts, perMatch: number): number {
+  const { m, f } = separateRoundBreakdown(free, perMatch);
+  return m + f;
 }
 
 /**
