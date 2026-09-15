@@ -324,14 +324,17 @@ language sql stable security definer set search_path = public, extensions as $$
 $$;
 
 -- 무인증 공개 순위표용: 리그명/유형/티어 기준선 등 렌더에 필요한 최소 정보만 노출
--- gender_enabled: settings.genderEnabled, 없으면 학교 리그 끔 / 동호회 켬
+-- gender_enabled: settings.genderEnabled, 없으면 동호회 켬 / 학교는 명단 절반 이상 성별 있을 때만 켬
 create or replace function public.get_league_public(p_class_id uuid)
 returns table(id uuid, name text, league_type text, season text, tier_thresholds jsonb, placement jsonb, gender_enabled boolean)
 language sql stable security definer set search_path = public, extensions as $
   select l.id, l.name, l.league_type,
          coalesce(nullif(btrim(l.settings->>'season'), ''), '시즌 1'),
          l.settings->'tierThresholds', l.settings->'placement',
-         coalesce((l.settings->>'genderEnabled')::boolean, l.league_type <> 'school')
+         coalesce((l.settings->>'genderEnabled')::boolean,
+                  l.league_type <> 'school'
+                    or (select count(*) > 0 and count(*) filter (where p.gender in ('M','F')) * 2 >= count(*)
+                        from public.players p where p.league_id = l.id and coalesce(p.is_deleted, false) = false))
   from public.leagues l
   where l.id = p_class_id and coalesce(l.is_deleted, false) = false;
 $$;

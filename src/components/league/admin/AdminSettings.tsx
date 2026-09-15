@@ -381,7 +381,7 @@ export function AdminSettings({
   const [localTitle, setLocalTitle] = useState(title || "");
 
   // 배치고사(언랭크) — store에서 직접 읽고 저장
-  const { placementEnabled, placementGames, savePlacement, genderEnabled, saveGenderEnabled } = useLeagueStore();
+  const { placementEnabled, placementGames, savePlacement, genderEnabled, genderSetting, saveGenderEnabled } = useLeagueStore();
   const terms = useLeagueTerms();
   const isSchool = useIsSchoolLeague();
   const [localPlacementEnabled, setLocalPlacementEnabled] = useState(placementEnabled);
@@ -736,6 +736,11 @@ export function AdminSettings({
             <span className="text-[10px] text-muted-foreground leading-snug block">
               켜면 순위표에 <b>남자/여자 순위</b> 필터가 생기고, 성별이 없는 {terms.member}을 경기에 넣을 때 성별을 묻습니다. 끄면 성별을 묻지 않고 표시도 하지 않습니다. (이미 넣은 성별은 지워지지 않아요)
             </span>
+            {genderSetting === null && isSchool && (
+              <span className="text-[10px] text-neon-blue/80 leading-snug block">
+                지금은 명단을 보고 자동으로 정하고 있어요 — {genderEnabled ? "절반 이상 성별이 있어 켜짐" : "성별이 있는 학생이 절반이 안 돼 꺼짐"}. 스위치를 건드리면 그때부터 고정됩니다.
+              </span>
+            )}
           </div>
           <ToggleSwitch checked={genderEnabled} onChange={() => saveGenderEnabled(!genderEnabled)} />
         </div>

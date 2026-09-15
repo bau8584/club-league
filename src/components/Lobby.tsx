@@ -74,6 +74,7 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
   const [newSport, setNewSport] = useState("");
   const [customSport, setCustomSport] = useState(false); // 종목 직접 입력 모드
   const [newLevelMode, setNewLevelMode] = useState<"preset" | "free">("preset"); // 레벨 체계 따름/자유
+  const [newGenderEnabled, setNewGenderEnabled] = useState(false); // 학교 리그: 성별 사용(남/여 순위). 기본 끔
   const [newLeagueName, setNewLeagueName] = useState("");
   const [newSeason, setNewSeason] = useState("");
   const [creating, setCreating] = useState(false);
@@ -246,8 +247,8 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
             })(),
             // 개설 시 선택한 '리그 성향' → 기준점/승패/보너스/패널티 일괄 적용
             ...buildBundleSettings(selectedBundle),
-            // school 리그는 경기 입력을 교사(방장) 전용으로 고정
-            ...(newLeagueType === "school" ? { matchInputMode: "admin-only" as const } : {}),
+            // school 리그는 경기 입력을 교사(방장) 전용으로 고정. 성별은 개설 때 정한 대로(명시 저장 — 자동 판정 안 탐).
+            ...(newLeagueType === "school" ? { matchInputMode: "admin-only" as const, genderEnabled: newGenderEnabled } : {}),
           },
           owner_uid: userId,
           member_uids: [],
@@ -260,6 +261,7 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
       setNewLeagueType("club");
       setNewSchoolName("");
       setNewSport("");
+      setNewGenderEnabled(false);
       setCustomSport(false);
       setNewLevelMode("preset");
       setNewLeagueName("");
@@ -831,6 +833,27 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
                       );
                     })()}
                   </div>
+                  )}
+
+                  {/* 성별 사용 — school 전용. 명단 붙여넣기엔 성별 칸이 없어 기본 끔. 켜면 남/여 순위가 생기는 대신
+                      성별 없는 학생을 경기에 넣을 때 성별을 묻는다. */}
+                  {newLeagueType === "school" && (
+                  <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-border/40 bg-background/30 px-3 py-2.5 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                    <input
+                      type="checkbox"
+                      checked={newGenderEnabled}
+                      onChange={(e) => setNewGenderEnabled(e.target.checked)}
+                      className="mt-0.5 size-4 accent-neon-blue"
+                    />
+                    <span className="space-y-0.5">
+                      <span className="block text-xs font-bold text-foreground">성별 사용 <span className="font-normal text-muted-foreground">(남자·여자 순위를 따로 봅니다)</span></span>
+                      <span className="block text-[11px] leading-relaxed text-muted-foreground">
+                        {newGenderEnabled
+                          ? "명단에 성별이 없는 학생을 경기에 넣을 때 성별을 한 번 묻습니다. 개설 후 리그 설정에서 끌 수 있어요."
+                          : "끄면 성별을 묻지도, 표시하지도 않습니다. 개설 후 리그 설정에서 켤 수 있어요."}
+                      </span>
+                    </span>
+                  </label>
                   )}
 
                   <div className="space-y-1.5 animate-in fade-in slide-in-from-bottom-2 duration-200">

@@ -2,7 +2,9 @@
 --
 -- 명단 붙여넣기엔 성별 칸이 없어 학교 리그 새 학생의 37%가 '미지정'이고, 경기 입력에서
 -- 그 학생을 고르면 성별 팝업이 뜨며 안 고르면 선택이 취소됐다. 성별이 쓰이는 곳은 순위표
--- 남/여 필터뿐이라 리그 설정으로 끌 수 있게 한다. 값이 없으면 학교 리그는 끔, 동호회는 켬.
+-- 남/여 필터뿐이라 리그 설정으로 끌 수 있게 한다. 값이 없으면(자동) 동호회는 켬, 학교는 명단을
+-- 보고 정한다 — 절반 이상 성별이 있으면 켬(선생님이 일부러 넣은 리그는 전과 똑같이), 아니면 끔.
+-- 앱의 genderAutoEnabled(league-store.ts)와 같은 규칙.
 --
 -- leagues 는 RLS 로 멤버만 읽으므로 공개 순위표는 get_league_public 으로만 설정을 본다.
 -- 반환 열이 늘어나 drop 후 재생성한다 (열 추가만 — 옛 화면은 새 열을 무시한다).
@@ -28,7 +30,13 @@ language sql stable security definer set search_path = public, extensions as $$
     coalesce(nullif(btrim(l.settings->>'season'), ''), '시즌 1'),
     l.settings->'tierThresholds',
     l.settings->'placement',
-    coalesce((l.settings->>'genderEnabled')::boolean, l.league_type <> 'school')
+    coalesce(
+      (l.settings->>'genderEnabled')::boolean,
+      l.league_type <> 'school'
+        or (select count(*) > 0 and count(*) filter (where p.gender in ('M','F')) * 2 >= count(*)
+            from public.players p
+            where p.league_id = l.id and coalesce(p.is_deleted, false) = false)
+    )
   from public.leagues l
   where l.id = p_class_id and coalesce(l.is_deleted, false) = false;
 $$;
