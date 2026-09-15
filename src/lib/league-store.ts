@@ -344,6 +344,11 @@ function useLeagueStoreInternal() {
           setLevels(Array.isArray(s.levels) ? s.levels : []);
           setSport(typeof s.sport === "string" ? s.sport : "");
         }
+        setGenderEnabled(
+          typeof classData.settings?.genderEnabled === "boolean"
+            ? classData.settings.genderEnabled
+            : classData.league_type !== "school",
+        );
       }
 
       // 2. Fetch matches for this class — 현재 시즌 경기만 (과거 시즌은 changeViewSeason에서 별도 조회)
@@ -608,6 +613,8 @@ function useLeagueStoreInternal() {
   // 배치고사(언랭크): 신규 회원은 N경기 전까지 티어 비공개
   const [placementEnabled, setPlacementEnabled] = useState<boolean>(false);
   const [placementGames, setPlacementGames] = useState<number>(3);
+  // 성별 사용 여부. 값이 없으면 학교 리그는 끄고(명단 붙여넣기엔 성별 칸이 없어 팝업만 막힌다), 동호회는 켠다(혼복·여성부).
+  const [genderEnabled, setGenderEnabled] = useState<boolean>(true);
   // 레벨 체계 (구 구분조): preset=정의된 목록만 / free=자유 입력
   const [levelMode, setLevelMode] = useState<"preset" | "free">("free");
   const [levels, setLevels] = useState<{ name: string; description?: string }[]>([]);
@@ -2667,6 +2674,31 @@ function useLeagueStoreInternal() {
     }
   }, [currentClassId, isClassOwner, placementEnabled, placementGames]);
 
+  // 성별 사용 여부 저장 (소유자/공동방장)
+  const saveGenderEnabled = useCallback(async (enabled: boolean) => {
+    if (!isClassOwner) {
+      toast.error("권한이 없습니다. 방장만 이 작업을 수행할 수 있습니다.");
+      return;
+    }
+    const prev = genderEnabled;
+    setGenderEnabled(enabled);
+    if (currentClassId) {
+      try {
+        const { data: currentClass } = await apiFetchClassSettings(currentClassId);
+        const { error } = await apiUpdateClassSettings(currentClassId, {
+          ...(currentClass?.settings || {}),
+          genderEnabled: enabled,
+        });
+        if (error) throw error;
+        toast.success(enabled ? "성별을 사용합니다." : "성별을 사용하지 않습니다.");
+      } catch (err: any) {
+        console.error("Failed to save genderEnabled:", err.message);
+        toast.error("성별 설정 저장에 실패했습니다: " + err.message);
+        setGenderEnabled(prev);
+      }
+    }
+  }, [currentClassId, isClassOwner, genderEnabled]);
+
   // 레벨 체계 저장 (관리자: 소유자/공동관리자). 이름/설명 수정·추가·삭제 + 체계 모드 변경.
   //  migrations: 레벨 rename/삭제 시 그 레벨이던 회원의 group_label 일괄 이전/정리.
   //    { from, to } — to=null 이면 정리(빈값).
@@ -3716,6 +3748,8 @@ function useLeagueStoreInternal() {
     placementEnabled,
     placementGames,
     savePlacement,
+    genderEnabled,
+    saveGenderEnabled,
     levelMode,
     levels,
     setLevels,

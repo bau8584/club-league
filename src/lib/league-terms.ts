@@ -62,3 +62,9 @@ export function useIsSchoolLeague(): boolean {
   const { leagueType } = useLeagueStore();
   return leagueType === "school";
 }
+
+/** 성별 사용 여부 — 꺼진 리그는 성별 표시·필터·팝업을 모두 숨긴다. */
+export function useGenderEnabled(): boolean {
+  const { genderEnabled } = useLeagueStore();
+  return genderEnabled;
+}

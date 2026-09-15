@@ -61,7 +61,7 @@ export function MyRecord({
   decayAppliedDates = {},
   playerId
 }: MyRecordProps) {
-  const { placementEnabled, placementGames, myPlayerId } = useLeagueStore();
+  const { placementEnabled, placementGames, genderEnabled, myPlayerId } = useLeagueStore();
   const terms = useLeagueTerms();
 
   // 1. 현재 접속한 선수 정보 매칭 (동명이인 처리 포함)
@@ -233,7 +233,7 @@ export function MyRecord({
               <div className="space-y-0.5">
                 <span className="text-[10px] font-black uppercase tracking-wider text-neon-blue">{terms.member} 프로필</span>
                 <CardTitle className="text-2xl font-black tracking-tight text-foreground flex items-center gap-2">
-                  <GenderMark gender={me.gender} />
+                  {genderEnabled && <GenderMark gender={me.gender} />}
                   <span>{me.nickname || me.name}</span>
                 </CardTitle>
                 {/* 대표 호칭 선택 드롭다운 */}

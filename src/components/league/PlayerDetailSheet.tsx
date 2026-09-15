@@ -37,7 +37,7 @@ export function PlayerDetailSheet({
   students: Student[];
   thresholds?: Record<TierName, number>;
 }) {
-  const { matches, myPlayerId, getEquippedTitle, placementEnabled, placementGames } = useLeagueStore();
+  const { matches, myPlayerId, getEquippedTitle, placementEnabled, placementGames, genderEnabled } = useLeagueStore();
   const [showLog, setShowLog] = useState(false);
 
   // 시트를 다시 열 때마다 전적 펼침 상태 초기화
@@ -116,7 +116,7 @@ export function PlayerDetailSheet({
           {/* 헤더 */}
           <div className="flex items-center justify-between gap-3 pb-4">
             <div className="flex min-w-0 items-center gap-2">
-              <GenderMark gender={student.gender} />
+              {genderEnabled && <GenderMark gender={student.gender} />}
               {title && <TitleBadge title={title} />}
               <span className="truncate text-lg font-bold">{student.nickname || student.name}</span>
             </div>

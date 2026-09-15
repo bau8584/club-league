@@ -381,7 +381,7 @@ export function AdminSettings({
   const [localTitle, setLocalTitle] = useState(title || "");
 
   // 배치고사(언랭크) — store에서 직접 읽고 저장
-  const { placementEnabled, placementGames, savePlacement } = useLeagueStore();
+  const { placementEnabled, placementGames, savePlacement, genderEnabled, saveGenderEnabled } = useLeagueStore();
   const terms = useLeagueTerms();
   const isSchool = useIsSchoolLeague();
   const [localPlacementEnabled, setLocalPlacementEnabled] = useState(placementEnabled);
@@ -721,6 +721,23 @@ export function AdminSettings({
               <Save className="size-3.5 mr-1" /> 저장
             </Button>
           </div>
+        </div>
+      </Card>
+
+      {/* 1-C. 성별 사용 여부 — 끄면 성별 팝업·남/여 순위 필터·명단표 성별 칸이 사라진다.
+          학교 리그는 명단 붙여넣기에 성별 칸이 없어 기본 꺼짐. 이미 넣은 성별 값은 남아 있어 다시 켜면 바로 쓴다. */}
+      <Card className={cn(
+        "border p-6 backdrop-blur shadow-xl transition-colors",
+        genderEnabled ? "border-neon-blue/40 bg-neon-blue/[0.05]" : "border-border/60 bg-card/60"
+      )}>
+        <div className="flex items-center justify-between gap-2">
+          <div className="space-y-0.5">
+            <span className="text-xs font-bold text-neon-blue uppercase tracking-wider block">♂♀ 성별 사용</span>
+            <span className="text-[10px] text-muted-foreground leading-snug block">
+              켜면 순위표에 <b>남자/여자 순위</b> 필터가 생기고, 성별이 없는 {terms.member}을 경기에 넣을 때 성별을 묻습니다. 끄면 성별을 묻지 않고 표시도 하지 않습니다. (이미 넣은 성별은 지워지지 않아요)
+            </span>
+          </div>
+          <ToggleSwitch checked={genderEnabled} onChange={() => saveGenderEnabled(!genderEnabled)} />
         </div>
       </Card>
 
