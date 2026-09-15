@@ -87,6 +87,7 @@ export type AssignmentSession = {
   owner_id: string | null;           // 학교만 채운다
   player_ids: string[];              // 오늘 참석자(출석 체크 결과)
   match_type: "single" | "double";   // 세션의 종목
+  gender_mode?: "mixed" | "separate"; // 남녀 섞어서 | 따로. 없으면 mixed (옛 행)
   next_seq?: number;                 // 다음에 내줄 대진 번호
   started_at: string;
   updated_at?: string;

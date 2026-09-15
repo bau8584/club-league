@@ -40,7 +40,7 @@ import { cn } from "@/lib/utils";
 import { type Class } from "@/lib/league-types";
 import type { LeagueInsert } from "@/lib/database.types";
 import { LEAGUE_BUNDLES, buildBundleSettings, type BundleKey } from "@/lib/league-presets";
-import { SPORT_OPTIONS, getSportPreset } from "@/domain/sport-levels";
+import { SPORT_OPTIONS, getSportPreset, isTeamSport } from "@/domain/sport-levels";
 import { QRCodeSVG } from "qrcode.react";
 import { ThemePicker } from "@/components/ThemePicker";
 import { useTheme, isDarkTheme } from "@/lib/use-theme";
@@ -193,7 +193,7 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
   };
 
   const handleDeleteLeague = async (leagueId: string, leagueName: string) => {
-    if (!window.confirm(`정말로 [${leagueName}] 리그를 삭제하시겠습니까?\n삭제된 리그는 복구할 수 없습니다.`)) {
+    if (!window.confirm(`정말로 [${leagueName}] 리그를 삭제하시겠습니까?\n삭제된 리그는 복구할 수 없습니다.\n\n이름만 바꾸려는 거라면 지우지 않아도 돼요 — 연필 아이콘으로 바꿀 수 있어요.`)) {
       return;
     }
 
@@ -224,7 +224,7 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
 
     setCreating(true);
     try {
-      const { error: classErr } = await supabase
+      const { data: created, error: classErr } = await supabase
         .from("leagues")
         .insert({
           name: finalName,
@@ -232,7 +232,7 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
           settings: {
             season: finalSeason,
             schoolName: newSchoolName.trim(),
-            sport: newSport.trim(),
+            sport: newLeagueType === "school" ? "" : newSport.trim(),
             // 레벨 체계: preset(종목 프리셋 복사) vs free(자유 입력).
             // school 리그는 레벨 축을 쓰지 않으므로 항상 비워둔다.
             ...(() => {
@@ -253,9 +253,18 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
           owner_uid: userId,
           member_uids: [],
           admin_uids: []
-        } satisfies LeagueInsert);
+        } satisfies LeagueInsert)
+        .select("id")
+        .single();
 
       if (classErr) throw classErr;
+
+      // 개설하자마자 리그로 들어간다. 로비에 남겨 두면 "다음에 뭘 하지"가 끊긴다 —
+      // 리그 첫 화면의 "명단이 없어요 → 붙여넣기" 배너가 다음 걸음을 이어 준다.
+      if (created?.id) {
+        window.location.href = `${newLeagueType === "school" ? "/school" : "/class"}/${created.id}`;
+        return;
+      }
 
       setIsModalOpen(false);
       setNewLeagueType("club");
@@ -743,7 +752,9 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
                     </p>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                  {/* 종목은 동호회만 묻는다(급수 프리셋에 필요). 학교는 종목을 읽는 화면이 없는데 칸이 있으니
+                      의미 있는 줄 알고 종목 때문에 리그를 지웠다 다시 만드는 일이 생겼다. */}
+                  <div className={cn("grid gap-3 animate-in fade-in slide-in-from-bottom-2 duration-200", newLeagueType === "school" ? "grid-cols-1" : "grid-cols-2")}>
                     <div className="space-y-1.5">
                       <Label className="text-xs font-bold text-foreground">{newLeagueType === "school" ? "학교 이름" : "클럽 이름"}</Label>
                       <Input
@@ -754,6 +765,7 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
                         className="h-10 border-border/60 bg-background/40 focus:border-neon-blue transition-all"
                       />
                     </div>
+                    {newLeagueType !== "school" && (
                     <div className="space-y-1.5">
                       <Label className="text-xs font-bold text-foreground">종목</Label>
                       {customSport ? (
@@ -783,7 +795,11 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
                           <option value="__custom__">+ 직접 입력</option>
                         </select>
                       )}
+                      {isTeamSport(newSport) && (
+                        <p className="text-[11px] text-loss">이 앱은 1:1·2:2 경기만 기록해요. 팀 종목은 결과 입력이 맞지 않을 수 있어요.</p>
+                      )}
                     </div>
+                    )}
                   </div>
 
                   {/* 레벨 체계 선택 — club 전용 축. school은 학년/반/번호를 쓰므로 노출하지 않는다. */}

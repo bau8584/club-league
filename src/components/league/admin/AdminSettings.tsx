@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import type { TierName, TierSettings, DynamicBonuses, DynamicPenalties, MatchInputMode } from "@/lib/league-types";
 import { useLeagueStore, type ActiveBonuses } from "@/lib/league-store";
 import { useLeagueTerms, useIsSchoolLeague } from "@/lib/league-terms";
+import { SPORT_OPTIONS, isTeamSport } from "@/domain/sport-levels";
 import {
   THRESHOLD_PRESETS, WINLOSS_PRESETS, BONUS_PRESETS, PENALTY_PRESETS,
   detectThresholdPreset, detectWinlossPreset, detectBonusPreset, detectPenaltyPreset,
@@ -381,9 +382,19 @@ export function AdminSettings({
   const [localTitle, setLocalTitle] = useState(title || "");
 
   // 배치고사(언랭크) — store에서 직접 읽고 저장
-  const { placementEnabled, placementGames, savePlacement, genderEnabled, genderSetting, saveGenderEnabled } = useLeagueStore();
-  const terms = useLeagueTerms();
+  const { placementEnabled, placementGames, savePlacement, genderEnabled, genderSetting, saveGenderEnabled, sport, saveSport } = useLeagueStore();
   const isSchool = useIsSchoolLeague();
+  // 종목 — 개설 뒤 못 바꿔서 명단까지 넣은 리그를 지우고 다시 만든 사례가 있었다. 값만 바뀌고 경기·점수엔 영향 없음.
+  const [localSport, setLocalSport] = useState(sport);
+  useEffect(() => { setLocalSport(sport); }, [sport]);
+  const sportOptions = SPORT_OPTIONS;
+  const sportInList = !localSport || sportOptions.includes(localSport);
+  const [sportCustom, setSportCustom] = useState(false);
+  const sportDirty = localSport.trim() !== sport;
+  const handleSaveSport = async () => {
+    if (await saveSport(localSport)) toast.success("종목을 저장했습니다.");
+  };
+  const terms = useLeagueTerms();
   const [localPlacementEnabled, setLocalPlacementEnabled] = useState(placementEnabled);
   const [localPlacementGames, setLocalPlacementGames] = useState(String(placementGames));
   useEffect(() => { setLocalPlacementEnabled(placementEnabled); }, [placementEnabled]);
@@ -677,6 +688,54 @@ export function AdminSettings({
               <Save className="size-3.5 mr-1" /> 저장
             </Button>
           </div>
+
+          {/* 종목 — 동호회만(급수 프리셋의 기준). 학교는 종목을 쓰는 화면이 없어 묻지 않는다. */}
+          {!isSchool && (
+          <div className="space-y-1.5 border-t border-border/10 pt-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-muted-foreground">종목</span>
+              <UnsavedBadge show={sportDirty} />
+            </div>
+            <div className="flex items-center gap-2">
+              {sportCustom || !sportInList ? (
+                <Input
+                  type="text"
+                  value={localSport}
+                  onChange={(e) => setLocalSport(e.target.value)}
+                  placeholder="종목 직접 입력"
+                  className="h-10 flex-1 border-border/50 bg-input hover:bg-input focus:bg-background/80 transition-all font-sans text-xs text-foreground"
+                />
+              ) : (
+                <select
+                  value={localSport}
+                  onChange={(e) => {
+                    if (e.target.value === "__custom__") { setSportCustom(true); setLocalSport(""); }
+                    else setLocalSport(e.target.value);
+                  }}
+                  className="h-10 flex-1 rounded-md border border-border/50 bg-input px-2 font-sans text-xs text-foreground focus:border-neon-blue transition-all"
+                >
+                  <option value="">종목 선택</option>
+                  {sportOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+                  <option value="__custom__">+ 직접 입력</option>
+                </select>
+              )}
+              <Button
+                onClick={handleSaveSport}
+                disabled={!sportDirty}
+                className="bg-neon-blue hover:bg-neon-blue/80 text-primary-foreground font-black px-4 h-10 shrink-0 transition-all active:scale-95 rounded-xl shadow-md font-sans text-[11px] disabled:opacity-40"
+              >
+                <Save className="size-3.5 mr-1" /> 저장
+              </Button>
+            </div>
+            {(sportCustom || !sportInList) && (
+              <button type="button" onClick={() => { setSportCustom(false); setLocalSport(sportOptions.includes(sport) ? sport : ""); }}
+                className="text-[11px] font-bold text-neon-blue hover:underline">목록에서 선택</button>
+            )}
+            {isTeamSport(localSport) && (
+              <p className="text-[11px] text-loss">이 앱은 1:1·2:2 경기만 기록해요. 팀 종목은 결과 입력이 맞지 않을 수 있어요.</p>
+            )}
+          </div>
+          )}
         </div>
       </Card>
 

@@ -109,6 +109,12 @@ export interface AssignmentInput {
   weights?: Partial<AssignmentWeights>;
   /** 동점 처리를 결정론적으로 흔든다. 같은 seed면 같은 결과가 나온다. */
   seed?: number;
+  /**
+   * id → 그룹. 같은 그룹(또는 그룹 없음)끼리만 한 경기에 들어간다 — 남자부/여자부.
+   * 그룹이 없는 사람은 어느 그룹 경기에든 들어갈 수 있다(성별 미지정). 한 경기 안에
+   * 서로 다른 그룹이 섞이는 일은 없다. 생략하면 지금처럼 전부 섞는다.
+   */
+  groupOf?: Record<string, string>;
 }
 
 export interface AssignedMatch {
@@ -254,6 +260,12 @@ interface CostParts {
   homogeneity: number;
   /** 큐에 든 사람을 완화로 다시 쓴 대가. 어떤 프리셋에서도 항상 1순위다. */
   relax: number;
+  /**
+   * 그룹 없는 사람(성별 미지정)을 몇 명 썼는가. 그룹 제약이 있을 때만 0이 아니다.
+   * 미지정은 남녀 어느 쪽에나 붙을 수 있는 귀한 자리라, 같은 조건이면 덜 쓰는 조합을
+   * 골라야 나중에 다른 쪽이 인원이 안 모여 못 뽑는 일이 줄어든다.
+   */
+  ungrouped: number;
   /** 동점을 결정론적으로 가르는 미세값. */
   jitter: number;
 }
@@ -266,6 +278,7 @@ function costParts(
   w: AssignmentWeights,
   relaxed: Set<string>,
   jitter: Map<string, number>,
+  groupOf: Map<string, string>,
 ): CostParts {
   let diversity = 0;
   for (const team of [teamA, teamB]) {
@@ -301,13 +314,24 @@ function costParts(
   let play = 0;
   let relax = 0;
   let jit = 0;
+  let ungrouped = 0;
   for (const id of members) {
     play += w.playCount * (stats.playCount.get(id) ?? 0);
     if (relaxed.has(id)) relax += w.busyReuse;
     jit += (jitter.get(id) ?? 0) * 0.001;
+    if (groupOf.size > 0 && !groupOf.has(id)) ungrouped++;
   }
 
-  return { diversity, play, balance, gap, homogeneity: gap + spreadSum, relax, jitter: jit };
+  return {
+    diversity,
+    play,
+    balance,
+    gap,
+    homogeneity: gap + spreadSum,
+    relax,
+    ungrouped,
+    jitter: jit,
+  };
 }
 
 /** 사전식 비교용 키. 앞자리부터 순서대로 비교하고, 같으면 다음 자리로 넘어간다. */
@@ -325,6 +349,7 @@ function sortKey(
         parts.gap > balanceLimit ? 1 : 0,
         parts.diversity,
         parts.play,
+        parts.ungrouped,
         parts.balance,
         parts.jitter,
       ];
@@ -335,13 +360,22 @@ function sortKey(
         Math.round(parts.homogeneity / skillGranularity),
         parts.diversity,
         parts.play,
+        parts.ungrouped,
         parts.balance,
         parts.jitter,
       ];
     case "balanced":
     default:
       // 하나의 가중합. 세 항목이 서로를 밀고 당긴다.
-      return [parts.relax + parts.diversity + parts.play + parts.balance + parts.jitter];
+      // 미지정 아끼기는 지터보다만 큰 미세값 — 다른 항목이 같을 때만 갈리게.
+      return [
+        parts.relax +
+          parts.diversity +
+          parts.play +
+          parts.balance +
+          parts.ungrouped * 0.01 +
+          parts.jitter,
+      ];
   }
 }
 
@@ -437,52 +471,105 @@ export function calculateAssignment(input: AssignmentInput): AssignmentOutput {
   const jitter = new Map<string, number>();
   for (const id of roster.keys()) jitter.set(id, rng());
 
+  // 그룹 제약(남녀 따로). 명단에 없는 id는 무시한다.
+  const groupOf = new Map<string, string>();
+  for (const [id, g] of Object.entries(input.groupOf ?? {})) {
+    if (roster.has(id) && g) groupOf.set(id, g);
+  }
+  /** 앵커의 그룹과 같은 경기에 들어갈 수 있는가 — 같은 그룹이거나 어느 한쪽이 그룹 없음. */
+  const compatible = (anchorGroup: string | undefined, id: string) => {
+    const g = groupOf.get(id);
+    return anchorGroup === undefined || g === undefined || g === anchorGroup;
+  };
+  /** 한 경기 안에 서로 다른 그룹이 섞였는가(그룹 없음은 어느 쪽에나 붙는다). */
+  const mixesGroups = (members: string[]) => {
+    let seen: string | undefined;
+    for (const id of members) {
+      const g = groupOf.get(id);
+      if (g === undefined) continue;
+      if (seen === undefined) seen = g;
+      else if (seen !== g) return true;
+    }
+    return false;
+  };
+
   const matches: AssignedMatch[] = [];
   let shortfall = 0;
 
   for (let round = 0; round < Math.max(0, input.count); round++) {
-    const free = [...roster.keys()].filter((id) => !busy.has(id) && !justAssigned.has(id));
+    const free = [...roster.keys()]
+      .filter((id) => !busy.has(id) && !justAssigned.has(id))
+      .sort(playPriority);
 
-    // 후보가 모자랄 때: 하드 제외를 단계적으로 풀되 큰 감점(busyReuse)으로 뒤로 보낸다.
-    // "항상 뭔가는 뽑힌다"를 보장한다 — 단, 사람 자체가 모자라면 못 뽑는다.
-    let pool = free;
-    const relaxed = new Set<string>();
-    if (pool.length < needed) {
-      const extra = [...roster.keys()]
-        .filter((id) => busy.has(id) && !justAssigned.has(id))
-        .sort((a, b) => playPriority(a, b));
-      for (const id of extra) {
-        if (pool.length >= needed) break;
-        pool = [...pool, id];
-        relaxed.add(id);
-      }
-    }
-    if (pool.length < needed) {
-      shortfall = input.count - round;
-      break;
-    }
+    // 앵커(가장 덜 뛴 사람)부터 차례로 시도한다. 그룹이 없으면 첫 앵커에서 끝나지만,
+    // 남녀 따로일 때는 남자 쪽 인원이 모자라도 여자 쪽은 뽑을 수 있어야 한다 —
+    // 어떤 앵커로도 못 뽑아야 비로소 shortfall 이다.
+    // 완화(큐에 든 사람 재사용)는 어느 앵커도 깨끗하게 못 뽑았을 때만, 큰 감점과 함께.
+    let best: { teamA: string[]; teamB: string[]; cost: number; relaxed: Set<string> } | null =
+      null;
+    for (const allowRelax of [false, true]) {
+      // 완화 단계에서는 큐에 든 사람도 앵커가 될 수 있다(그 사람이 가장 덜 뛰었을 수 있다).
+      const anchors = allowRelax
+        ? [...roster.keys()].filter((id) => !justAssigned.has(id)).sort(playPriority)
+        : free;
+      for (const anchor of anchors) {
+        const anchorGroup = groupOf.get(anchor);
+        let pool = free.filter((id) => compatible(anchorGroup, id));
+        const relaxed = new Set<string>();
+        if (allowRelax && busy.has(anchor)) {
+          pool = [...pool, anchor];
+          relaxed.add(anchor);
+        }
+        // 후보가 모자랄 때: 하드 제외를 단계적으로 풀되 큰 감점(busyReuse)으로 뒤로 보낸다.
+        // "항상 뭔가는 뽑힌다"를 보장한다 — 단, 사람 자체가 모자라면 못 뽑는다.
+        if (pool.length < needed) {
+          if (!allowRelax) continue;
+          const extra = [...roster.keys()]
+            .filter(
+              (id) =>
+                busy.has(id) &&
+                !justAssigned.has(id) &&
+                !relaxed.has(id) &&
+                compatible(anchorGroup, id),
+            )
+            .sort(playPriority);
+          for (const id of extra) {
+            if (pool.length >= needed) break;
+            pool = [...pool, id];
+            relaxed.add(id);
+          }
+        }
+        if (pool.length < needed) continue;
 
-    const ordered = pool.slice().sort(playPriority);
-    const anchor = ordered[0];
-    const window = ordered.slice(1, CANDIDATE_WINDOW);
+        const ordered = pool.slice().sort(playPriority);
+        const window = ordered.filter((id) => id !== anchor).slice(0, CANDIDATE_WINDOW - 1);
 
-    // 조합과 팀 나누기를 함께 훑는다. 프리셋에 따라 "좋은 팀 나누기"의 기준까지
-    // 달라지므로 팀을 먼저 고정하고 조합을 고를 수 없다.
-    let best: { teamA: string[]; teamB: string[]; cost: number; key: number[] } | null = null;
-    for (const rest of combinations(window, needed - 1)) {
-      const group = [anchor, ...rest];
-      for (const [teamA, teamB] of splitsOf(group, teamSize)) {
-        const parts = costParts(teamA, teamB, stats, ratings, w, relaxed, jitter);
-        const key = sortKey(parts, preset, balanceLimit, skillGranularity);
-        if (!best || compareKeys(key, best.key) < 0) {
-          best = {
-            teamA,
-            teamB,
-            key,
-            cost: parts.relax + parts.diversity + parts.play + parts.balance,
-          };
+        // 조합과 팀 나누기를 함께 훑는다. 프리셋에 따라 "좋은 팀 나누기"의 기준까지
+        // 달라지므로 팀을 먼저 고정하고 조합을 고를 수 없다.
+        let found: { teamA: string[]; teamB: string[]; cost: number; key: number[] } | null =
+          null;
+        for (const rest of combinations(window, needed - 1)) {
+          const group = [anchor, ...rest];
+          if (groupOf.size > 0 && mixesGroups(group)) continue;
+          for (const [teamA, teamB] of splitsOf(group, teamSize)) {
+            const parts = costParts(teamA, teamB, stats, ratings, w, relaxed, jitter, groupOf);
+            const key = sortKey(parts, preset, balanceLimit, skillGranularity);
+            if (!found || compareKeys(key, found.key) < 0) {
+              found = {
+                teamA,
+                teamB,
+                key,
+                cost: parts.relax + parts.diversity + parts.play + parts.balance,
+              };
+            }
+          }
+        }
+        if (found) {
+          best = { teamA: found.teamA, teamB: found.teamB, cost: found.cost, relaxed };
+          break;
         }
       }
+      if (best) break;
     }
 
     if (!best) {
@@ -491,11 +578,12 @@ export function calculateAssignment(input: AssignmentInput): AssignmentOutput {
     }
 
     const chosen = [...best.teamA, ...best.teamB];
+    const relaxedIds = best.relaxed;
     matches.push({
       teamA: best.teamA,
       teamB: best.teamB,
       cost: best.cost,
-      relaxedPlayerIds: chosen.filter((id) => relaxed.has(id)),
+      relaxedPlayerIds: chosen.filter((id) => relaxedIds.has(id)),
     });
 
     // 방금 뽑은 대진을 즉시 사실로 취급한다. 큐를 계산에 넣는 것과 같은 이유다.

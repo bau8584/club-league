@@ -875,6 +875,7 @@ create table if not exists public.assignment_sessions (
   owner_id     uuid references auth.users(id) on delete cascade, -- 학교만 채운다
   player_ids   uuid[] not null default '{}',      -- 오늘 참석자(출석 체크 결과)
   match_type   text not null default 'double',    -- single | double (세션의 종목)
+  gender_mode  text not null default 'mixed',     -- mixed | separate (남녀 따로 뽑기)
   next_seq     int not null default 1,            -- 대진 고유번호 발급기(alloc_match_seq 가 원자적으로 발급)
   started_at   timestamptz not null default now(),
   updated_by   uuid default auth.uid(),

@@ -8,6 +8,7 @@ import { teamsOf, useQueueRows } from "@/lib/use-queue-rows";
 import { sortStudentsForRoster, type ScheduledMatch, type Student } from "@/lib/league-types";
 import { liveSession } from "@/lib/session-today";
 import type { AssignmentPreset } from "@/domain/assignment-calculator";
+import { countByGender, separateRoundBreakdown, separateRoundCount, type GenderCounts } from "@/domain/gender-split";
 
 const dn = (s?: Student | null) => (s ? s.nickname || s.name : "?");
 
@@ -57,6 +58,14 @@ function roundHint(free: number, perMatch: number): string {
     : `한 바퀴 = ${rounds}경기 · ${free - rest}명이 한 번씩, ${rest}명은 다음에.`;
 }
 
+/** 남녀 따로일 때의 안내 — 남 몇 경기·여 몇 경기, 미지정은 자리 남는 쪽에. */
+function separateRoundHint(free: GenderCounts, perMatch: number): string {
+  const { m, f } = separateRoundBreakdown(free, perMatch);
+  if (m + f === 0) return "남녀 따로 · 남자도 여자도 한 경기 인원이 안 돼요. +1경기는 이미 줄에 선 사람으로 잡아요.";
+  const u = free.u > 0 ? ` · 미지정 ${free.u}명은 자리 남는 쪽에` : "";
+  return `남녀 따로 · 남 ${m}경기 · 여 ${f}경기${u}`;
+}
+
 const ROUND_HELP =
   "놀고 있는 사람 전원이 한 번씩 들어가는 만큼 뽑아요. 복식은 4명, 단식은 2명이 한 경기예요. 4명(2명)으로 안 나눠떨어지면 남는 사람은 다음 바퀴에 먼저 들어가요.";
 
@@ -87,6 +96,7 @@ export function MatchQueue({
     myPlayerId,
     leagueType,
     levels,
+    genderEnabled,
     assignmentSession: rawSession,
     fillAssignmentQueue,
     removeScheduledMatch,
@@ -133,29 +143,38 @@ export function MatchQueue({
 
   const { queue } = useQueueRows();
 
-  // 지금 놀고 있는 사람 수. 기본 경기 수(한 바퀴)와 안내 문구의 바탕이다.
+  // 지금 놀고 있는 사람. 기본 경기 수(한 바퀴)와 안내 문구의 바탕이다.
   const perMatch = assignmentSession?.match_type === "single" ? 2 : 4;
-  const free = useMemo(() => {
+  const freeIds = useMemo(() => {
     const busy = new Set<string>();
     for (const r of queue) {
       const { teamA, teamB, pool } = teamsOf(r);
       for (const id of [...teamA, ...teamB, ...pool]) busy.add(id);
     }
-    return (assignmentSession?.player_ids ?? []).filter((id) => !busy.has(id)).length;
+    return (assignmentSession?.player_ids ?? []).filter((id) => !busy.has(id));
   }, [queue, assignmentSession?.player_ids]);
+  const free = freeIds.length;
+  // 남녀 따로 — 세션 설정이 "따로"이고 이 리그가 성별을 쓸 때만(스토어와 같은 조건).
+  const separate = assignmentSession?.gender_mode === "separate" && genderEnabled;
+  const freeByGender = useMemo(
+    () => countByGender(freeIds, (id) => byId.get(id)?.gender),
+    [freeIds, byId],
+  );
   /**
    * 한 바퀴 = 놀고 있는 사람 전원이 한 번씩, 남는 사람은 다음에. 25명 복식이면 6경기(1명 남음),
    * 단식이면 12경기. "모두 한 번 이상"(7경기, 3명은 두 번)이 아니다 — 바퀴라는 말이
    * "한 사람 한 번"이고, 두 번 들어갈 사람을 고르는 규칙이 따로 필요해진다.
+   * 남녀 따로면 남 바퀴 + 여 바퀴. 실제 경기 수는 스토어가 같은 계산으로 다시 센다.
    */
-  const roundCount = Math.floor(free / perMatch);
+  const roundCount = separate ? separateRoundCount(freeByGender, perMatch) : Math.floor(free / perMatch);
   // [한 바퀴] 옆 물음표를 누르면 뜨는 말풍선.
   const [helpOpen, setHelpOpen] = useState(false);
 
-  const fill = async (n: number) => {
+  const fill = async (n: number | "round") => {
     setFilling(true);
-    // 종목은 세션 설정이다. 여기서는 경기 수만 정한다.
-    await fillAssignmentQueue({ count: n, policy: preset });
+    // 종목·남녀는 세션 설정이다. 여기서는 경기 수만 정한다 — 한 바퀴는 스토어가 센다
+    // (남녀 따로일 때 남 바퀴 + 여 바퀴를 여기와 같은 규칙으로 세므로 어긋날 일이 없다).
+    await fillAssignmentQueue(n === "round" ? { mode: "round", policy: preset } : { count: n, policy: preset });
     setFilling(false);
   };
 
@@ -396,7 +415,7 @@ export function MatchQueue({
             >
               <button
                 type="button"
-                onClick={() => fill(roundCount)}
+                onClick={() => fill("round")}
                 disabled={filling || roundCount === 0}
                 className="min-w-0 flex-1 whitespace-nowrap px-2 text-xs font-black transition-colors hover:bg-black/5 disabled:cursor-not-allowed"
               >
@@ -473,7 +492,9 @@ export function MatchQueue({
                 {ROUND_HELP}
               </button>
             ) : (
-              <span className="min-w-0 flex-1">{roundHint(free, perMatch)}</span>
+              <span className="min-w-0 flex-1">
+                {separate ? separateRoundHint(freeByGender, perMatch) : roundHint(free, perMatch)}
+              </span>
             )}
           </div>
 

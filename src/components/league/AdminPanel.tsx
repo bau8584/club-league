@@ -1,4 +1,4 @@
-import { useMemo, useState, useRef } from "react";
+import { useMemo, useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -114,8 +114,11 @@ export function AdminPanel({
   title,
   activeBonuses,
   onSaveLeagueSettings,
+  jump,
 }: {
   isOwner?: boolean;
+  /** 바깥에서 특정 메뉴로 보내기. key 가 바뀔 때마다 따른다. paste 면 명단 붙여넣기 창까지 연다. */
+  jump?: { menu: "studentManage"; paste?: boolean; key: number } | null;
   students: Student[];
   matches: Match[];
   onUpsert: (rows: Row[]) => Promise<{ added: number; kept: number }>;
@@ -153,6 +156,8 @@ export function AdminPanel({
   const OWNER_ONLY_TABS = new Set(["settings", "decay", "dataManage", "seasonManage"]);
   const menuItems = buildAdminMenuItems(terms).filter((i) => isOwner || !OWNER_ONLY_TABS.has(i.id));
   const [activeTab, setActiveTab] = useState<string>(isOwner ? "settings" : "studentManage");
+  // 바깥(명단 0명 배너)에서 "학생 관리를 붙여넣기 창 열린 채로" 요청. key 가 바뀔 때마다 다시 따른다.
+  useEffect(() => { if (jump) setActiveTab(jump.menu); }, [jump?.key]);
 
   // JSON Rollback/Restore states
   const [restoreDialogOpen, setRestoreDialogOpen] = useState(false);
@@ -412,6 +417,7 @@ export function AdminPanel({
             onUpdateGender={onUpdateGender}
             onUpdateStudentInfo={onUpdateStudentInfo}
             thresholds={thresholds}
+            pasteOpenKey={jump?.paste ? jump.key : undefined}
           />
         )}
         {/* 레벨(급수) 체계는 club 전용 축 — school은 학년/반/번호를 쓰므로 숨긴다 */}

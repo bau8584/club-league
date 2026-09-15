@@ -247,3 +247,236 @@ describe("배정 프리셋", () => {
     }
   });
 });
+
+describe("그룹 제약(남녀 따로) — groupOf", () => {
+  /** 남 m명·여 f명·미지정 u명. 그룹은 M/F 만 넣고 U는 비워 둔다(= 어느 쪽이든 되는 사람). */
+  const gendered = (m: number, f: number, u = 0) => {
+    const participants: AssignmentPlayer[] = [];
+    const groupOf: Record<string, string> = {};
+    for (let i = 1; i <= m; i++) {
+      participants.push({ id: `m${i}` });
+      groupOf[`m${i}`] = "M";
+    }
+    for (let i = 1; i <= f; i++) {
+      participants.push({ id: `f${i}` });
+      groupOf[`f${i}`] = "F";
+    }
+    for (let i = 1; i <= u; i++) participants.push({ id: `u${i}` });
+    return { participants, groupOf };
+  };
+  const groupsIn = (m: { teamA: string[]; teamB: string[] }) =>
+    new Set(
+      flat(m)
+        .map((id) => id[0].toUpperCase())
+        .filter((c) => c !== "U"),
+    );
+
+  it("남 8·여 8 복식 4경기 — 어느 경기도 안 섞인다", () => {
+    const out = calculateAssignment({ ...gendered(8, 8), count: 4 });
+    expect(out.matches).toHaveLength(4);
+    expect(out.shortfall).toBe(0);
+    for (const m of out.matches) expect(groupsIn(m).size).toBe(1);
+    expect(new Set(out.matches.flatMap(flat)).size).toBe(16);
+  });
+
+  it("남 3·여 4·미지정 1 복식 — 미지정이 남자 쪽에 붙어 2경기", () => {
+    const out = calculateAssignment({ ...gendered(3, 4, 1), count: 2 });
+    expect(out.matches).toHaveLength(2);
+    expect(out.shortfall).toBe(0);
+    const withU = out.matches.find((m) => flat(m).includes("u1"))!;
+    expect(withU).toBeDefined();
+    expect(flat(withU).sort()).toEqual(["m1", "m2", "m3", "u1"]);
+    for (const m of out.matches) expect(groupsIn(m).size).toBe(1);
+  });
+
+  it("남 5·여 7 복식 count 3 — 2경기 + shortfall 1, 섞인 경기 없음", () => {
+    const out = calculateAssignment({ ...gendered(5, 7), count: 3 });
+    expect(out.matches).toHaveLength(2);
+    expect(out.shortfall).toBe(1);
+    for (const m of out.matches) expect(groupsIn(m).size).toBe(1);
+  });
+
+  it("남 2·여 6 단식 — 남 1경기, 여 3경기(앵커가 막히면 다음 앵커로 넘어간다)", () => {
+    const out = calculateAssignment({ ...gendered(2, 6), teamSize: 1, count: 4 });
+    expect(out.matches).toHaveLength(4);
+    expect(out.shortfall).toBe(0);
+    const byGroup = { M: 0, F: 0 };
+    for (const m of out.matches) {
+      const g = groupsIn(m);
+      expect(g.size).toBe(1);
+      byGroup[[...g][0] as "M" | "F"]++;
+    }
+    expect(byGroup).toEqual({ M: 1, F: 3 });
+  });
+
+  it("완화(큐에 든 사람 재사용)도 같은 그룹 안에서만 한다", () => {
+    // 남자는 3명이 놀고 1명이 큐에 있다. 여자는 충분하다.
+    const out = calculateAssignment({
+      ...gendered(4, 4),
+      busyPlayerIds: ["m4"],
+      count: 2,
+    });
+    expect(out.matches).toHaveLength(2);
+    const mMatch = out.matches.find((m) => groupsIn(m).has("M"))!;
+    expect(flat(mMatch).sort()).toEqual(["m1", "m2", "m3", "m4"]);
+    expect(mMatch.relaxedPlayerIds).toEqual(["m4"]);
+    const fMatch = out.matches.find((m) => groupsIn(m).has("F"))!;
+    expect(fMatch.relaxedPlayerIds).toEqual([]);
+  });
+
+  it("미지정은 아껴 쓴다 — 남 3·여 3·미지정 2 복식이면 1명씩 붙여 2경기", () => {
+    for (const policy of ["diversity", "balanced", "skill"] as const) {
+      for (const seed of [0, 1, 2, 3]) {
+        const out = calculateAssignment({ ...gendered(3, 3, 2), count: 2, policy, seed });
+        expect(out.matches).toHaveLength(2);
+        expect(out.shortfall).toBe(0);
+        for (const m of out.matches) {
+          expect(groupsIn(m).size).toBe(1);
+          expect(flat(m).filter((id) => id.startsWith("u"))).toHaveLength(1);
+        }
+      }
+    }
+  });
+
+  it("미지정이 많아도 한 바퀴를 채운다 — 남 8·여 7·미지정 9 복식 6경기", () => {
+    for (const seed of [0, 5, 9]) {
+      const out = calculateAssignment({ ...gendered(8, 7, 9), count: 6, seed });
+      expect(out.shortfall).toBe(0);
+      // 미지정끼리만 붙은 경기(그룹 0개)도 섞인 것은 아니다.
+      for (const m of out.matches) expect(groupsIn(m).size).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("groupOf 없이 돌리면 이전 계산기와 결과가 같다(스냅샷)", () => {
+    // groupOf 를 도입하기 직전 코드로 뽑아 둔 결과. 섞어서 모드는 한 글자도 달라지면 안 된다.
+    const rated = (n: number): AssignmentPlayer[] =>
+      Array.from({ length: n }, (_, i) => ({ id: `p${i + 1}`, rating: 1000 + ((i * 137) % 400) }));
+    const got: Record<string, unknown> = {};
+    for (const seed of [1, 7, 42]) {
+      for (const policy of ["diversity", "balanced", "skill"] as const) {
+        const r = calculateAssignment({
+          participants: rated(13),
+          busyPlayerIds: ["p2", "p9"],
+          history: [
+            { teamA: ["p1", "p3"], teamB: ["p4", "p5"] },
+            { teamA: ["p2", "p6"], teamB: ["p9", "p7"] },
+          ],
+          count: 4,
+          policy,
+          seed,
+        });
+        got[`${policy}-${seed}`] = r.matches.map((m) => [m.teamA, m.teamB, m.relaxedPlayerIds]);
+        got[`${policy}-${seed}-single`] = calculateAssignment({
+          participants: rated(9),
+          teamSize: 1,
+          count: 5,
+          policy,
+          seed,
+        }).matches.map((m) => [m.teamA, m.teamB, m.relaxedPlayerIds]);
+      }
+    }
+    expect(got).toEqual(SNAPSHOT_BEFORE_GROUPS);
+  });
+});
+
+const SNAPSHOT_BEFORE_GROUPS = {
+  "diversity-1": [
+    [["p12", "p10"], ["p8", "p11"], []],
+    [["p13", "p7"], ["p1", "p4"], []],
+    [["p5", "p6"], ["p2", "p3"], ["p2"]],
+  ],
+  "diversity-1-single": [
+    [["p1"], ["p4"], []],
+    [["p5"], ["p8"], []],
+    [["p2"], ["p7"], []],
+    [["p6"], ["p3"], []],
+  ],
+  "balanced-1": [
+    [["p12", "p10"], ["p8", "p11"], []],
+    [["p13", "p7"], ["p1", "p4"], []],
+    [["p5", "p6"], ["p2", "p3"], ["p2"]],
+  ],
+  "balanced-1-single": [
+    [["p1"], ["p4"], []],
+    [["p5"], ["p8"], []],
+    [["p2"], ["p7"], []],
+    [["p6"], ["p3"], []],
+  ],
+  "skill-1": [
+    [["p12", "p3"], ["p8", "p11"], []],
+    [["p13", "p4"], ["p10", "p7"], []],
+    [["p1", "p6"], ["p5", "p2"], ["p2"]],
+  ],
+  "skill-1-single": [
+    [["p1"], ["p4"], []],
+    [["p5"], ["p8"], []],
+    [["p2"], ["p7"], []],
+    [["p6"], ["p3"], []],
+  ],
+  "diversity-7": [
+    [["p11", "p10"], ["p13", "p8"], []],
+    [["p12", "p6"], ["p5", "p3"], []],
+    [["p1", "p9"], ["p7", "p4"], ["p9"]],
+  ],
+  "diversity-7-single": [
+    [["p1"], ["p4"], []],
+    [["p7"], ["p2"], []],
+    [["p5"], ["p8"], []],
+    [["p6"], ["p3"], []],
+  ],
+  "balanced-7": [
+    [["p11", "p10"], ["p13", "p8"], []],
+    [["p12", "p6"], ["p5", "p3"], []],
+    [["p1", "p9"], ["p7", "p4"], ["p9"]],
+  ],
+  "balanced-7-single": [
+    [["p1"], ["p4"], []],
+    [["p7"], ["p2"], []],
+    [["p5"], ["p8"], []],
+    [["p6"], ["p3"], []],
+  ],
+  "skill-7": [
+    [["p11", "p8"], ["p6", "p3"], []],
+    [["p10", "p7"], ["p13", "p4"], []],
+    [["p12", "p9"], ["p1", "p5"], ["p9"]],
+  ],
+  "skill-7-single": [
+    [["p1"], ["p4"], []],
+    [["p7"], ["p2"], []],
+    [["p5"], ["p8"], []],
+    [["p6"], ["p3"], []],
+  ],
+  "diversity-42": [
+    [["p10", "p11"], ["p13", "p8"], []],
+    [["p12", "p6"], ["p5", "p3"], []],
+    [["p4", "p7"], ["p1", "p9"], ["p9"]],
+  ],
+  "diversity-42-single": [
+    [["p4"], ["p1"], []],
+    [["p6"], ["p9"], []],
+    [["p5"], ["p2"], []],
+    [["p7"], ["p8"], []],
+  ],
+  "balanced-42": [
+    [["p10", "p11"], ["p13", "p8"], []],
+    [["p12", "p6"], ["p5", "p3"], []],
+    [["p4", "p7"], ["p1", "p9"], ["p9"]],
+  ],
+  "balanced-42-single": [
+    [["p4"], ["p1"], []],
+    [["p6"], ["p9"], []],
+    [["p5"], ["p2"], []],
+    [["p7"], ["p8"], []],
+  ],
+  "skill-42": [
+    [["p10", "p7"], ["p13", "p4"], []],
+    [["p12", "p3"], ["p8", "p11"], []],
+    [["p6", "p9"], ["p1", "p5"], ["p9"]],
+  ],
+  "skill-42-single": [
+    [["p4"], ["p1"], []],
+    [["p6"], ["p9"], []],
+    [["p5"], ["p2"], []],
+    [["p7"], ["p8"], []],
+  ],
+};

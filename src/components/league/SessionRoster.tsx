@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ClipboardCheck, X } from "lucide-react";
 import { useLeagueStore } from "@/lib/league-store";
+import { useGenderEnabled } from "@/lib/league-terms";
+import type { GenderMode } from "@/domain/gender-split";
 import { classKeyOf, classLabel, sortStudentsForRoster, type Student } from "@/lib/league-types";
 import { sessionClassKeys } from "@/domain/session-scope";
 
@@ -104,6 +106,8 @@ export function SessionRoster({
 }) {
   const { students, assignmentSession, startAssignmentSession, updateAssignmentSession } =
     useLeagueStore();
+  // 성별을 안 쓰는 리그엔 "남녀" 칩 자체가 없다 → 그 리그는 지금과 완전히 같다.
+  const genderEnabled = useGenderEnabled();
 
   const roster = useMemo(() => sortStudentsForRoster(students), [students]);
 
@@ -119,6 +123,8 @@ export function SessionRoster({
   // 결석은 반별로 기억한다. 반을 바꿔도 그 반의 표시가 남고, 다른 반에 영향을 주지 않는다.
   const [absent, setAbsent] = useState<Record<string, string[]>>({});
   const [draftType, setDraftType] = useState<"single" | "double">("double");
+  // 남녀 섞어서/따로 — 종목처럼 그날 수업의 설정이라 세션에 같이 저장된다.
+  const [draftGender, setDraftGender] = useState<GenderMode>("mixed");
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -145,6 +151,7 @@ export function SessionRoster({
         return out;
       });
       setDraftType(assignmentSession?.match_type === "single" ? "single" : "double");
+      setDraftGender(assignmentSession?.gender_mode === "separate" ? "separate" : "mixed");
     } else if (singleClass && classKeys.length === 1) {
       setSelected(classKeys);
     }
@@ -229,8 +236,8 @@ export function SessionRoster({
   const save = async () => {
     setSaving(true);
     const ok = classesChanged
-      ? await startAssignmentSession({ playerIds: picked, matchType: draftType })
-      : await updateAssignmentSession({ playerIds: picked, matchType: draftType });
+      ? await startAssignmentSession({ playerIds: picked, matchType: draftType, genderMode: draftGender })
+      : await updateAssignmentSession({ playerIds: picked, matchType: draftType, genderMode: draftGender });
     setSaving(false);
     // 저장이 곧 "정했다"는 뜻이다 → 접고 대기열에 자리를 내준다.
     if (ok) {
@@ -244,7 +251,8 @@ export function SessionRoster({
     (classesChanged ||
       picked.length !== present.length ||
       picked.some((id) => !present.includes(id)) ||
-      draftType !== (assignmentSession?.match_type ?? "double"));
+      draftType !== (assignmentSession?.match_type ?? "double") ||
+      (genderEnabled && draftGender !== (assignmentSession?.gender_mode ?? "mixed")));
 
   // 닫는 것은 곧 편집을 그만두는 것이다 → 저장 안 한 손질은 버리고 세션으로 되돌린다.
   useEffect(() => {
@@ -441,6 +449,25 @@ export function SessionRoster({
                   </Chip>
                 ))}
               </div>
+
+              {/* 남녀 따로 = 남자끼리·여자끼리만 한 경기(남자부/여자부). 미지정은 자리 남는 쪽에. */}
+              {genderEnabled && (
+                <div className="flex items-center gap-1.5">
+                  <span className="mr-1 text-xs font-bold text-muted-foreground">남녀</span>
+                  {(["mixed", "separate"] as const).map((g) => (
+                    <Chip
+                      key={g}
+                      on={draftGender === g}
+                      onClick={() => {
+                        setEditing(true);
+                        setDraftGender(g);
+                      }}
+                    >
+                      {g === "mixed" ? "섞어서" : "따로"}
+                    </Chip>
+                  ))}
+                </div>
+              )}
             </>
           )}
         </div>

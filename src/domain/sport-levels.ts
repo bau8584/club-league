@@ -95,3 +95,13 @@ export function getSportPreset(sport: string | null | undefined): SportPreset | 
   if (!sport) return undefined;
   return SPORT_PRESETS.find((p) => p.sport === sport.trim());
 }
+
+/**
+ * 팀 종목 — 이 앱은 1:1·2:2 경기만 기록한다. 개설 폼에서 골랐을 때 한 줄 알려 준다.
+ * 실제로 배구·풋살·발야구·피구를 고른 리그가 있었다.
+ */
+const TEAM_SPORT_WORDS = ["배구", "풋살", "축구", "발야구", "야구", "피구", "농구", "핸드볼", "가가볼"];
+export function isTeamSport(sport: string | null | undefined): boolean {
+  const s = (sport ?? "").trim();
+  return !!s && TEAM_SPORT_WORDS.some((w) => s.includes(w));
+}

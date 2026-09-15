@@ -1,14 +1,13 @@
 # 대기열 남녀 따로 뽑기 — 계획
 
-> 상태: **계획 확정, 미착수** (2026-09-15). 브랜치 `feat/queue-gender`는 **`fix/gender-optional`에서 딴다** — `genderEnabled`·`useGenderEnabled()`가 그 브랜치에만 있다. 합칠 때는 gender-optional 먼저, 그다음 이것.
-> 다른 세션이 같은 폴더에서 브랜치를 바꾸면 이쪽 작업 트리가 같이 바뀐다. 별도 작업 폴더로:
-> `git worktree add ../club-league-queue -b feat/queue-gender fix/gender-optional`
+> 상태: **구현 완료, work 브랜치에 커밋됨** (2026-09-15). DB 마이그레이션(`2026-09-15_session_gender_mode.sql`)은 적용됨. main 합치기는 미정. 구현하며 계획과 달라진 점: 바퀴 수는 미지정을 남녀 양쪽에 나눠 붙이는 모든 경우 중 최대로 세고(`gender-split.ts`), 계산기는 같은 조건이면 미지정을 덜 쓰는 조합을 고른다.
+> 다른 세션이 같은 폴더에서 작업하면 작업 트리를 공유한다 — 같은 `work` 브랜치에서 파일이 겹치지 않게만 주의(이 작업은 계산기·SessionRoster·MatchQueue·league-api 위주).
 > 지키는 원칙은 [PLAN-post-launch.md](PLAN-post-launch.md) 0번 — 설정 없으면 지금 방식, DB는 추가만, 기존 테스트 전부 통과.
 
 ## 세션에 줄 프롬프트
 
 ```
-docs/PLAN-queue-gender.md 읽고 feat/queue-gender 브랜치(fix/gender-optional에서 딴 worktree)로 구현해.
+docs/PLAN-queue-gender.md 읽고 work 브랜치에서 구현해.
 순서: 계산기(+테스트) → DB 열 → 스토어 → 출석 창 UI → 대기열 안내 줄.
 계산기 기존 테스트는 한 글자도 안 바뀌고 전부 통과해야 한다. main에 합치지 말고 커밋만.
 ```
@@ -56,7 +55,7 @@ alter table public.assignment_sessions
 [club_schema.sql](../db/schema/club_schema.sql)의 테이블 정의도 같이. 열 추가만이라 옛 화면은 모른 채 지금처럼 뽑는다.
 
 ### 3. 타입·API·스토어
-- [league-types.ts:89](../src/lib/league-types.ts#L89) `AssignmentSession`에 `gender_mode?: "mixed" | "separate"`.
+- [league-types.ts](../src/lib/league-types.ts) `AssignmentSession` `AssignmentSession`에 `gender_mode?: "mixed" | "separate"`.
 - [league-api.ts:153](../src/services/league-api.ts#L153) `apiUpsertAssignmentSession` payload에 `genderMode?`, fields에 `...(payload.genderMode ? { gender_mode } : {})` — 안 주면 안 건드림(옛 값 유지).
 - [league-store.ts](../src/lib/league-store.ts) `startAssignmentSession` / `updateAssignmentSession`에 `genderMode` 통과.
 - `fillAssignmentQueue`(≈3177행): `assignmentSession.gender_mode === "separate" && genderEnabled`이면
