@@ -12,6 +12,7 @@ import {
   type TeamSize,
 } from "@/domain/assignment-calculator";
 import { carriedPlayDebt } from "@/domain/play-debt";
+import { countByGender, genderGroupOf, separateRoundCount, type GenderMode } from "@/domain/gender-split";
 import { skillRating } from "@/domain/skill-rating";
 import { getTodayPlayerIds } from "./today-players";
 import {
@@ -3121,6 +3122,7 @@ function useLeagueStoreInternal() {
   const startAssignmentSession = useCallback(async (payload: {
     playerIds: string[];
     matchType?: "single" | "double";
+    genderMode?: GenderMode;
   }): Promise<boolean> => {
     if (!isClassManagerRef.current) { toast.error("권한이 없습니다."); return false; }
     const cid = currentClassIdRef.current;
@@ -3130,6 +3132,7 @@ function useLeagueStoreInternal() {
       ownerId: sessionOwnerId(),
       playerIds: payload.playerIds,
       matchType: payload.matchType ?? "double",
+      genderMode: payload.genderMode,
       startedAt: new Date().toISOString(),
       // 같은 행을 계속 쓰므로 번호는 저절로 1번으로 돌아가지 않는다. 여기서 되돌린다.
       resetSeq: true,
@@ -3158,6 +3161,7 @@ function useLeagueStoreInternal() {
   const updateAssignmentSession = useCallback(async (payload: {
     playerIds?: string[];
     matchType?: "single" | "double";
+    genderMode?: GenderMode;
   }): Promise<boolean> => {
     if (!isClassManagerRef.current) { toast.error("권한이 없습니다."); return false; }
     const cid = currentClassIdRef.current;
@@ -3168,6 +3172,7 @@ function useLeagueStoreInternal() {
       ownerId: sessionOwnerId(),
       playerIds: payload.playerIds ?? base?.player_ids ?? [],
       matchType: payload.matchType ?? base?.match_type ?? "double",
+      genderMode: payload.genderMode,
     });
     if (error) { toast.error("명단 저장 실패: " + error.message); return false; }
     setAssignmentSession((data as AssignmentSession) ?? null);
@@ -3254,13 +3259,20 @@ function useLeagueStoreInternal() {
       return 0;
     }
 
+    // 남녀 따로: 세션 설정이 "따로"이고 이 리그가 성별을 쓸 때만. 성별을 안 쓰는 리그는
+    // 설정값이 무엇이든 지금처럼 섞어서 뽑는다(그 리그 화면엔 칩 자체가 없다).
+    const separate = assignmentSessionRef.current?.gender_mode === "separate" && genderEnabled;
+    const studentById = new Map(students.map((s) => [s.id, s]));
+    const genderOf = (id: string) => studentById.get(id)?.gender;
+
     // 한 바퀴 = 지금 놀고 있는 사람 수 ÷ 경기당 인원. 코트 수가 아니라 인원으로 잡는다 —
     // "전원이 한 판씩"이 목표이고, 코트 수는 우연히 비슷한 숫자가 나올 뿐 목적과 무관하다.
-    const freeCount = participantIds.filter((id) => !queuedIds.has(id)).length;
-    const count = Math.max(
-      1,
-      opts?.count ?? (opts?.mode === "one" ? 1 : Math.floor(freeCount / (teamSize * 2))),
-    );
+    // 따로 모드면 남 바퀴 + 여 바퀴(gender-split.ts).
+    const freeIds = participantIds.filter((id) => !queuedIds.has(id));
+    const roundCount = separate
+      ? separateRoundCount(countByGender(freeIds, genderOf), teamSize * 2)
+      : Math.floor(freeIds.length / (teamSize * 2));
+    const count = Math.max(1, opts?.count ?? (opts?.mode === "one" ? 1 : roundCount));
 
     const queueHistory = queue.map(teamsOfScheduled).filter(Boolean) as AssignmentHistoryMatch[];
     // 팀 미정 예약: 판 수만 센다(만남은 아직 모른다).
@@ -3309,6 +3321,8 @@ function useLeagueStoreInternal() {
       teamSize,
       policy: preset,
       seed: opts?.seed,
+      // 섞어서 모드(또는 성별 꺼짐)는 groupOf 자체를 안 넘긴다 — 계산기 경로가 전과 같다.
+      ...(separate ? { groupOf: genderGroupOf(participantIds, genderOf) } : {}),
     });
 
     if (out.matches.length === 0) {
@@ -3346,7 +3360,7 @@ function useLeagueStoreInternal() {
       ? `${out.matches.length}경기를 배정했어요. (인원이 모자라 ${out.shortfall}경기는 못 뽑았어요)`
       : `${out.matches.length}경기를 배정했어요.`);
     return out.matches.length;
-  }, [levels, loadScheduled, matches, scheduledMatches, students]);
+  }, [genderEnabled, levels, loadScheduled, matches, scheduledMatches, students]);
 
   // 예약할 수 있는 권한: 관리자 또는 (자율 입력 모드에서) 연동된 회원
   const canReserve = () => isClassManagerRef.current || (matchInputModeRef.current !== "admin-only" && !!myPlayerId);
