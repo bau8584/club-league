@@ -34,13 +34,15 @@ export interface AdminStudentManageProps {
   onUpdateGender?: (studentId: string, gender: Gender) => void;
   onUpdateStudentInfo?: (...args: any[]) => any;
   thresholds?: Record<TierName, number>;
+  /** 값이 바뀌면 명단 붙여넣기 창을 연다(명단 0명 배너에서 들어온 경우). */
+  pasteOpenKey?: number;
 }
 
 type RowDraft = { name: string; nickname: string; group: string; gender: Gender; rp: number; birthYearInput: string; gradeInput: string; classInput: string; noInput: string };
 
 type DeletedStudent = { id: string; name: string; nickname: string; group: string | null; rp: number };
 
-export function AdminStudentManage({ students, onDeleteStudent, onDeleteStudents, thresholds }: AdminStudentManageProps) {
+export function AdminStudentManage({ students, onDeleteStudent, onDeleteStudents, thresholds, pasteOpenKey }: AdminStudentManageProps) {
   const terms = useLeagueTerms();
   const isSchool = useIsSchoolLeague();
   const genderEnabled = useGenderEnabled();
@@ -111,7 +113,8 @@ export function AdminStudentManage({ students, onDeleteStudent, onDeleteStudents
   const [confirm, setConfirm] = useState<null | { type: "delete"; ids: string[]; label: string }>(null);
 
   // 명단 붙여넣기
-  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteOpen, setPasteOpen] = useState(!!pasteOpenKey);
+  useEffect(() => { if (pasteOpenKey) setPasteOpen(true); }, [pasteOpenKey]);
   const [pasteText, setPasteText] = useState("");
   const [importing, setImporting] = useState(false);
   const pasteParsed = useMemo(() => parseRosterDetailed(pasteText, isSchool), [pasteText, isSchool]);

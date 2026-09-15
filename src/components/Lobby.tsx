@@ -224,7 +224,7 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
 
     setCreating(true);
     try {
-      const { error: classErr } = await supabase
+      const { data: created, error: classErr } = await supabase
         .from("leagues")
         .insert({
           name: finalName,
@@ -253,9 +253,18 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
           owner_uid: userId,
           member_uids: [],
           admin_uids: []
-        } satisfies LeagueInsert);
+        } satisfies LeagueInsert)
+        .select("id")
+        .single();
 
       if (classErr) throw classErr;
+
+      // 개설하자마자 리그로 들어간다. 로비에 남겨 두면 "다음에 뭘 하지"가 끊긴다 —
+      // 리그 첫 화면의 "명단이 없어요 → 붙여넣기" 배너가 다음 걸음을 이어 준다.
+      if (created?.id) {
+        window.location.href = `${newLeagueType === "school" ? "/school" : "/class"}/${created.id}`;
+        return;
+      }
 
       setIsModalOpen(false);
       setNewLeagueType("club");

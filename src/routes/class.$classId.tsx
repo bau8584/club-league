@@ -96,6 +96,8 @@ export function LeagueApp({ classId }: { classId: string }) {
   }, [classId, loadClassData]);
 
   const [tab, setTab] = useState<Tab>("leaderboard");
+  // 명단 0명 배너의 [명단 붙여넣기] → 관리자 탭의 학생 관리를 붙여넣기 창이 열린 채로 연다.
+  const [adminJump, setAdminJump] = useState<{ menu: "studentManage"; paste: true; key: number } | null>(null);
   // 일반회원(가입했지만 관리자 아님)인데 아직 내 선수 미연동 → 프로필 설정 온보딩.
   // school은 학생 로그인이 없어 '내 선수' 개념이 없다. 초대받은 동료 교사가
   // "학생 명단에서 본인을 고르세요" 화면에 갇히지 않도록 면제한다.
@@ -520,6 +522,24 @@ export function LeagueApp({ classId }: { classId: string }) {
         {/* 관리자 QR 초대 다이얼로그 */}
         <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} classId={classId} leagueName={title} defaultMode={shareMode} allowRanking={isSchool} allowInvite={!isSchool} ownerId={isSchool ? myUid : null} />
 
+        {/* 명단이 비어 있으면 첫 화면에서 바로 붙여넣기로. 개설 → 관리자 탭 → 학생 관리 → 붙여넣기까지
+            세 번 찾아 들어가야 해서 개설 후 명단을 안 넣은 리그가 절반 가까이였다(2026-09-15). */}
+        {isClassManager && session.role !== "STUDENT" && students.length === 0 && currentViewSeason === "현재 시즌" && tab !== "admin" && (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-neon-blue/40 bg-neon-blue/10 px-4 py-3">
+            <div className="min-w-0">
+              <p className="text-sm font-black text-foreground">아직 {terms.roster}이 없어요</p>
+              <p className="text-xs text-muted-foreground">{isSchool ? "나이스 학급명렬표나 출석부를 복사해서 그대로 붙여넣으면 바로 시작할 수 있어요." : "명단을 붙여넣거나 회원을 초대하면 시작할 수 있어요."}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => { setAdminJump({ menu: "studentManage", paste: true, key: Date.now() }); setTab("admin"); }}
+              className="shrink-0 rounded-xl bg-neon-blue px-4 py-2 text-xs font-black text-primary-foreground shadow-md transition-all active:scale-95"
+            >
+              {terms.roster} 붙여넣기 →
+            </button>
+          </div>
+        )}
+
         {/* Tenant Panels */}
         {tab === "seasonSummary" && currentViewSeason !== "현재 시즌" && (
           <SeasonSummary
@@ -580,6 +600,7 @@ export function LeagueApp({ classId }: { classId: string }) {
             title={title}
             activeBonuses={activeBonuses}
             onSaveLeagueSettings={saveLeagueSettings}
+            jump={adminJump}
           />
         )}
         </>)}
