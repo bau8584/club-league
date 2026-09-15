@@ -1298,7 +1298,9 @@ function useLeagueStoreInternal() {
                 grade: r.grade ?? null,
                 class_num: r.classNum ?? null,
                 student_no: r.studentNo ?? null,
-                gender: r.gender || 'U'
+                // 성별이 안 넘어온 줄은 DB 값을 건드리지 않는다 — 명단을 다시 붙여넣을 때마다
+                // 미지정으로 되돌아가던 문제. 화면 상태(next)는 이미 기존 성별을 유지한다.
+                ...(r.gender ? { gender: r.gender } : {}),
               });
             } else {
               const { data: insertedData, error: insertErr } = await apiInsertStudent(currentClassId, {
