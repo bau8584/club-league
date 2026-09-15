@@ -40,7 +40,7 @@ import { cn } from "@/lib/utils";
 import { type Class } from "@/lib/league-types";
 import type { LeagueInsert } from "@/lib/database.types";
 import { LEAGUE_BUNDLES, buildBundleSettings, type BundleKey } from "@/lib/league-presets";
-import { SPORT_OPTIONS, SCHOOL_SPORT_OPTIONS, getSportPreset, isTeamSport } from "@/domain/sport-levels";
+import { SPORT_OPTIONS, getSportPreset, isTeamSport } from "@/domain/sport-levels";
 import { QRCodeSVG } from "qrcode.react";
 import { ThemePicker } from "@/components/ThemePicker";
 import { useTheme, isDarkTheme } from "@/lib/use-theme";
@@ -193,7 +193,7 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
   };
 
   const handleDeleteLeague = async (leagueId: string, leagueName: string) => {
-    if (!window.confirm(`정말로 [${leagueName}] 리그를 삭제하시겠습니까?\n삭제된 리그는 복구할 수 없습니다.\n\n이름·종목만 바꾸려는 거라면 지우지 않아도 돼요 — 관리자 → 리그 설정에서 바꿀 수 있어요.`)) {
+    if (!window.confirm(`정말로 [${leagueName}] 리그를 삭제하시겠습니까?\n삭제된 리그는 복구할 수 없습니다.\n\n이름만 바꾸려는 거라면 지우지 않아도 돼요 — 연필 아이콘으로 바꿀 수 있어요.`)) {
       return;
     }
 
@@ -232,7 +232,7 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
           settings: {
             season: finalSeason,
             schoolName: newSchoolName.trim(),
-            sport: newSport.trim(),
+            sport: newLeagueType === "school" ? "" : newSport.trim(),
             // 레벨 체계: preset(종목 프리셋 복사) vs free(자유 입력).
             // school 리그는 레벨 축을 쓰지 않으므로 항상 비워둔다.
             ...(() => {
@@ -752,7 +752,9 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
                     </p>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                  {/* 종목은 동호회만 묻는다(급수 프리셋에 필요). 학교는 종목을 읽는 화면이 없는데 칸이 있으니
+                      의미 있는 줄 알고 종목 때문에 리그를 지웠다 다시 만드는 일이 생겼다. */}
+                  <div className={cn("grid gap-3 animate-in fade-in slide-in-from-bottom-2 duration-200", newLeagueType === "school" ? "grid-cols-1" : "grid-cols-2")}>
                     <div className="space-y-1.5">
                       <Label className="text-xs font-bold text-foreground">{newLeagueType === "school" ? "학교 이름" : "클럽 이름"}</Label>
                       <Input
@@ -763,6 +765,7 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
                         className="h-10 border-border/60 bg-background/40 focus:border-neon-blue transition-all"
                       />
                     </div>
+                    {newLeagueType !== "school" && (
                     <div className="space-y-1.5">
                       <Label className="text-xs font-bold text-foreground">종목</Label>
                       {customSport ? (
@@ -770,7 +773,7 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
                           autoFocus
                           value={newSport}
                           onChange={(e) => setNewSport(e.target.value)}
-                          placeholder={newLeagueType === "school" ? "예: 공기놀이, 알까기, 오목, 팔씨름…" : "종목 직접 입력"}
+                          placeholder="종목 직접 입력"
                           className="h-10 border-border/60 bg-background/40 focus:border-neon-blue transition-all"
                         />
                       ) : (
@@ -788,8 +791,7 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
                           className="h-10 w-full rounded-md border border-border/60 bg-background/40 px-2 text-sm focus:border-neon-blue transition-all"
                         >
                           <option value="">종목 선택</option>
-                          {/* 학교는 급수 프리셋과 무관하게 실제 많이 쓰는 종목부터. 개설 뒤 관리자 → 리그 설정에서 바꿀 수 있다. */}
-                          {(newLeagueType === "school" ? SCHOOL_SPORT_OPTIONS : SPORT_OPTIONS).map((s) => <option key={s} value={s}>{s}</option>)}
+                          {SPORT_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
                           <option value="__custom__">+ 직접 입력</option>
                         </select>
                       )}
@@ -797,6 +799,7 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
                         <p className="text-[11px] text-loss">이 앱은 1:1·2:2 경기만 기록해요. 팀 종목은 결과 입력이 맞지 않을 수 있어요.</p>
                       )}
                     </div>
+                    )}
                   </div>
 
                   {/* 레벨 체계 선택 — club 전용 축. school은 학년/반/번호를 쓰므로 노출하지 않는다. */}

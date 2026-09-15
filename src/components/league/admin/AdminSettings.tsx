@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import type { TierName, TierSettings, DynamicBonuses, DynamicPenalties, MatchInputMode } from "@/lib/league-types";
 import { useLeagueStore, type ActiveBonuses } from "@/lib/league-store";
 import { useLeagueTerms, useIsSchoolLeague } from "@/lib/league-terms";
-import { SPORT_OPTIONS, SCHOOL_SPORT_OPTIONS, isTeamSport } from "@/domain/sport-levels";
+import { SPORT_OPTIONS, isTeamSport } from "@/domain/sport-levels";
 import {
   THRESHOLD_PRESETS, WINLOSS_PRESETS, BONUS_PRESETS, PENALTY_PRESETS,
   detectThresholdPreset, detectWinlossPreset, detectBonusPreset, detectPenaltyPreset,
@@ -387,7 +387,7 @@ export function AdminSettings({
   // 종목 — 개설 뒤 못 바꿔서 명단까지 넣은 리그를 지우고 다시 만든 사례가 있었다. 값만 바뀌고 경기·점수엔 영향 없음.
   const [localSport, setLocalSport] = useState(sport);
   useEffect(() => { setLocalSport(sport); }, [sport]);
-  const sportOptions = isSchool ? SCHOOL_SPORT_OPTIONS : SPORT_OPTIONS;
+  const sportOptions = SPORT_OPTIONS;
   const sportInList = !localSport || sportOptions.includes(localSport);
   const [sportCustom, setSportCustom] = useState(false);
   const sportDirty = localSport.trim() !== sport;
@@ -689,7 +689,8 @@ export function AdminSettings({
             </Button>
           </div>
 
-          {/* 종목 — 이름 바로 아래. 목록에 없으면 직접 입력. */}
+          {/* 종목 — 동호회만(급수 프리셋의 기준). 학교는 종목을 쓰는 화면이 없어 묻지 않는다. */}
+          {!isSchool && (
           <div className="space-y-1.5 border-t border-border/10 pt-3">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-bold text-muted-foreground">종목</span>
@@ -701,7 +702,7 @@ export function AdminSettings({
                   type="text"
                   value={localSport}
                   onChange={(e) => setLocalSport(e.target.value)}
-                  placeholder={isSchool ? "예: 공기놀이, 알까기, 오목, 팔씨름…" : "종목 직접 입력"}
+                  placeholder="종목 직접 입력"
                   className="h-10 flex-1 border-border/50 bg-input hover:bg-input focus:bg-background/80 transition-all font-sans text-xs text-foreground"
                 />
               ) : (
@@ -734,6 +735,7 @@ export function AdminSettings({
               <p className="text-[11px] text-loss">이 앱은 1:1·2:2 경기만 기록해요. 팀 종목은 결과 입력이 맞지 않을 수 있어요.</p>
             )}
           </div>
+          )}
         </div>
       </Card>
 
