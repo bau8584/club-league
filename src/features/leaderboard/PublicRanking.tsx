@@ -40,6 +40,8 @@ type PublicLeague = {
   season: string;
   tier_thresholds: Record<TierName, number> | null;
   placement: { enabled?: boolean; games?: number } | null;
+  /** 성별 사용 여부. 마이그레이션 전 서버는 이 열이 없다 → 리그 유형으로 정한다. */
+  gender_enabled?: boolean | null;
 };
 
 /**
@@ -117,6 +119,7 @@ export function PublicRanking({ classId }: { classId: string }) {
   const isSchool = league?.league_type === "school";
   const placementEnabled = !!league?.placement?.enabled;
   const placementGames = league?.placement?.games ?? 3;
+  const genderEnabled = league?.gender_enabled ?? !isSchool;
 
   // 명단 구성에 따라 학년/반 축을 숨긴다 (학급 리그면 번호만 의미 있음).
   const axes = useMemo(
@@ -148,7 +151,7 @@ export function PublicRanking({ classId }: { classId: string }) {
     (showGrade && grade.length > 0 ? 1 : 0) +
     (showClass && classNum.length > 0 ? 1 : 0) +
     (tier.length > 0 ? 1 : 0) +
-    (gender !== "all" ? 1 : 0);
+    (genderEnabled && gender !== "all" ? 1 : 0);
   const resetFilters = () => { setGroup([]); setGrade([]); setClassNum([]); setTier([]); setGender("all"); };
   const toggle = <T,>(set: (fn: (p: T[]) => T[]) => void) => (v: T) =>
     set((p) => (p.includes(v) ? p.filter((x) => x !== v) : [...p, v]));
@@ -167,7 +170,7 @@ export function PublicRanking({ classId }: { classId: string }) {
       (!showGroup || group.length === 0 ? true : !!p.group_label && group.includes(p.group_label)) &&
       (!showGrade || grade.length === 0 ? true : p.grade != null && grade.includes(p.grade)) &&
       (!showClass || classNum.length === 0 ? true : p.class_num != null && classNum.includes(p.class_num)) &&
-      (gender === "all" ? true : p.gender === gender);
+      (!genderEnabled || gender === "all" ? true : p.gender === gender);
     const withStats = players.filter(passes).map((p) => ({ ...p, wins: p.win_count ?? 0, losses: p.lose_count ?? 0 }));
 
     const rankedPart = withStats
@@ -181,7 +184,7 @@ export function PublicRanking({ classId }: { classId: string }) {
     // 공개 화면에는 언랭크를 싣지 않는다. 경기를 뛰지 않은 사람까지 명단으로 나갈
     // 이유가 없고, '?? 줄'만 길어져 읽기도 나빠진다. 본인 확인은 '내 순위' 카드가 맡는다.
     return rankedPart;
-  }, [players, league, group, grade, classNum, tier, gender, showGroup, showGrade, showClass, placementEnabled, placementGames]);
+  }, [players, league, group, grade, classNum, tier, gender, genderEnabled, showGroup, showGrade, showClass, placementEnabled, placementGames]);
 
   const shown = useMemo(() => ranked.slice(0, limit), [ranked, limit]);
   const restCount = ranked.length - shown.length;
@@ -298,7 +301,7 @@ export function PublicRanking({ classId }: { classId: string }) {
                 </span>
                 <span className="text-xs text-muted-foreground">/ {ranked.length}명</span>
                 <span className="flex items-center gap-1.5 text-sm font-bold">
-                  <GenderMark gender={myRank.p.gender} className="size-3.5 shrink-0 text-[9px]" />
+                  {genderEnabled && <GenderMark gender={myRank.p.gender} className="size-3.5 shrink-0 text-[9px]" />}
                   {nameOf(myRank.p)}
                 </span>
                 <TierBadge rp={myRank.p.rp} thresholds={league.tier_thresholds ?? undefined} unranked={myRank.rank === null} />
@@ -391,14 +394,16 @@ export function PublicRanking({ classId }: { classId: string }) {
                   ))}
                 </div>
               </div>
-              <div>
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">성별</p>
-                <div className="flex flex-wrap gap-2">
-                  <FilterChip active={gender === "all"} onClick={() => setGender("all")}>전체</FilterChip>
-                  <FilterChip active={gender === "M"} onClick={() => setGender("M")}>남자 ♂</FilterChip>
-                  <FilterChip active={gender === "F"} onClick={() => setGender("F")}>여자 ♀</FilterChip>
+              {genderEnabled && (
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">성별</p>
+                  <div className="flex flex-wrap gap-2">
+                    <FilterChip active={gender === "all"} onClick={() => setGender("all")}>전체</FilterChip>
+                    <FilterChip active={gender === "M"} onClick={() => setGender("M")}>남자 ♂</FilterChip>
+                    <FilterChip active={gender === "F"} onClick={() => setGender("F")}>여자 ♀</FilterChip>
+                  </div>
                 </div>
-              </div>
+              )}
               {activeCount > 0 && (
                 <button type="button" onClick={resetFilters} className="text-[11px] font-bold text-muted-foreground underline hover:text-foreground">
                   필터 전체 초기화
@@ -443,7 +448,7 @@ export function PublicRanking({ classId }: { classId: string }) {
                           onClick={() => setPicked({ p, rank })}
                           className="flex w-full items-center gap-1.5 text-left font-bold transition-colors hover:text-neon-blue active:scale-[0.98]"
                         >
-                          <GenderMark gender={p.gender} className="size-3.5 shrink-0 text-[9px]" />
+                          {genderEnabled && <GenderMark gender={p.gender} className="size-3.5 shrink-0 text-[9px]" />}
                           <span className="truncate">{nameOf(p)}</span>
                         </button>
                       </td>
@@ -496,7 +501,7 @@ export function PublicRanking({ classId }: { classId: string }) {
             return (
               <div className="space-y-4 px-5 pb-8 pt-2">
                 <div className="flex items-center gap-2">
-                  <GenderMark gender={p.gender} className="size-4 shrink-0 text-[10px]" />
+                  {genderEnabled && <GenderMark gender={p.gender} className="size-4 shrink-0 text-[10px]" />}
                   <DrawerTitle className="truncate text-lg font-black">{nameOf(p)}</DrawerTitle>
                   <TierBadge rp={p.rp} thresholds={league.tier_thresholds ?? undefined} unranked={rank === null} />
                 </div>

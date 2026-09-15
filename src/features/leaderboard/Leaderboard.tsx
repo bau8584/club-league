@@ -45,6 +45,7 @@ export function Leaderboard({
   const [classNum, setClassNum] = useStickyState<number[]>("lb:class", []); // 빈 배열 = 전체
   const [tier, setTier] = useState<TierName[]>([]);    // 다중 선택 (빈 배열 = 전체)
   const [gender, setGender] = useState<GenderFilter>("all");
+  const { genderEnabled } = useLeagueStore(); // 성별을 안 쓰는 리그는 남/여 필터와 ♂♀ 표시를 숨긴다
   const [query, setQuery] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [detailStudent, setDetailStudent] = useState<Student | null>(null);
@@ -77,9 +78,9 @@ export function Leaderboard({
     (showGrade && grade.length > 0 ? 1 : 0) +
     (showClass && classNum.length > 0 ? 1 : 0) +
     (tier.length > 0 ? 1 : 0) +
-    (gender !== "all" ? 1 : 0);
+    (genderEnabled && gender !== "all" ? 1 : 0);
   const resetFilters = () => { setGroup([]); setGrade([]); setClassNum([]); setTier([]); setGender("all"); };
-  const genderLabel = gender === "M" ? "남자" : gender === "F" ? "여자" : null;
+  const genderLabel = !genderEnabled ? null : gender === "M" ? "남자" : gender === "F" ? "여자" : null;
   const toggleGroup = (g: string) => setGroup((p) => (p.includes(g) ? p.filter((x) => x !== g) : [...p, g]));
   const toggleGrade = (g: number) => setGrade((p) => (p.includes(g) ? p.filter((x) => x !== g) : [...p, g]));
   const toggleClass = (c: number) => setClassNum((p) => (p.includes(c) ? p.filter((x) => x !== c) : [...p, c]));
@@ -132,7 +133,7 @@ export function Leaderboard({
       (group.length === 0 ? true : !!s.group && group.includes(s.group)) &&
       (!showGrade || grade.length === 0 ? true : s.grade != null && grade.includes(s.grade)) &&
       (!showClass || classNum.length === 0 ? true : s.classNum != null && classNum.includes(s.classNum)) &&
-      (gender === "all" ? true : s.gender === gender);
+      (!genderEnabled || gender === "all" ? true : s.gender === gender);
 
     const rankedPart: { student: Student; rank: number | null; unranked: boolean }[] = students
       .filter((s) => !isUnranked(s, placementEnabled, placementGames))
@@ -151,7 +152,7 @@ export function Leaderboard({
         .map((s) => ({ student: s, rank: null, unranked: true }));
 
     return [...rankedPart, ...unrankedPart];
-  }, [students, group, grade, classNum, showGrade, showClass, tier, gender, thresholds, placementEnabled, placementGames]);
+  }, [students, group, grade, classNum, showGrade, showClass, tier, gender, genderEnabled, thresholds, placementEnabled, placementGames]);
 
   // 필터/검색이 바뀌면 처음부터 다시 보여준다.
   useEffect(() => { setLimit(PAGE_SIZE); }, [group, grade, classNum, tier, gender, query]);
@@ -284,14 +285,16 @@ export function Leaderboard({
                 ))}
               </div>
             </div>
-            <div>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">성별</p>
-              <div className="flex flex-wrap gap-2">
-                <FilterChip active={gender === "all"} onClick={() => setGender("all")}>전체</FilterChip>
-                <FilterChip active={gender === "M"} onClick={() => setGender("M")}>남자 순위 ♂</FilterChip>
-                <FilterChip active={gender === "F"} onClick={() => setGender("F")}>여자 순위 ♀</FilterChip>
+            {genderEnabled && (
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">성별</p>
+                <div className="flex flex-wrap gap-2">
+                  <FilterChip active={gender === "all"} onClick={() => setGender("all")}>전체</FilterChip>
+                  <FilterChip active={gender === "M"} onClick={() => setGender("M")}>남자 순위 ♂</FilterChip>
+                  <FilterChip active={gender === "F"} onClick={() => setGender("F")}>여자 순위 ♀</FilterChip>
+                </div>
               </div>
-            </div>
+            )}
             {activeCount > 0 && (
               <button type="button" onClick={resetFilters} className="text-[11px] font-bold text-muted-foreground underline hover:text-foreground">필터 전체 초기화</button>
             )}
@@ -322,6 +325,7 @@ export function Leaderboard({
                   thresholds={thresholds}
                   title={getEquippedTitle(s)}
                   streakFresh={(lastPlayedAt.get(s.id) ?? 0) >= freshSince}
+                  showGender={genderEnabled}
                   onSelect={openDetail}
                 />
               ))}
@@ -367,6 +371,7 @@ const LeaderboardRow = memo(function LeaderboardRow({
   thresholds,
   title,
   streakFresh,
+  showGender,
   onSelect,
 }: {
   student: Student;
@@ -374,6 +379,8 @@ const LeaderboardRow = memo(function LeaderboardRow({
   unranked: boolean;
   thresholds?: Record<TierName, number>;
   title: TitleDef | null;
+  /** 성별을 쓰는 리그만 ♂♀ 표시. */
+  showGender: boolean;
   /** 최근 14일 안에 뛰었는가. 아니면 연승 배지를 숨긴다(연승 숫자는 그대로). */
   streakFresh: boolean;
   onSelect: (s: Student) => void;
@@ -405,7 +412,7 @@ const LeaderboardRow = memo(function LeaderboardRow({
           내린다(flex-wrap). 칭호와 이름 사이가 갈릴 수는 있어도 글자가 갈리진 않는다. */}
       <td className="px-2 py-3 sm:px-4">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-semibold whitespace-nowrap">
-          <GenderMark gender={s.gender} className="shrink-0" />
+          {showGender && <GenderMark gender={s.gender} className="shrink-0" />}
           {title ? <TitleBadge title={title} /> : null}
           <span>{s.nickname || s.name}</span>
           {streak >= 3 && (

@@ -22,7 +22,7 @@ export function MatchDetailSheet({
   onOpenChange: (v: boolean) => void;
   thresholds?: Record<TierName, number>;
 }) {
-  const { students, placementEnabled, placementGames, deletedById } = useLeagueStore();
+  const { students, placementEnabled, placementGames, genderEnabled, deletedById } = useLeagueStore();
   const byId = useMemo(() => {
     const m = new Map<string, Student>();
     deletedById.forEach((s, id) => m.set(id, s)); // 삭제된 회원 이름 먼저
@@ -78,7 +78,7 @@ export function MatchDetailSheet({
                     <span className={cn("rounded px-1.5 py-0.5 text-[9px] font-black", r.win ? "bg-win/15 text-win" : "bg-loss/15 text-loss")}>
                       {r.win ? "WIN" : "LOSE"}
                     </span>
-                    {s && <GenderMark gender={s.gender} className="size-3.5" />}
+                    {s && genderEnabled && <GenderMark gender={s.gender} className="size-3.5" />}
                     <span className="truncate text-sm font-bold text-foreground">{dn(s)}</span>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">

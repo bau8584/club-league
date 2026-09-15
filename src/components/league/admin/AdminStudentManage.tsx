@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Users, Save, Trash2, ShieldAlert, HelpCircle, RotateCcw, ChevronDown, ClipboardPaste, UserPlus, Link2, Link2Off, ShieldCheck, Crown, Copy, Check, X, Mail } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLeagueStore } from "@/lib/league-store";
-import { useLeagueTerms, useIsSchoolLeague } from "@/lib/league-terms";
+import { useLeagueTerms, useIsSchoolLeague, useGenderEnabled } from "@/lib/league-terms";
 import {
   classKeyOf,
   classLabel,
@@ -105,6 +105,7 @@ function parseRoster(text: string, isSchool = false): ParsedRow[] {
 export function AdminStudentManage({ students, onDeleteStudent, onDeleteStudents, thresholds }: AdminStudentManageProps) {
   const terms = useLeagueTerms();
   const isSchool = useIsSchoolLeague();
+  const genderEnabled = useGenderEnabled();
   const { upsertStudents, updateStudentInfo, bulkUpdateStudents, fetchDeletedStudents, restoreDeletedStudent, hardDeleteStudent, levelMode, levels, ownerUid, adminUids, setMemberAdmin, transferOwnership, setCoOwner, coOwnerUids, isClassPrimaryOwner, isClassOwner, fetchLeagueMembers, unlinkPlayer } = useLeagueStore();
 
   // 최고관리자(원조 방장) 위임 — 되돌리기 어려우므로 2단계 확인
@@ -331,7 +332,7 @@ export function AdminStudentManage({ students, onDeleteStudent, onDeleteStudents
           <h3 className="font-black text-lg">{terms.member} 관리</h3>
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
-          {isSchool ? "이름·학년/반/번호·성별을" : "닉네임·레벨·성별·나이를"} 바로 수정하고, {terms.member}을 선택해 삭제할 수 있어요. {terms.roster}을 한 번에 붙여넣어 등록할 수도 있습니다. <span className="text-muted-foreground/70">(RP는 경기 기록으로만 바뀌며 직접 수정하지 않습니다.)</span>
+          {isSchool ? (genderEnabled ? "이름·학년/반/번호·성별을" : "이름·학년/반/번호를") : (genderEnabled ? "닉네임·레벨·성별·나이를" : "닉네임·레벨·나이를")} 바로 수정하고, {terms.member}을 선택해 삭제할 수 있어요. {terms.roster}을 한 번에 붙여넣어 등록할 수도 있습니다. <span className="text-muted-foreground/70">(RP는 경기 기록으로만 바뀌며 직접 수정하지 않습니다.)</span>
         </p>
       </div>
 
@@ -487,7 +488,7 @@ export function AdminStudentManage({ students, onDeleteStudent, onDeleteStudents
                     <th className="px-2 py-2.5 text-center font-bold">나이</th>
                   </>
                 )}
-                <th className="px-2 py-2.5 text-center font-bold">성별</th>
+                {genderEnabled && <th className="px-2 py-2.5 text-center font-bold">성별</th>}
                 <th className="px-2 py-2.5 text-center font-bold">티어</th>
                 <th className="px-2 py-2.5 text-center font-bold">RP</th>
                 <th className="px-2 py-2.5 text-center font-bold"></th>
@@ -499,7 +500,7 @@ export function AdminStudentManage({ students, onDeleteStudent, onDeleteStudents
               <Fragment key={grp.key}>
               {rowGroups && (
                 <tr className="border-t border-border/20 bg-muted/30">
-                  <td colSpan={(isClassOwner ? 9 : 8) + (isSchool ? 1 : 0)} className="px-3 py-1.5 text-[11px] font-black text-muted-foreground">
+                  <td colSpan={(isClassOwner ? 9 : 8) + (isSchool ? 1 : 0) - (genderEnabled ? 0 : 1)} className="px-3 py-1.5 text-[11px] font-black text-muted-foreground">
                     {classLabel(grp.key)} <span className="font-bold opacity-70">({grp.list.length}명)</span>
                   </td>
                 </tr>
@@ -579,6 +580,7 @@ export function AdminStudentManage({ students, onDeleteStudent, onDeleteStudents
                     </td>
                       </>
                     )}
+                    {genderEnabled && (
                     <td className="px-2 py-1.5">
                       <div className="flex items-center justify-center gap-1">
                         {(["M", "F"] as const).map((g) => (
@@ -592,6 +594,7 @@ export function AdminStudentManage({ students, onDeleteStudent, onDeleteStudents
                         ))}
                       </div>
                     </td>
+                    )}
                     <td className="px-2 py-1.5 text-center"><TierBadge rp={r.rp} thresholds={thresholds} /></td>
                     <td className="px-2 py-1.5 text-center font-mono font-bold text-neon-blue">{r.rp}</td>
                     <td className="px-2 py-1.5 text-center">
@@ -692,7 +695,7 @@ export function AdminStudentManage({ students, onDeleteStudent, onDeleteStudents
               </Fragment>
               ))}
               {rows.length === 0 && (
-                <tr><td colSpan={(isClassOwner ? 9 : 8) + (isSchool ? 1 : 0)} className="py-8 text-center text-muted-foreground text-xs">등록된 {terms.member}이 없습니다.</td></tr>
+                <tr><td colSpan={(isClassOwner ? 9 : 8) + (isSchool ? 1 : 0) - (genderEnabled ? 0 : 1)} className="py-8 text-center text-muted-foreground text-xs">등록된 {terms.member}이 없습니다.</td></tr>
               )}
             </tbody>
           </table>

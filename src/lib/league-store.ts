@@ -149,6 +149,16 @@ type UserSession = {
   leagueName?: string;
 } | null;
 
+/**
+ * 성별 설정이 없는 학교 리그의 자동 판정: 명단 절반 이상에 성별이 있으면 쓴다.
+ * 빈 명단은 안 씀. db/migrations/2026-09-15_gender_optional.sql 의 SQL 과 같은 규칙.
+ */
+export function genderAutoEnabled(students: { gender?: Gender | null }[]): boolean {
+  if (students.length === 0) return false;
+  const known = students.filter((s) => s.gender === "M" || s.gender === "F").length;
+  return known * 2 >= students.length;
+}
+
 function useLeagueStoreInternal() {
   const [hydrated, setHydrated] = useState(false);
   const [students, setStudents] = useState<Student[]>([]);
@@ -344,6 +354,7 @@ function useLeagueStoreInternal() {
           setLevels(Array.isArray(s.levels) ? s.levels : []);
           setSport(typeof s.sport === "string" ? s.sport : "");
         }
+        setGenderSetting(typeof classData.settings?.genderEnabled === "boolean" ? classData.settings.genderEnabled : null);
       }
 
       // 2. Fetch matches for this class — 현재 시즌 경기만 (과거 시즌은 changeViewSeason에서 별도 조회)
@@ -608,6 +619,10 @@ function useLeagueStoreInternal() {
   // 배치고사(언랭크): 신규 회원은 N경기 전까지 티어 비공개
   const [placementEnabled, setPlacementEnabled] = useState<boolean>(false);
   const [placementGames, setPlacementGames] = useState<number>(3);
+  // 성별 사용 여부. null = 설정 안 함(자동). 자동이면 동호회는 켬(혼복·여성부), 학교는 명단을 보고 정한다 —
+  // 절반 이상 성별이 있으면 켬(선생님이 일부러 넣은 리그는 전과 똑같이), 아니면 끔(명단 붙여넣기엔
+  // 성별 칸이 없어 미지정이 대부분인 리그에서 성별 팝업이 경기 입력을 막지 않게).
+  const [genderSetting, setGenderSetting] = useState<boolean | null>(null);
   // 레벨 체계 (구 구분조): preset=정의된 목록만 / free=자유 입력
   const [levelMode, setLevelMode] = useState<"preset" | "free">("free");
   const [levels, setLevels] = useState<{ name: string; description?: string }[]>([]);
@@ -616,6 +631,12 @@ function useLeagueStoreInternal() {
   const [leagueType, setLeagueType] = useState<LeagueType>("club");
   const leagueTypeRef = useRef<LeagueType>("club");
   useEffect(() => { leagueTypeRef.current = leagueType; }, [leagueType]);
+  // 실제로 성별을 쓰는지. genderSetting 이 null 이면 자동 판정(위 주석). SQL 의 get_league_public 과 같은 규칙.
+  const genderEnabled = useMemo(() => {
+    if (genderSetting !== null) return genderSetting;
+    if (leagueType !== "school") return true;
+    return genderAutoEnabled(students);
+  }, [genderSetting, leagueType, students]);
   /**
    * 세션의 소유자. 학교만 교사별로 갈린다.
    *
@@ -2667,6 +2688,31 @@ function useLeagueStoreInternal() {
     }
   }, [currentClassId, isClassOwner, placementEnabled, placementGames]);
 
+  // 성별 사용 여부 저장 (소유자/공동방장)
+  const saveGenderEnabled = useCallback(async (enabled: boolean) => {
+    if (!isClassOwner) {
+      toast.error("권한이 없습니다. 방장만 이 작업을 수행할 수 있습니다.");
+      return;
+    }
+    const prev = genderSetting;
+    setGenderSetting(enabled);
+    if (currentClassId) {
+      try {
+        const { data: currentClass } = await apiFetchClassSettings(currentClassId);
+        const { error } = await apiUpdateClassSettings(currentClassId, {
+          ...(currentClass?.settings || {}),
+          genderEnabled: enabled,
+        });
+        if (error) throw error;
+        toast.success(enabled ? "성별을 사용합니다." : "성별을 사용하지 않습니다.");
+      } catch (err: any) {
+        console.error("Failed to save genderEnabled:", err.message);
+        toast.error("성별 설정 저장에 실패했습니다: " + err.message);
+        setGenderSetting(prev);
+      }
+    }
+  }, [currentClassId, isClassOwner, genderSetting]);
+
   // 레벨 체계 저장 (관리자: 소유자/공동관리자). 이름/설명 수정·추가·삭제 + 체계 모드 변경.
   //  migrations: 레벨 rename/삭제 시 그 레벨이던 회원의 group_label 일괄 이전/정리.
   //    { from, to } — to=null 이면 정리(빈값).
@@ -3716,6 +3762,9 @@ function useLeagueStoreInternal() {
     placementEnabled,
     placementGames,
     savePlacement,
+    genderEnabled,
+    genderSetting,
+    saveGenderEnabled,
     levelMode,
     levels,
     setLevels,

@@ -10,7 +10,7 @@ import type { Student, Match, TierName } from "@/lib/league-types";
 import { getTier, getTierSubdivision, TIER_ORDER, getFullTierLabel, isUnranked, schoolLabelCompact, schoolAxesOf } from "@/lib/league-types";
 import { toast } from "sonner";
 import { useLeagueStore } from "@/lib/league-store";
-import { useLeagueTerms, useIsSchoolLeague } from "@/lib/league-terms";
+import { useLeagueTerms, useIsSchoolLeague, useGenderEnabled } from "@/lib/league-terms";
 import { useSeedFromSession } from "@/lib/use-session-scope";
 
 type Selection = { group: string | null; studentId: string | null };
@@ -131,7 +131,7 @@ export function RecordMatch({
    */
   onDirtyChange?: (dirty: boolean) => void;
 }) {
-  const { isSyncing, placementEnabled, placementGames, isClassOwner, saveMatchBreakdown, currentClassId, assignmentSession } = useLeagueStore();
+  const { isSyncing, placementEnabled, placementGames, genderEnabled, isClassOwner, saveMatchBreakdown, currentClassId, assignmentSession } = useLeagueStore();
   // 오늘 출석한 사람들 — 명단에서 맨 위로 올린다.
   const presentIds = useMemo(
     () => new Set(assignmentSession?.player_ids ?? []),
@@ -687,8 +687,9 @@ export function RecordMatch({
     if (me) setA({ group: me.group ?? null, studentId: me.id });
   }, [defaultPlayerId, lockedPlayerId, formEmpty, students]);
 
-  // A선수 또는 B선수 및 파트너 선택 시 성별이 "U"이거나 없을 때 모달 팝업 트리거
+  // A선수 또는 B선수 및 파트너 선택 시 성별이 "U"이거나 없을 때 모달 팝업 트리거 (성별을 안 쓰는 리그는 건너뜀)
   useEffect(() => {
+    if (!genderEnabled) return;
     const activePlayerIds = [a.studentId, a2.studentId, b.studentId, b2.studentId].filter(Boolean) as string[];
     for (const id of activePlayerIds) {
       const student = students.find((s) => s.id === id);
@@ -698,7 +699,7 @@ export function RecordMatch({
         return;
       }
     }
-  }, [a.studentId, a2.studentId, b.studentId, b2.studentId, students]);
+  }, [a.studentId, a2.studentId, b.studentId, b2.studentId, students, genderEnabled]);
 
   const playerA = students.find((s) => s.id === a.studentId) ?? null;
   const playerB = students.find((s) => s.id === b.studentId) ?? null;
@@ -1012,7 +1013,7 @@ export function RecordMatch({
         <div className="relative z-10 mb-4 pb-3 border-b border-surface-line flex items-center justify-between">
           <div>
             <div className="flex items-center gap-1.5">
-              <GenderMark gender={p.gender} className="size-4 text-[10px]" />
+              {genderEnabled && <GenderMark gender={p.gender} className="size-4 text-[10px]" />}
               <span className="text-base font-extrabold tracking-tight text-foreground">{p.name}</span>
               {isPromoted && (
                 <span className={cn(
@@ -1553,7 +1554,7 @@ export function RecordMatch({
                   <div className="min-w-0">
                     {/* Player Name */}
                     <div className="flex items-center gap-1">
-                      <GenderMark gender={p.gender} className="size-3 text-[9px]" />
+                      {genderEnabled && <GenderMark gender={p.gender} className="size-3 text-[9px]" />}
                       <span className="text-sm font-extrabold text-foreground truncate">{p.name}</span>
                     </div>
                     
@@ -2198,6 +2199,7 @@ function Slot({ accent, label, player, active, locked, onOpen, onClear, threshol
   placementEnabled: boolean; placementGames: number;
 }) {
   const a = ACCENT[accent];
+  const genderEnabled = useGenderEnabled();
   if (player) {
     return (
       <div className={cn("relative rounded-xl border p-3 text-center", a.fill, active && cn("ring-2 shadow-lg", a.ring))}>
@@ -2208,7 +2210,7 @@ function Slot({ accent, label, player, active, locked, onOpen, onClear, threshol
         )}
         <div className="text-[10px] text-muted-foreground">{label}{player.group ? ` · ${player.group}` : ""}</div>
         <div className="mt-1.5 flex items-center justify-center gap-1.5 min-w-0">
-          <GenderMark gender={player.gender} className="size-4 text-[10px] shrink-0" />
+          {genderEnabled && <GenderMark gender={player.gender} className="size-4 text-[10px] shrink-0" />}
           <span className={cn("team-name truncate text-lg sm:text-xl font-black leading-tight", a.text)}>{playerLabel(player)}</span>
         </div>
         <div className="mt-2 flex justify-center"><TierBadge rp={player.rp} thresholds={thresholds} unranked={isUnranked(player, placementEnabled, placementGames)} /></div>
@@ -2254,6 +2256,7 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
 }) {
   const terms = useLeagueTerms();
   const isSchool = useIsSchoolLeague();
+  const genderEnabled = useGenderEnabled();
   const a = ACCENT[accent];
   const [search, setSearch] = useState("");
   const [grp, setGrp] = useState<string>(group ?? ALL_GROUP);
@@ -2453,7 +2456,7 @@ function PlayerPicker({ students, accent, group, onPick, thresholds, placementEn
             {(isSchool ? schoolLabelCompact(s, labelAxes) : s.group) && (
               <span className="absolute top-1 left-1.5 max-w-[70%] truncate text-left font-mono text-[10px] text-soft lg:text-sm">{isSchool ? schoolLabelCompact(s, labelAxes) : s.group}</span>
             )}
-            <GenderMark gender={s.gender} className="absolute top-1 right-1.5 size-3.5 text-[9px] shrink-0 lg:size-4 lg:text-[10px]" />
+            {genderEnabled && <GenderMark gender={s.gender} className="absolute top-1 right-1.5 size-3.5 text-[9px] shrink-0 lg:size-4 lg:text-[10px]" />}
             <div className="flex w-full min-w-0 flex-grow items-center justify-center">
               <span className={cn("w-full truncate text-center text-sm font-bold lg:text-xl", here ? ta!.text : "text-strong")}>{playerLabel(s)}</span>
             </div>

@@ -222,6 +222,7 @@ export type Class = {
     dynamicPenalties?: DynamicPenalties; // 상위 티어 패배 패널티 설정
     activeBonuses?: ActiveBonuses; // 활성화된 보너스 룰셋
     placement?: { enabled: boolean; games: number }; // 배치고사(언랭크) 설정
+    genderEnabled?: boolean; // 성별 사용 여부. 없으면 학교 리그 끔 / 동호회 켬
     [key: string]: any;
   } | null;
   is_deleted?: boolean; // 소프트 딜리트 여부
