@@ -355,6 +355,9 @@ function useLeagueStoreInternal() {
           setLevels(Array.isArray(s.levels) ? s.levels : []);
           setSport(typeof s.sport === "string" ? s.sport : "");
         }
+        // 입력용 기기 잠금(2026-09-28). 값 없음 = 핀 없음 = 잠금 기능 안 씀.
+        setLockPin(typeof classData.settings?.lockPin === "string" ? classData.settings.lockPin : "");
+        setLockEpoch(typeof classData.settings?.lockEpoch === "number" ? classData.settings.lockEpoch : 0);
         setGenderSetting(typeof classData.settings?.genderEnabled === "boolean" ? classData.settings.genderEnabled : null);
       }
 
@@ -628,6 +631,9 @@ function useLeagueStoreInternal() {
   const [levelMode, setLevelMode] = useState<"preset" | "free">("free");
   const [levels, setLevels] = useState<{ name: string; description?: string }[]>([]);
   const [sport, setSport] = useState<string>("");
+  // 입력용 기기 잠금 핀(4자리)과 '잠금 전부 풀기' 횟수. 둘 다 settings 안 한 줄씩.
+  const [lockPin, setLockPin] = useState<string>("");
+  const [lockEpoch, setLockEpoch] = useState<number>(0);
   // 리그 유형 (club: 동호인 / school: 학교). leagues.league_type, 기본값 'club'.
   const [leagueType, setLeagueType] = useState<LeagueType>("club");
   const leagueTypeRef = useRef<LeagueType>("club");
@@ -2524,6 +2530,29 @@ function useLeagueStoreInternal() {
     return true;
   }, []);
 
+  // 기기 잠금 핀 저장 / 잠금 전부 풀기(lockEpoch 올림 → 잠긴 기기들이 다음 불러오기 때 풀림).
+  const saveLockSettings = useCallback(async (patch: { lockPin?: string; bumpEpoch?: boolean }): Promise<boolean> => {
+    const cid = currentClassIdRef.current;
+    if (!cid) return false;
+    if (!isClassOwnerRef.current) { toast.error("권한이 없습니다. 방장만 잠금 핀을 바꿀 수 있습니다."); return false; }
+    try {
+      const { data: currentClass } = await apiFetchClassSettings(cid);
+      const cur = currentClass?.settings || {};
+      const next: any = { ...cur };
+      if (patch.lockPin !== undefined) next.lockPin = patch.lockPin;
+      if (patch.bumpEpoch) next.lockEpoch = (typeof cur.lockEpoch === "number" ? cur.lockEpoch : 0) + 1;
+      const { error } = await apiUpdateClassSettings(cid, next);
+      if (error) throw error;
+      if (patch.lockPin !== undefined) setLockPin(patch.lockPin);
+      if (patch.bumpEpoch) setLockEpoch(next.lockEpoch);
+      return true;
+    } catch (err: any) {
+      console.error("Failed to save lock settings:", err.message);
+      toast.error("잠금 설정 저장에 실패했습니다: " + err.message);
+      return false;
+    }
+  }, []);
+
   // 종목 저장 (소유자/공동방장). 값만 바뀌므로 경기·점수엔 영향이 없다.
   const saveSport = useCallback(async (next: string): Promise<boolean> => {
     const cid = currentClassIdRef.current;
@@ -3789,6 +3818,9 @@ function useLeagueStoreInternal() {
     setLevels,
     saveLevels,
     sport,
+    lockPin,
+    lockEpoch,
+    saveLockSettings,
     leagueType,
     ownerUid,
     adminUids,

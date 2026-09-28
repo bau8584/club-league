@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import type { TierName, TierSettings, DynamicBonuses, DynamicPenalties, MatchInputMode } from "@/lib/league-types";
 import { useLeagueStore, type ActiveBonuses } from "@/lib/league-store";
 import { useLeagueTerms, useIsSchoolLeague } from "@/lib/league-terms";
+import { DeviceLockSettings } from "@/components/league/DeviceLock";
 import { SPORT_OPTIONS, isTeamSport } from "@/domain/sport-levels";
 import {
   THRESHOLD_PRESETS, WINLOSS_PRESETS, BONUS_PRESETS, PENALTY_PRESETS,
@@ -726,6 +727,9 @@ export function AdminSettings({
           )}
         </div>
       </Card>
+
+      {/* 1-A. 입력용 기기 잠금 — 핀 보기·바꾸기 / 잠금 전부 풀기 */}
+      <DeviceLockSettings />
 
       {/* 1-B. 배치고사(언랭크) 설정 — 리그 이름과 티어 설정 사이 */}
       <Card className={cn(
