@@ -196,15 +196,14 @@ export function DecayManager() {
       }
     }
     const legacyAmount = tiers.length > 0 ? (perTierRp[tiers[0]] ?? decayAmount) : decayAmount;
-    const p = Promise.resolve(
-      saveDecaySettings(enabled, isNaN(d) ? decayDays : d, legacyAmount, tiers, perTierRp)
-    );
-    toast.promise(p, {
-      loading: "휴면 감점 설정 저장 중...",
-      success: "휴면 감점 설정이 저장되었습니다!",
-      error: "저장 실패. 다시 시도해 주세요.",
-    });
-    await p;
+    // 저장이 막히면(동기화 중·권한 없음) 저장 쪽이 이미 알린다 — 실제로 저장됐을 때만 성공을 띄운다.
+    try {
+      if (await saveDecaySettings(enabled, isNaN(d) ? decayDays : d, legacyAmount, tiers, perTierRp)) {
+        toast.success("휴면 감점 설정이 저장되었습니다.");
+      }
+    } catch {
+      toast.error("저장 실패. 다시 시도해 주세요.");
+    }
   };
 
   // ── 실시(미리보기/확인) ──

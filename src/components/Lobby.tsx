@@ -205,7 +205,6 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
 
       if (error) throw error;
 
-      toast.success("리그가 삭제되었습니다.");
       await loadLeagues(userId);
     } catch (err: any) {
       console.error("Failed to delete league:", err.message);
@@ -328,7 +327,6 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
     try {
       const { error } = await supabase.rpc("leave_league", { p_class_id: league.id });
       if (error) throw error;
-      toast.success("리그에서 탈퇴했습니다.");
       await loadLeagues(userId);
     } catch (err: any) {
       toast.error(err.message || "탈퇴에 실패했습니다.");
@@ -367,7 +365,6 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
         p_class_id: membersLeague.id, p_uid: uid, p_make_admin: makeAdmin,
       });
       if (error) throw error;
-      toast.success(makeAdmin ? `${roleWord}로 올렸습니다.` : "권한을 해제했습니다.");
       setMembers((prev) => prev.map((m) => (m.uid === uid ? { ...m, role: makeAdmin ? "admin" : "member" } : m)));
     } catch (err: any) {
       toast.error(err.message || "권한 변경에 실패했습니다.");
@@ -380,7 +377,6 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
     try {
       const { error } = await supabase.rpc("remove_league_member", { p_class_id: membersLeague.id, p_member: uid });
       if (error) throw error;
-      toast.success("멤버를 내보냈습니다.");
       setMembers((prev) => prev.filter((m) => m.uid !== uid));
     } catch (err: any) {
       toast.error(err.message || "내보내기에 실패했습니다.");
@@ -388,9 +384,7 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
   };
 
   const handleLogout = async () => {
-    toast.loading("로그아웃 중...", { id: "logout" });
     await supabase.auth.signOut();
-    toast.success("안전하게 로그아웃되었습니다.", { id: "logout" });
     window.location.href = "/";
   };
 

@@ -56,7 +56,6 @@ function JoinRouteComponent() {
       if (joinErr) throw joinErr;
 
       const row = Array.isArray(data) ? data[0] : data;
-      toast.success(row?.is_owner ? "이 리그의 개설자입니다. 대시보드로 이동합니다." : "리그에 참여했습니다!");
 
       // Navigate to the class dashboard — school 리그는 /school/id, 그 외는 /class/id 로.
       navigate({ to: row?.league_type === "school" ? `/school/${classId}` : `/class/${classId}` });

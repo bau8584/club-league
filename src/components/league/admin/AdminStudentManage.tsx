@@ -262,7 +262,9 @@ export function AdminStudentManage({ students, onDeleteStudent, onDeleteStudents
         // 성별 칸이 있던 줄만 넘긴다. 없는 줄은 키를 안 만들어 기존 성별이 남는다.
         ...(p.gender ? { gender: p.gender } : {}),
       })));
-      if (res) toast.success(`명단을 반영했습니다. (추가 ${res.added ?? 0}명, 유지 ${res.kept ?? 0}명)`);
+      // 0/0은 저장이 막혔거나 실패한 경우 — 저장 쪽이 이미 알렸으니 붙여넣은 글을 남겨 다시 시도하게 한다.
+      if (!res || (res.added ?? 0) + (res.kept ?? 0) === 0) return;
+      toast.success(`명단을 반영했습니다. (추가 ${res.added ?? 0}명, 유지 ${res.kept ?? 0}명)`);
       setPasteText("");
       setPasteOpen(false);
     } finally { setImporting(false); }

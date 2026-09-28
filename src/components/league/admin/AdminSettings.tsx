@@ -392,7 +392,7 @@ export function AdminSettings({
   const [sportCustom, setSportCustom] = useState(false);
   const sportDirty = localSport.trim() !== sport;
   const handleSaveSport = async () => {
-    if (await saveSport(localSport)) toast.success("종목을 저장했습니다.");
+    await saveSport(localSport); // 성공은 '저장 안 됨' 표시가 사라지는 것으로 보인다
   };
   const terms = useLeagueTerms();
   const [localPlacementEnabled, setLocalPlacementEnabled] = useState(placementEnabled);
@@ -484,6 +484,10 @@ export function AdminSettings({
     }
   }, [rpVariables, tierSettings]);
 
+  // 저장 성공은 '저장 안 됨' 표시가 사라지는 것으로 보인다. 토스트는 실패만.
+  // (예전 toast.promise는 저장이 막혀도 "저장되었습니다!"를 띄웠다)
+  const notifyIfFailed = (p: Promise<unknown>, msg: string) => { p.catch(() => toast.error(msg)); };
+
   const handleSaveTitle = async () => {
     if (!localTitle.trim()) {
       return toast.error("리그 이름을 입력해 주세요.");
@@ -499,11 +503,7 @@ export function AdminSettings({
         );
       }
     })();
-    toast.promise(savePromise, {
-      loading: "리그 이름 저장 중...",
-      success: "리그 이름이 성공적으로 저장되었습니다!",
-      error: "리그 이름 저장 실패. 다시 시도해 주세요."
-    });
+    notifyIfFailed(savePromise, "리그 이름 저장 실패. 다시 시도해 주세요.");
   };
 
   const handleSaveTierSettings = async () => {
@@ -548,11 +548,7 @@ export function AdminSettings({
       }
     })();
 
-    toast.promise(savePromise, {
-      loading: "티어 설정 저장 중...",
-      success: "티어 설정이 안전하게 저장되었습니다!",
-      error: "티어 설정 저장 실패. 다시 시도해 주세요."
-    });
+    notifyIfFailed(savePromise, "티어 설정 저장 실패. 다시 시도해 주세요.");
   };
 
   const handleSaveBonuses = async () => {
@@ -567,11 +563,7 @@ export function AdminSettings({
         );
       }
     })();
-    toast.promise(savePromise, {
-      loading: "글로벌 보너스 설정 저장 중...",
-      success: "글로벌 보너스 설정이 성공적으로 저장되었습니다!",
-      error: "글로벌 보너스 설정 저장 실패. 다시 시도해 주세요."
-    });
+    notifyIfFailed(savePromise, "글로벌 보너스 설정 저장 실패. 다시 시도해 주세요.");
   };
 
   const handleSavePenalties = async () => {
@@ -586,11 +578,7 @@ export function AdminSettings({
         );
       }
     })();
-    toast.promise(savePromise, {
-      loading: "패널티 설정 저장 중...",
-      success: "패널티 설정이 성공적으로 저장되었습니다!",
-      error: "패널티 설정 저장 실패. 다시 시도해 주세요."
-    });
+    notifyIfFailed(savePromise, "패널티 설정 저장 실패. 다시 시도해 주세요.");
   };
 
   // 미저장 변경 감지 — 저장된 값(props)이 존재할 때만 비교해 false-positive를 막는다.
