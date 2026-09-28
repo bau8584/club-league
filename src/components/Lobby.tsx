@@ -407,7 +407,7 @@ export function Lobby({ schoolMode = false }: { schoolMode?: boolean } = {}) {
 
   return (
     <div className="min-h-screen flex flex-col relative overflow-hidden bg-background">
-      <Toaster theme={isDarkTheme(theme) ? "dark" : "light"} position="bottom-center" richColors duration={2500} />
+      <Toaster theme={isDarkTheme(theme) ? "dark" : "light"} position="top-center" richColors duration={2500} />
       {/* Background neon elements */}
       <div className="absolute inset-0 bg-[linear-gradient(rgba(18,18,18,0.25)_1px,transparent_1px),linear-gradient(90deg,rgba(18,18,18,0.25)_1px,transparent_1px)] bg-[size:30px_30px] pointer-events-none opacity-30" />
       <div className="absolute -top-40 -left-40 size-96 rounded-full bg-neon-blue/10 blur-[130px] pointer-events-none" />

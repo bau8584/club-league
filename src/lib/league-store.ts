@@ -3427,6 +3427,8 @@ function useLeagueStoreInternal() {
     const { error } = await apiLinkScheduledResult(reservationId, matchId);
     if (error) { console.warn("[reservation] link failed", error); toast.error("예약 완료 처리 실패: " + error.message); }
     if (cid) await loadScheduled(cid);
+    // 학교 리그는 학생이 로그인하지 않아 알림을 받을 사람이 없다.
+    if (leagueTypeRef.current === "school") return;
     notifyPlayers(participantIds, {
       title: "🏁 경기 결과 등록!", body: summary || "경기 결과가 등록됐어요. 확인해 보세요.",
       // 푸시를 누르면 그 경기의 결과 창이 바로 뜨도록 match id 전달

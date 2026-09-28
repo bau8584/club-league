@@ -178,7 +178,7 @@ export function LeagueApp({ classId }: { classId: string }) {
 
   return (
     <div className="min-h-screen animate-in fade-in duration-300">
-      <Toaster theme={isDarkTheme(theme) ? "dark" : "light"} position="bottom-center" richColors duration={2500} />
+      <Toaster theme={isDarkTheme(theme) ? "dark" : "light"} position="top-center" richColors duration={2500} />
 
       {/* Header */}
       <header className="border-b border-border/60 bg-card/40 backdrop-blur-xl">
