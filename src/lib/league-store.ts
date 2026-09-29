@@ -73,6 +73,7 @@ import {
   apiUpdateScheduledStatus,
   apiDeleteScheduledMatch,
   apiDeleteScheduledMatches,
+  apiDeleteStaleQueue,
   apiUpdateScheduledTeams,
   apiCreateReservation,
   apiLinkScheduledResult,
@@ -500,6 +501,10 @@ function useLeagueStoreInternal() {
         setAssignmentSession((sess as AssignmentSession) ?? null);
         sessionId = (sess as AssignmentSession | null)?.id ?? null;
       } catch { /* 테이블 마이그레이션 전이면 조용히 넘어간다 */ }
+
+      // 지난 수업에 못 치른 줄(만든 지 12시간 넘음)은 운영진이 화면을 열 때 치운다.
+      // 읽는 쪽은 이미 걸러내므로 이 삭제가 실패해도 화면은 맞다. 결과 기록은 안 건드린다.
+      if (isManager) { void apiDeleteStaleQueue(classId).then(() => {}, () => {}); }
 
       // 대진 호출(예정 경기) — 별도 테이블, RP/통계와 무관
       try {
@@ -3171,6 +3176,26 @@ function useLeagueStoreInternal() {
   }, [loadScheduled, sessionOwnerId]);
 
   /**
+   * [수업 종료] — 남은 줄만 비운다. 명단은 그대로 둔다.
+   * 반이 안 바뀌는 수업은 [새로 시작]으로 명단을 다시 정할 일이 없어서, 줄만 치울 길이 필요하다.
+   * 지우는 범위는 [새로 시작]과 같다(내 세션 + 학교면 세션 밖의 내 줄).
+   */
+  const endClassQueue = useCallback(async (): Promise<boolean> => {
+    if (!isClassManagerRef.current) { toast.error("권한이 없습니다."); return false; }
+    const cid = currentClassIdRef.current;
+    if (!cid) return false;
+    const sid = assignmentSessionRef.current?.id ?? null;
+    if (!sid) return true;
+    const { error } = await apiClearQueue(cid, {
+      sessionId: sid,
+      myUid: leagueTypeRef.current === "school" ? myUidRef.current : null,
+    });
+    if (error) { toast.error("정리 실패: " + error.message); return false; }
+    await loadScheduled(cid);
+    return true;
+  }, [loadScheduled]);
+
+  /**
    * 명단·종목만 고친다(세션 경계 아님). 지각·조퇴가 여기로 들어온다 —
    * 상태로 모델링하지 않고, 그 순간 명단에 있는가만 본다.
    * 이미 뽑힌 큐는 건드리지 않는다. 잘못 들어간 줄은 눈으로 보고 빼면 된다.
@@ -3903,6 +3928,7 @@ function useLeagueStoreInternal() {
     callScheduledMatch,
     removeScheduledMatch,
     removeScheduledMatches,
+    endClassQueue,
     replaceQueuePlayer,
     createReservation,
     cancelReservation,

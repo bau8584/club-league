@@ -7,7 +7,7 @@ import { classKeyOf, classLabel, type ScheduledMatch } from "@/lib/league-types"
 import { useQueueRows } from "@/lib/use-queue-rows";
 import { SessionRoster } from "./SessionRoster";
 import { ClubRoster } from "./ClubRoster";
-import { liveSession } from "@/lib/session-today";
+import { liveSession, STALE_MS } from "@/lib/session-today";
 import { MatchQueue } from "./MatchQueue";
 
 /**
@@ -60,10 +60,10 @@ export function SessionCard({
    */
   const idleCount = (() => {
     if (!hasSession) return 0;
-    // 학교는 이 수업(세션) 동안, 동호회는 오늘 하루 동안. 동호회는 운동 중간에
-    // [오늘 운동 시작]을 눌러도 그 전에 뛴 것이 오늘 뛴 것이다.
+    // 학교는 이 수업(세션) 동안, 동호회는 최근 12시간 동안(밤샘이 자정을 넘어도 이어진다).
+    // 동호회는 운동 중간에 [오늘 운동 시작]을 눌러도 그 전에 뛴 것이 오늘 뛴 것이다.
     const from = isClub
-      ? new Date(new Date().toDateString()).getTime()
+      ? Date.now() - STALE_MS
       : new Date(assignmentSession!.started_at).getTime();
     const played = new Set<string>();
     for (const m of matches ?? []) {

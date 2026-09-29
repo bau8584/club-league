@@ -1,5 +1,6 @@
 import { supabase } from "../supabaseClient";
 import type { PlayerInsert, MatchInsert, MatchUpdate } from "../lib/database.types";
+import { staleCutoffIso } from "../lib/session-today";
 import { buildAssignedMatchRows, type AssignedMatchInput } from "../domain/assignment-rows";
 
 // 동호회 스키마(leagues/players/matches/league_secrets/players_public)에 대응.
@@ -218,6 +219,16 @@ export async function apiClearQueue(classId: string, opts?: { sessionId?: string
   if (!opts?.sessionId) return q;
   const mine = opts.myUid ? `,and(session_id.is.null,created_by.eq.${opts.myUid})` : "";
   return q.or(`session_id.eq.${opts.sessionId}${mine}`);
+}
+
+/** 지난 수업에 못 치른 줄을 치운다. 결과 기록(matches)은 건드리지 않는다. */
+export async function apiDeleteStaleQueue(classId: string) {
+  return supabase
+    .from("scheduled_matches")
+    .delete()
+    .eq("league_id", classId)
+    .in("status", ["waiting", "called"])
+    .lt("created_at", staleCutoffIso());
 }
 
 export async function apiUpdateScheduledStatus(id: string, status: "waiting" | "called" | "done" | "cancelled") {

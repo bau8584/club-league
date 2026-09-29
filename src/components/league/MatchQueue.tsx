@@ -101,6 +101,7 @@ export function MatchQueue({
     fillAssignmentQueue,
     removeScheduledMatch,
     removeScheduledMatches,
+    endClassQueue,
     replaceQueuePlayer,
     joinReservation,
     leaveReservation,
@@ -133,6 +134,8 @@ export function MatchQueue({
   // 여러 줄 빼기 — 고르는 중이면 Set, 아니면 null. 한 줄씩 × 를 누르면 폰에서 N번 확인해야 한다.
   const [picking, setPicking] = useState<Set<string> | null>(null);
   const [confirmBulk, setConfirmBulk] = useState(false);
+  // [수업 종료] 확인 팝업. 학교만 — 동호회는 12시간 지난 줄이 저절로 정리된다.
+  const [confirmEnd, setConfirmEnd] = useState(false);
 
   const byId = useMemo(() => {
     const m = new Map<string, Student>();
@@ -522,6 +525,56 @@ export function MatchQueue({
             </div>
           )}
         </div>
+      )}
+
+      {/* 수업 종료 — 같은 날 다음 반이 들어오기 전에 남은 줄만 비운다. 명단은 그대로.
+          안 눌러도 12시간 뒤엔 저절로 치워지므로 눌러야 하는 의무가 아니다. */}
+      {canManage && !isClub && !picking && queue.length > 0 && (
+        <div className="mt-3 flex justify-end">
+          <button
+            type="button"
+            onClick={() => setConfirmEnd(true)}
+            className="text-[11px] font-bold text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
+          >
+            수업 종료 · 남은 {queue.length}줄 비우기
+          </button>
+        </div>
+      )}
+
+      {confirmEnd && createPortal(
+        <div
+          className="fixed inset-0 z-[85] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-in fade-in duration-150"
+          onClick={() => setConfirmEnd(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl border border-border/50 bg-background p-5 shadow-2xl animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-black text-foreground">수업을 마칠까요?</h3>
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+              아직 안 치른 {queue.length}줄이 사라져요. 경기 기록과 출석 명단은 그대로예요.
+            </p>
+            <div className="mt-4 flex flex-col gap-2">
+              <Button
+                onClick={async () => {
+                  await endClassQueue();   // 줄이 사라지는 게 곧 결과라 성공 토스트는 없다
+                  setConfirmEnd(false);
+                }}
+                className="h-10 rounded-xl bg-destructive text-sm font-black text-white hover:bg-destructive/90"
+              >
+                마칠게요
+              </Button>
+              <button
+                type="button"
+                onClick={() => setConfirmEnd(false)}
+                className="mt-0.5 rounded-lg py-2 text-xs font-bold text-muted-foreground hover:text-foreground"
+              >
+                그대로 둘게요
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
       )}
 
       {editRow && createPortal(
