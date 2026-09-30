@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -118,6 +118,14 @@ export function MatchQueue({
     } catch { /* 저장소를 못 쓰면 기본값 */ }
     return leagueType === "school" ? "diversity" : "balanced";
   });
+  // 첫 화면엔 아직 반 정보가 없다 → 반이 정해지는 순간 다시 읽는다.
+  useEffect(() => {
+    if (!presetKey) return;
+    try {
+      const saved = localStorage.getItem(presetKey);
+      if (saved && PRESETS.some((p) => p.value === saved)) setPresetState(saved as AssignmentPreset);
+    } catch { /* 저장소를 못 쓰면 그대로 */ }
+  }, [presetKey]);
   const setPreset = (v: AssignmentPreset) => {
     setPresetState(v);
     try {
