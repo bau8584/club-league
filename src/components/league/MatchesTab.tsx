@@ -50,7 +50,6 @@ export function MatchesTab({
     currentViewSeason,
     recordMatch,
     updateStudentGender,
-    createReservation,
     cancelReservation,
     linkReservationResult,
     leaveReservation,
@@ -60,8 +59,6 @@ export function MatchesTab({
   const terms = useLeagueTerms();
   const isSchool = useIsSchoolLeague();
   const readOnly = currentViewSeason !== "현재 시즌";
-  const canReserve =
-    (isClassManager || (matchInputMode !== "admin-only" && !!myPlayerId)) && !readOnly;
   const canRecord = (isClassManager || matchInputMode !== "admin-only") && !readOnly;
 
   const byId = useMemo(() => {
@@ -429,7 +426,7 @@ export function MatchesTab({
       )}
       {/* ── 대기열 (동호회) ── 회원 예약·운영진 소집·뽑힌 대진이 한 목록. 학교는 위에서 그렸다. */}
       {!isSchool && !readOnly && (
-        <SessionCard canManage={isClassManager} canReserve={canReserve} onRecordRow={openQueueRow} />
+        <SessionCard canManage={isClassManager} onRecordRow={openQueueRow} />
       )}
 
       {canRecord && !isSchool && (

@@ -22,12 +22,9 @@ import { MatchQueue } from "./MatchQueue";
  */
 export function SessionCard({
   canManage,
-  canReserve = false,
   onRecordRow,
 }: {
   canManage: boolean;
-  /** 회원이 직접 줄을 만들 수 있는가(동호회 예약). 운영진은 항상 가능. */
-  canReserve?: boolean;
   onRecordRow: (row: ScheduledMatch) => void;
 }) {
   const { students, assignmentSession: rawSession, matches, leagueType } = useLeagueStore();
@@ -95,7 +92,7 @@ export function SessionCard({
             </p>
           </div>
         </div>
-        <MatchQueue canManage={false} canReserve={canReserve} onRecordRow={onRecordRow} />
+        <MatchQueue canManage={false} onRecordRow={onRecordRow} />
       </Card>
     );
   }
