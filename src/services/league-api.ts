@@ -186,6 +186,8 @@ export async function apiUpsertAssignmentSession(payload: {
   matchType: "single" | "double";
   /** 남녀 섞어서 | 따로. 안 주면 안 건드린다(옛 값 유지). */
   genderMode?: "mixed" | "separate";
+  /** 코트 수. undefined = 안 건드림, null = 코트 안내 끄기. */
+  courtCount?: number | null;
   startedAt?: string;
   /** [새로 시작]에서 번호를 1번으로 되돌린다. 같은 행을 계속 쓰므로 저절로 초기화되지 않는다. */
   resetSeq?: boolean;
@@ -195,6 +197,7 @@ export async function apiUpsertAssignmentSession(payload: {
     player_ids: payload.playerIds,
     match_type: payload.matchType,
     ...(payload.genderMode ? { gender_mode: payload.genderMode } : {}),
+    ...(payload.courtCount !== undefined ? { court_count: payload.courtCount } : {}),
     ...(payload.startedAt ? { started_at: payload.startedAt } : {}),
     ...(payload.resetSeq ? { next_seq: 1 } : {}),
     updated_at: new Date().toISOString(),

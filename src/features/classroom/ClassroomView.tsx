@@ -5,6 +5,7 @@ import {
   getTier, isUnranked, nextStepGap, TIER_ORDER, TIER_STYLES, type TierName,
 } from "@/lib/league-types";
 import { RefreshCw, SlidersHorizontal, Radio } from "lucide-react";
+import { useCourtCallout } from "@/components/league/MatchQueue";
 
 /**
  * 교실 화면 — 로그인 없이 대기열과 등급을 본다.
@@ -22,7 +23,7 @@ import { RefreshCw, SlidersHorizontal, Radio } from "lucide-react";
  * 물건이라, 스크롤해야 보이는 정보는 없는 것과 같다.
  */
 
-type QueueRow = { seq: number | null; team_a: string[]; team_b: string[]; pool: string[] };
+type QueueRow = { seq: number | null; court?: string | null; team_a: string[]; team_b: string[]; pool: string[] };
 type ViewPlayer = {
   id: string; name: string | null; rp: number; wins: number; losses: number;
   grade: number | null; class_num: number | null; student_no: number | null; today_plays: number;
@@ -34,6 +35,8 @@ type ClassView = {
   tier_thresholds?: Record<TierName, number> | null;
   placement?: { enabled?: boolean; games?: number } | null;
   queue?: QueueRow[];
+  /** 코트 수. 없으면 코트 안내 없음. */
+  court_count?: number | null;
   players?: ViewPlayer[];
 };
 type ClassOption = { grade: number; class_num: number; player_count: number };
@@ -203,7 +206,7 @@ export function ClassroomView({ classId, ownerId }: { classId: string; ownerId?:
         {inSession && (
           <section className="mb-7 lg:mb-0 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
             <SectionTitle>대기열</SectionTitle>
-            <Queue rows={queue} />
+            <Queue rows={queue} courts={!!view.court_count} />
           </section>
         )}
         <section className={cn("lg:min-h-0 lg:overflow-y-auto lg:pr-1", !inSession && "lg:col-span-2")}>
@@ -262,7 +265,13 @@ function IconBtn({ label, onClick, children }: { label: string; onClick: () => v
 
 /* ── 대기열 — 여기만 실명이다 ────────────────────────── */
 
-function Queue({ rows }: { rows: QueueRow[] }) {
+const EMPTY: QueueRow[] = [];
+
+function Queue({ rows, courts }: { rows: QueueRow[]; courts: boolean }) {
+  // 코트가 방금 빈 줄 — 선생님이 부르지 않아도 아이들이 보고 들어가게 크게.
+  const callout = useCourtCallout(courts ? rows : EMPTY);
+  const who = (r: QueueRow) =>
+    r.team_a.length && r.team_b.length ? [...r.team_a, ...r.team_b].join("·") : r.pool.join("·");
   if (rows.length === 0) {
     return (
       <p className="rounded-xl border border-border/30 bg-input/40 px-3 py-5 text-center text-sm font-bold text-muted-foreground">
@@ -272,15 +281,36 @@ function Queue({ rows }: { rows: QueueRow[] }) {
   }
   return (
     <div className="space-y-2 lg:space-y-2.5">
+      {callout.map((c) => {
+        const r = rows.find((x) => x.seq === c.seq);
+        return (
+          <div key={c.key}
+            className="rounded-2xl border-2 border-neon-green bg-neon-green/15 px-4 py-4 text-neon-green animate-in zoom-in-95 fade-in duration-300 xl:py-5">
+            <p className="text-2xl font-black lg:text-3xl xl:text-4xl">{c.court}코트 비었어요!</p>
+            <p className="mt-1 text-lg font-black text-foreground lg:text-xl xl:text-2xl">
+              {c.seq != null ? `#${c.seq} ` : ""}{r ? who(r) : ""} 들어가세요
+            </p>
+          </div>
+        );
+      })}
       {rows.map((r, i) => {
         const confirmed = r.team_a.length > 0 && r.team_b.length > 0;
+        const court = courts ? r.court : null;
         return (
           <div key={r.seq ?? `x${i}`}
-            className="flex items-center gap-3 rounded-xl border border-border/30 bg-input/40 px-3 py-3 lg:px-3.5 lg:py-3 xl:px-4 xl:py-4">
+            className={cn(
+              "flex items-center gap-3 rounded-xl px-3 py-3 lg:px-3.5 lg:py-3 xl:px-4 xl:py-4",
+              court ? "border-2 border-neon-green/70 bg-neon-green/5" : "border border-border/30 bg-input/40",
+            )}>
             {/* 번호가 이 줄의 이름이다. 아이가 "우리 7번"만 기억하면 되므로 크게. */}
             <span className="w-11 shrink-0 text-center text-xl font-black tabular-nums text-neon-blue lg:w-14 lg:text-2xl xl:w-16 xl:text-3xl">
               {r.seq == null ? "" : `#${r.seq}`}
             </span>
+            {court && (
+              <span className="shrink-0 rounded-lg bg-neon-green/20 px-2 py-1 text-xs font-black text-neon-green lg:text-sm xl:text-base">
+                {court}코트 경기 중
+              </span>
+            )}
             <span className="min-w-0 flex-1 text-base font-bold leading-snug text-foreground lg:text-lg xl:text-2xl">
               {confirmed ? (
                 <>

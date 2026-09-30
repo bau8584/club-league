@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -104,6 +104,7 @@ export function MatchQueue({
     joinReservation,
     leaveReservation,
     notifyReservation,
+    updateAssignmentSession,
   } = useLeagueStore();
   const isClub = leagueType !== "school";
   // 동호회의 지난주 세션은 없는 것으로 본다 — 명단이 없으니 뽑기 조작도 숨는다.
@@ -161,6 +162,11 @@ export function MatchQueue({
 
   const { queue } = useQueueRows();
 
+  // 코트 — 켜 두면 서버가 앞쪽 줄에 코트 번호를 붙인다. 여기서는 보여주기만 한다.
+  const courtCount = assignmentSession?.court_count ?? null;
+  const [courtOpen, setCourtOpen] = useState(false);
+  const callout = useCourtCallout(courtCount ? queue : []);
+
   // 지금 놀고 있는 사람. 기본 경기 수(한 바퀴)와 안내 문구의 바탕이다.
   const perMatch = assignmentSession?.match_type === "single" ? 2 : 4;
   const freeIds = useMemo(() => {
@@ -207,6 +213,12 @@ export function MatchQueue({
 
   return (
     <div>
+      {/* 방금 코트가 빈 줄 — 선생님 화면에서는 확인용 한 줄. 크게는 교실 화면이 띄운다. */}
+      {callout.length > 0 && (
+        <div className="mb-2 rounded-xl border border-neon-green/50 bg-neon-green/10 px-3 py-2 text-sm font-black text-neon-green animate-in fade-in duration-200">
+          {callout.map((c) => `${c.court}코트 → ${seqMark(c.seq) || "다음 줄"} 들어가세요`).join(" · ")}
+        </div>
+      )}
       {/*
         태블릿 가로에서는 두 줄씩. 이름 넷이 든 줄은 400px 이면 충분한데 카드는 1,300px 이라,
         한 줄에 하나씩 세우면 오른쪽 2/3 가 비고 세로만 길어진다. 폰은 한 줄이다.
@@ -218,12 +230,18 @@ export function MatchQueue({
             const confirmed = teamA.length > 0 && teamB.length > 0;
             const mine = !!myPlayerId && [...teamA, ...teamB, ...pool].includes(myPlayerId);
             const nameOf = (id: string) => dn(byId.get(id));
+            const court = courtCount ? r.court : null;
             const names = (
               <>
                 {/* 번호가 아이들이 부르는 이름이다. 목록에서 제일 먼저 눈에 띄어야 한다. */}
                 <span className="w-8 shrink-0 text-sm font-black tabular-nums text-foreground">
                   {seqMark(r.seq)}
                 </span>
+                {court && (
+                  <span className="shrink-0 rounded-md bg-neon-green/15 px-1.5 py-0.5 text-[10px] font-black text-neon-green">
+                    {court}코트
+                  </span>
+                )}
                 <span className="min-w-0 flex-1 truncate text-left text-sm font-bold text-foreground">
                   {confirmed ? (
                     <>
@@ -241,7 +259,9 @@ export function MatchQueue({
             );
             const rowStyle = cn(
               "flex min-h-11 w-full items-center gap-2 rounded-xl border pl-3",
-              mine ? "border-neon-blue/40 bg-neon-blue/5" : "border-border/30 bg-input/40",
+              court
+                ? "border-2 border-neon-green/60 bg-neon-green/5"
+                : mine ? "border-neon-blue/40 bg-neon-blue/5" : "border-border/30 bg-input/40",
             );
 
             // 알림 버튼 — 동호회의 모든 줄. 참가자와 운영진이 누른다(소집 대신 뽑은 줄로 부른다).
@@ -468,6 +488,18 @@ export function MatchQueue({
           <div className="mt-2 flex items-start gap-1.5 text-[11px] text-muted-foreground">
             <button
               type="button"
+              onClick={() => setCourtOpen((v) => !v)}
+              className={cn(
+                "flex shrink-0 items-center gap-0.5 font-black transition-colors",
+                courtOpen ? "text-neon-blue" : "text-foreground hover:text-neon-blue",
+              )}
+            >
+              <span className="font-bold text-muted-foreground">코트</span>&nbsp;{courtCount ? `${courtCount}개` : "안 씀"}
+              <ChevronDown className={cn("size-3.5 transition-transform", courtOpen && "rotate-180")} />
+            </button>
+            <span className="shrink-0">·</span>
+            <button
+              type="button"
               onClick={() => setPresetOpen((v) => !v)}
               className={cn(
                 "flex shrink-0 items-center gap-0.5 font-black transition-colors",
@@ -492,6 +524,34 @@ export function MatchQueue({
               </span>
             )}
           </div>
+
+          {courtOpen && (
+            <div className="mt-2 animate-in fade-in slide-in-from-top-1 duration-150">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {[null, 1, 2, 3, 4, 5, 6].map((n) => (
+                  <button
+                    key={n ?? 0}
+                    type="button"
+                    onClick={async () => {
+                      setCourtOpen(false);
+                      if (n !== courtCount) await updateAssignmentSession({ courtCount: n });
+                    }}
+                    className={cn(
+                      "h-8 min-w-9 rounded-full border px-3 text-xs font-black transition-all",
+                      courtCount === n
+                        ? "border-neon-blue/50 bg-neon-blue/20 text-neon-blue"
+                        : "border-border/40 text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {n == null ? "안 씀" : n}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+                앞쪽 줄에 "○코트"가 붙고, 결과가 들어오면 빈 코트가 다음 줄로 넘어가요. 교실 화면에 크게 떠요.
+              </p>
+            </div>
+          )}
 
           {presetOpen && (
             <div className="mt-2 flex flex-wrap items-center gap-1.5 animate-in fade-in slide-in-from-top-1 duration-150">
@@ -971,4 +1031,41 @@ function PoolAddDialog({
       </div>
     </div>
   );
+}
+
+/**
+ * 방금 코트를 받은 줄 — "2코트 → #7 들어가세요". 20초 동안 보여 준다.
+ *
+ * 처음 화면을 열 때 이미 코트에 있던 줄은 안내하지 않는다. 그 조는 이미 뛰고 있다.
+ * 교실 화면(ClassroomView)도 같은 규칙으로 크게 띄운다.
+ */
+export function useCourtCallout<T extends { seq?: number | null; court?: string | null }>(rows: T[]) {
+  const seen = useRef<Map<string, string> | null>(null);
+  const [items, setItems] = useState<{ key: string; seq: number | null; court: string; at: number }[]>([]);
+
+  useEffect(() => {
+    const now = new Map<string, string>();
+    rows.forEach((r, i) => { if (r.court) now.set(r.seq != null ? `#${r.seq}` : `x${i}`, r.court); });
+    const prev = seen.current;
+    seen.current = now;
+    if (!prev) return;   // 첫 화면
+    const fresh = [...now].filter(([k, c]) => prev.get(k) !== c);
+    if (fresh.length === 0) return;
+    const at = Date.now();
+    setItems((old) => [
+      ...old.filter((o) => !fresh.some(([k]) => k === o.key)),
+      ...fresh.map(([key, court]) => ({ key, court, at, seq: key.startsWith("#") ? Number(key.slice(1)) : null })),
+    ]);
+  }, [rows]);
+
+  useEffect(() => {
+    if (items.length === 0) return;
+    const t = setTimeout(() => setItems((old) => old.filter((o) => Date.now() - o.at < 20_000)), 20_000);
+    return () => clearTimeout(t);
+  }, [items]);
+
+  // 코트를 잃은 줄(결과가 들어와 빠짐)은 바로 지운다.
+  return items
+    .filter((o) => seen.current?.get(o.key) === o.court)
+    .sort((a, b) => Number(a.court) - Number(b.court));
 }

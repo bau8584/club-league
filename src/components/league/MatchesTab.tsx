@@ -151,12 +151,6 @@ export function MatchesTab({
 
   // 큐 줄의 [결과 입력]. school 은 결과 입력 폼이 같은 화면에 이미 있으므로 모달을 띄우지
   // 않고 그 폼을 채운다 — "경기 끝남 → 결과 등록 → 다음이 올라옴"이 한 화면에서 돌아야 한다.
-  // 아래 폼에 사람이 직접 고른 선수·점수가 남아 있는지. 남아 있는데 큐 줄을 누르면
-  // 프리필이 그걸 말없이 지운다 — 선택 도중 [결과 입력]을 누른 사람이 겪던 충돌이다.
-  const [formDirty, setFormDirty] = useState(false);
-  // 덮어쓰기 확인을 기다리는 큐 줄.
-  const [pendingRow, setPendingRow] = useState<(typeof scheduledMatches)[number] | null>(null);
-
   // 결과를 등록하고 영수증을 닫으면 대기열로 돌아간다 — 단, 방금 등록한 경기가 큐의
   // 줄이었을 때만. 학교에서는 폼이 큐 아래 같은 화면에 있어서, 결과를 넣고 나면 다음
   // 아이가 와서 자기 줄을 눌러야 하는데 화면이 폼에 머물러 있으면 아래에서 이름을 찾기
@@ -176,8 +170,8 @@ export function MatchesTab({
   };
 
   const openQueueRow = (row: (typeof scheduledMatches)[number]) => {
-    // 같은 화면에 폼이 떠 있는 school 에서만 덮어쓸 것이 있다. 모달을 쓰는 쪽은 그대로.
-    if (isSchool && formDirty) return setPendingRow(row);
+    // 묻지 않고 바로 바꾼다. 확인 창이 있으면 아이들이 [바꾸기]를 망설였다 — 잘못 눌러도
+    // 원래 줄을 다시 누르면 되돌아오므로 막을 만큼의 손해가 없다(현장 요청 2026-09-30).
     applyQueueRow(row);
   };
 
@@ -373,7 +367,6 @@ export function MatchesTab({
             onUpdateGender={updateStudentGender}
             lockedPlayerId={lockedPlayerId}
             defaultPlayerId={defaultPlayerId}
-            onDirtyChange={setFormDirty}
             onCloseResult={() => {
               if (!lastRecordWasQueued.current) return;
               lastRecordWasQueued.current = false;
@@ -383,47 +376,6 @@ export function MatchesTab({
         </Card>
       )}
 
-      {/* 대기열 줄로 폼을 덮어쓰기 전 확인 — 선택 중에 [결과 입력]을 눌러 입력이
-          통째로 날아가던 자리다. */}
-      {pendingRow && (
-        <div
-          className="fixed inset-0 z-[85] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-in fade-in duration-150"
-          onClick={() => setPendingRow(null)}
-        >
-          <div
-            className="w-full max-w-sm rounded-2xl border border-border/50 bg-background p-5 shadow-2xl animate-in zoom-in-95 duration-150"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="text-base font-black text-foreground">입력 중인 내용을 바꿀까요?</h3>
-            <p className="mt-1.5 truncate text-xs font-bold text-muted-foreground">
-              {participantsOf(pendingRow)
-                .map((id) => dn(byId.get(id)))
-                .join(" · ")}
-            </p>
-            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-              아래 폼에 고르던 선수와 점수가 이 대진으로 덮어써져요.
-            </p>
-            <div className="mt-4 flex flex-col gap-2">
-              <Button
-                onClick={() => {
-                  applyQueueRow(pendingRow);
-                  setPendingRow(null);
-                }}
-                className="h-11 w-full rounded-xl bg-neon-blue text-sm font-black text-primary-foreground hover:bg-neon-blue/90"
-              >
-                이 대진으로 바꾸기
-              </Button>
-              <Button
-                onClick={() => setPendingRow(null)}
-                variant="outline"
-                className="h-11 w-full rounded-xl border-border/50 text-sm font-black"
-              >
-                입력 중인 내용 유지
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
       {/* ── 대기열 (동호회) ── 회원 예약·운영진 소집·뽑힌 대진이 한 목록. 학교는 위에서 그렸다. */}
       {!isSchool && !readOnly && (
         <SessionCard canManage={isClassManager} onRecordRow={openQueueRow} />

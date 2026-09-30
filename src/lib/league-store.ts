@@ -3207,6 +3207,7 @@ function useLeagueStoreInternal() {
     playerIds?: string[];
     matchType?: "single" | "double";
     genderMode?: GenderMode;
+    courtCount?: number | null;
   }): Promise<boolean> => {
     if (!isClassManagerRef.current) { toast.error("권한이 없습니다."); return false; }
     const cid = currentClassIdRef.current;
@@ -3218,6 +3219,7 @@ function useLeagueStoreInternal() {
       playerIds: payload.playerIds ?? base?.player_ids ?? [],
       matchType: payload.matchType ?? base?.match_type ?? "double",
       genderMode: payload.genderMode,
+      courtCount: payload.courtCount,
     });
     if (error) { toast.error("명단 저장 실패: " + error.message); return false; }
     setAssignmentSession((data as AssignmentSession) ?? null);

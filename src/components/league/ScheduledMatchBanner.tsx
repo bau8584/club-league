@@ -104,7 +104,7 @@ export function ScheduledMatchBanner() {
             )}
             <div className="flex items-center justify-center gap-2 text-[11px] font-bold text-muted-foreground">
               <span>{current.match_type === "double" ? "복식" : "단식"}</span>
-              {current.court && <><span>·</span><span>{current.court}</span></>}
+              {current.court && <><span>·</span><span>{/^\d+$/.test(current.court) ? `${current.court}코트` : current.court}</span></>}
             </div>
           </div>
 
