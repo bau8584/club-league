@@ -103,7 +103,7 @@ export function AdminMatchRecords({
 
     onUpdateMatchScore(editingMatchId, sA, sB);
     setEditingMatchId(null);
-    toast.success("경기 점수가 수정되었으며 두 선수의 보너스 및 최종 RP가 오차 없이 즉시 재계산되어 덮어씌워졌습니다!");
+    // 성공·실패 토스트는 저장이 끝난 뒤 저장 쪽에서 한 번만 띄운다.
   };
 
   // Filtered matches logic
@@ -418,8 +418,7 @@ export function AdminMatchRecords({
             <AlertDialogAction
               onClick={() => {
                 if (pendingDelete) {
-                  onDeleteMatch(pendingDelete.id);
-                  toast.success("경기 기록이 삭제되었으며 참여 선수들의 RP·전적이 경기 이전으로 롤백되었습니다!");
+                  onDeleteMatch(pendingDelete.id); // 결과 토스트는 저장 쪽에서 한 번만
                 }
               }}
               className="font-black bg-destructive hover:bg-destructive/80 active:scale-95 transition-all text-white rounded-xl h-11 px-5 shadow-[0_0_15px_rgba(239,68,68,0.2)]"

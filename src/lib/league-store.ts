@@ -68,11 +68,15 @@ import {
   apiBulkCreateAssignedMatches,
   apiFetchAssignmentSession,
   apiUpsertAssignmentSession,
+  apiFetchApartPairs,
+  apiAddApartPair,
+  apiRemoveApartPair,
   apiClearQueue,
   apiAllocMatchSeq,
   apiUpdateScheduledStatus,
   apiDeleteScheduledMatch,
   apiDeleteScheduledMatches,
+  apiDeleteStaleQueue,
   apiUpdateScheduledTeams,
   apiCreateReservation,
   apiLinkScheduledResult,
@@ -355,6 +359,9 @@ function useLeagueStoreInternal() {
           setLevels(Array.isArray(s.levels) ? s.levels : []);
           setSport(typeof s.sport === "string" ? s.sport : "");
         }
+        // 입력용 기기 잠금(2026-09-28). 값 없음 = 핀 없음 = 잠금 기능 안 씀.
+        setLockPin(typeof classData.settings?.lockPin === "string" ? classData.settings.lockPin : "");
+        setLockEpoch(typeof classData.settings?.lockEpoch === "number" ? classData.settings.lockEpoch : 0);
         setGenderSetting(typeof classData.settings?.genderEnabled === "boolean" ? classData.settings.genderEnabled : null);
       }
 
@@ -498,6 +505,10 @@ function useLeagueStoreInternal() {
         sessionId = (sess as AssignmentSession | null)?.id ?? null;
       } catch { /* 테이블 마이그레이션 전이면 조용히 넘어간다 */ }
 
+      // 지난 수업에 못 치른 줄(만든 지 12시간 넘음)은 운영진이 화면을 열 때 치운다.
+      // 읽는 쪽은 이미 걸러내므로 이 삭제가 실패해도 화면은 맞다. 결과 기록은 안 건드린다.
+      if (isManager) { void apiDeleteStaleQueue(classId).then(() => {}, () => {}); }
+
       // 대진 호출(예정 경기) — 별도 테이블, RP/통계와 무관
       try {
         const { data: sched } = await apiFetchScheduledMatches(classId, sessionId);
@@ -561,7 +572,7 @@ function useLeagueStoreInternal() {
       channelRef.current = channel;
     } catch (err: any) {
       console.error("Failed to load class data from Supabase:", err.message);
-      toast.error("클래스 데이터를 불러오는데 실패했습니다: " + err.message);
+      toast.error("클래스 데이터를 불러오는데 실패했습니다: " + err.message, { id: "class-load-error" });
     } finally {
       if (!isBackground) setIsSyncing(false);
       setHydrated(true);
@@ -628,6 +639,9 @@ function useLeagueStoreInternal() {
   const [levelMode, setLevelMode] = useState<"preset" | "free">("free");
   const [levels, setLevels] = useState<{ name: string; description?: string }[]>([]);
   const [sport, setSport] = useState<string>("");
+  // 입력용 기기 잠금 핀(4자리)과 '잠금 전부 풀기' 횟수. 둘 다 settings 안 한 줄씩.
+  const [lockPin, setLockPin] = useState<string>("");
+  const [lockEpoch, setLockEpoch] = useState<number>(0);
   // 리그 유형 (club: 동호인 / school: 학교). leagues.league_type, 기본값 'club'.
   const [leagueType, setLeagueType] = useState<LeagueType>("club");
   const leagueTypeRef = useRef<LeagueType>("club");
@@ -1178,7 +1192,6 @@ function useLeagueStoreInternal() {
             await apiUpdateStudentRp(s.id, s.rp);
           }
         }
-        toast.success("선수의 전적이 초기화되었습니다!");
       } catch (err: any) {
         console.error("Failed to reset student in Supabase:", err.message);
         toast.error("전적 초기화에 실패했습니다: " + err.message);
@@ -1227,7 +1240,6 @@ function useLeagueStoreInternal() {
     if (currentClassId) {
       try {
         await apiUpdateStudentRp(studentId, Math.max(0, nextRp));
-        toast.success("RP가 수정되었습니다.");
       } catch (err: any) {
         console.error("Failed to update student RP in Supabase:", err.message);
         toast.error("RP 수정에 실패했습니다: " + err.message);
@@ -1511,7 +1523,6 @@ function useLeagueStoreInternal() {
     if (currentClassId) {
       try {
         await apiSoftDeleteStudent(studentId);
-        toast.success("회원을 삭제했습니다. 경기 기록과 다른 회원 점수는 그대로 보존됩니다.");
       } catch (err: any) {
         console.error("Failed to soft-delete student:", err.message);
         toast.error("회원 삭제에 실패했습니다: " + err.message);
@@ -1564,7 +1575,6 @@ function useLeagueStoreInternal() {
       try {
         const { error } = await apiSoftDeleteStudents(ids);
         if (error) throw error;
-        toast.success(`${ids.length}명을 삭제했습니다. 경기 기록과 다른 선수 점수는 그대로 보존됩니다.`);
       } catch (err: any) {
         console.error("Failed to soft-delete students:", err.message);
         toast.error("삭제에 실패했습니다: " + err.message);
@@ -1707,7 +1717,6 @@ function useLeagueStoreInternal() {
       }));
       const firstErr = results.find((r) => r.error);
       if (firstErr?.error) throw firstErr.error;
-      toast.success(`${updates.length}명의 정보를 저장했습니다.`);
       return true;
     } catch (err: any) {
       console.error("Bulk update failed:", err);
@@ -1745,7 +1754,6 @@ function useLeagueStoreInternal() {
     if (!classId) return false;
     const { error } = await apiRestoreStudent(studentId);
     if (error) { toast.error("복원에 실패했습니다: " + error.message); return false; }
-    toast.success("회원을 복원했습니다. 경기 기록도 그대로 남아 있어요.");
     await loadClassDataRef.current?.(classId);
     return true;
   }, [isClassOwner]);
@@ -1755,7 +1763,6 @@ function useLeagueStoreInternal() {
     if (!isClassManagerRef.current) { toast.error("권한이 없습니다."); return false; }
     const { error } = await apiHardDeleteStudent(studentId);
     if (error) { toast.error("영구 삭제에 실패했습니다: " + error.message); return false; }
-    toast.success("선수을 영구 삭제했습니다.");
     return true;
   }, [isClassOwner]);
 
@@ -2531,6 +2538,29 @@ function useLeagueStoreInternal() {
     return true;
   }, []);
 
+  // 기기 잠금 핀 저장 / 잠금 전부 풀기(lockEpoch 올림 → 잠긴 기기들이 다음 불러오기 때 풀림).
+  const saveLockSettings = useCallback(async (patch: { lockPin?: string; bumpEpoch?: boolean }): Promise<boolean> => {
+    const cid = currentClassIdRef.current;
+    if (!cid) return false;
+    if (!isClassOwnerRef.current) { toast.error("권한이 없습니다. 방장만 잠금 핀을 바꿀 수 있습니다."); return false; }
+    try {
+      const { data: currentClass } = await apiFetchClassSettings(cid);
+      const cur = currentClass?.settings || {};
+      const next: any = { ...cur };
+      if (patch.lockPin !== undefined) next.lockPin = patch.lockPin;
+      if (patch.bumpEpoch) next.lockEpoch = (typeof cur.lockEpoch === "number" ? cur.lockEpoch : 0) + 1;
+      const { error } = await apiUpdateClassSettings(cid, next);
+      if (error) throw error;
+      if (patch.lockPin !== undefined) setLockPin(patch.lockPin);
+      if (patch.bumpEpoch) setLockEpoch(next.lockEpoch);
+      return true;
+    } catch (err: any) {
+      console.error("Failed to save lock settings:", err.message);
+      toast.error("잠금 설정 저장에 실패했습니다: " + err.message);
+      return false;
+    }
+  }, []);
+
   // 종목 저장 (소유자/공동방장). 값만 바뀌므로 경기·점수엔 영향이 없다.
   const saveSport = useCallback(async (next: string): Promise<boolean> => {
     const cid = currentClassIdRef.current;
@@ -2675,7 +2705,6 @@ function useLeagueStoreInternal() {
         };
         const { error: updateErr } = await apiUpdateClassSettings(currentClassId, newSettings);
         if (updateErr) throw updateErr;
-        toast.success("경기 입력 방식이 저장되었습니다.");
       } catch (err: any) {
         console.error("Failed to save match input mode:", err.message);
         toast.error("경기 입력 방식 저장에 실패했습니다: " + err.message);
@@ -2726,7 +2755,6 @@ function useLeagueStoreInternal() {
           genderEnabled: enabled,
         });
         if (error) throw error;
-        toast.success(enabled ? "성별을 사용합니다." : "성별을 사용하지 않습니다.");
       } catch (err: any) {
         console.error("Failed to save genderEnabled:", err.message);
         toast.error("성별 설정 저장에 실패했습니다: " + err.message);
@@ -2792,7 +2820,6 @@ function useLeagueStoreInternal() {
     if (!cid) return false;
     const { error } = await apiSetMemberAdmin(cid, uid, makeAdmin);
     if (error) { toast.error("권한 변경에 실패했습니다: " + error.message); return false; }
-    toast.success(makeAdmin ? "관리자로 승격했습니다." : "일반 멤버로 변경했습니다.");
     await loadClassDataRef.current?.(cid, true);
     return true;
   }, []);
@@ -2822,7 +2849,6 @@ function useLeagueStoreInternal() {
     if (!cid) return false;
     const { error } = await apiSetCoOwner(cid, uid, make);
     if (error) { toast.error("공동방장 변경에 실패했습니다: " + error.message); return false; }
-    toast.success(make ? "공동방장으로 지정했습니다." : "공동방장을 해제했습니다.");
     await loadClassDataRef.current?.(cid, true);
     return true;
   }, []);
@@ -2874,7 +2900,8 @@ function useLeagueStoreInternal() {
         const { error: updateErr } = await apiUpdateClassSettings(currentClassId, newSettings);
         
         if (updateErr) throw updateErr;
-        // 토스트는 호출측(AdminSettings) toast.promise에서 한 번만 처리.
+        // 토스트는 호출측(DecayManager)에서. 막혔을 때(위 return)와 구분하도록 true를 돌려준다.
+        return true;
       } catch (err: any) {
         console.error("Failed to save decay settings in Supabase:", err.message);
         throw err;
@@ -3034,7 +3061,6 @@ function useLeagueStoreInternal() {
     });
     if (error) { toast.error("대진 추가 실패: " + error.message); return false; }
     await loadScheduled(cid);
-    toast.success("대진을 추가했습니다.");
     return true;
   }, [loadScheduled]);
 
@@ -3149,9 +3175,28 @@ function useLeagueStoreInternal() {
     });
     if (clearError) { toast.error("대기열 정리 실패: " + clearError.message); return false; }
     await loadScheduled(cid);
-    toast.success(`참석 ${payload.playerIds.length}명으로 시작했어요.`);
     return true;
   }, [loadScheduled, sessionOwnerId]);
+
+  /**
+   * [수업 종료] — 남은 줄만 비운다. 명단은 그대로 둔다.
+   * 반이 안 바뀌는 수업은 [새로 시작]으로 명단을 다시 정할 일이 없어서, 줄만 치울 길이 필요하다.
+   * 지우는 범위는 [새로 시작]과 같다(내 세션 + 학교면 세션 밖의 내 줄).
+   */
+  const endClassQueue = useCallback(async (): Promise<boolean> => {
+    if (!isClassManagerRef.current) { toast.error("권한이 없습니다."); return false; }
+    const cid = currentClassIdRef.current;
+    if (!cid) return false;
+    const sid = assignmentSessionRef.current?.id ?? null;
+    if (!sid) return true;
+    const { error } = await apiClearQueue(cid, {
+      sessionId: sid,
+      myUid: leagueTypeRef.current === "school" ? myUidRef.current : null,
+    });
+    if (error) { toast.error("정리 실패: " + error.message); return false; }
+    await loadScheduled(cid);
+    return true;
+  }, [loadScheduled]);
 
   /**
    * 명단·종목만 고친다(세션 경계 아님). 지각·조퇴가 여기로 들어온다 —
@@ -3178,6 +3223,33 @@ function useLeagueStoreInternal() {
     setAssignmentSession((data as AssignmentSession) ?? null);
     return true;
   }, [sessionOwnerId]);
+
+  // ── 같이 안 붙이기 ───────────────────────────────────
+  // 리그에 붙는 짝 목록. 채우기 직전에 매번 서버에서 새로 읽는다 — 다른 기기에서 방금 묶은
+  // 짝을 모른 채 뽑으면 안 된다. 읽기가 실패하면 마지막으로 읽은 목록을 쓴다(빈 목록으로 떨어지지 않게).
+  const apartCacheRef = useRef<{ classId: string; pairs: Array<[string, string]> } | null>(null);
+  const fetchApartPairs = useCallback(async (): Promise<Array<[string, string]>> => {
+    const cid = currentClassIdRef.current;
+    if (!cid || !isClassManagerRef.current) return [];
+    const cached = apartCacheRef.current?.classId === cid ? apartCacheRef.current.pairs : [];
+    try {
+      const { data, error } = await apiFetchApartPairs(cid);
+      if (error) return cached;
+      const pairs = (data ?? []).map((r) => [r.player_a, r.player_b] as [string, string]);
+      apartCacheRef.current = { classId: cid, pairs };
+      return pairs;
+    } catch {
+      return cached;
+    }
+  }, []);
+  const setApartPair = useCallback(async (a: string, b: string, on: boolean): Promise<boolean> => {
+    if (!isClassManagerRef.current) { toast.error("권한이 없습니다."); return false; }
+    const cid = currentClassIdRef.current;
+    if (!cid || a === b) return false;
+    const { error } = on ? await apiAddApartPair(cid, a, b) : await apiRemoveApartPair(cid, a, b);
+    if (error) { toast.error("저장 실패: " + error.message); return false; }
+    return true;
+  }, []);
 
   // ── 배정: 큐 채우기 ───────────────────────────────────
   // 계산은 순수 함수(domain/assignment-calculator)가 한다. 여기서는 재료를 모아 주고
@@ -3303,6 +3375,7 @@ function useLeagueStoreInternal() {
       for (const [id, d] of Object.entries(debt)) playCountOffset[id] = -d;
     }
 
+    const apart = await fetchApartPairs();
     const out = calculateAssignment({
       participants: students
         .filter((s) => participantIds!.includes(s.id))
@@ -3323,6 +3396,7 @@ function useLeagueStoreInternal() {
       seed: opts?.seed,
       // 섞어서 모드(또는 성별 꺼짐)는 groupOf 자체를 안 넘긴다 — 계산기 경로가 전과 같다.
       ...(separate ? { groupOf: genderGroupOf(participantIds, genderOf) } : {}),
+      ...(apart.length ? { apart } : {}),
     });
 
     if (out.matches.length === 0) {
@@ -3356,11 +3430,10 @@ function useLeagueStoreInternal() {
     if (error) { toast.error("배정 실패: " + error.message); return 0; }
 
     await loadScheduled(cid);
-    toast.success(out.shortfall > 0
-      ? `${out.matches.length}경기를 배정했어요. (인원이 모자라 ${out.shortfall}경기는 못 뽑았어요)`
-      : `${out.matches.length}경기를 배정했어요.`);
+    // 배정된 대진은 목록에 바로 보인다. 모자란 경우만 알린다.
+    if (out.shortfall > 0) toast.info(`인원이 모자라 ${out.shortfall}경기는 못 뽑았어요.`);
     return out.matches.length;
-  }, [genderEnabled, levels, loadScheduled, matches, scheduledMatches, students]);
+  }, [fetchApartPairs, genderEnabled, levels, loadScheduled, matches, scheduledMatches, students]);
 
   // 예약할 수 있는 권한: 관리자 또는 (자율 입력 모드에서) 연동된 회원
   const canReserve = () => isClassManagerRef.current || (matchInputModeRef.current !== "admin-only" && !!myPlayerId);
@@ -3395,7 +3468,6 @@ function useLeagueStoreInternal() {
       title: "🏸 경기 예약!", body: "경기가 예약됐어요. 코트로 모이세요.",
       url: classPath(cid), tag: `resv-${Date.now()}`,
     });
-    toast.success("경기를 예약했습니다.");
     return true;
   }, [loadScheduled, myPlayerId]);
 
@@ -3427,6 +3499,8 @@ function useLeagueStoreInternal() {
     const { error } = await apiLinkScheduledResult(reservationId, matchId);
     if (error) { console.warn("[reservation] link failed", error); toast.error("예약 완료 처리 실패: " + error.message); }
     if (cid) await loadScheduled(cid);
+    // 학교 리그는 학생이 로그인하지 않아 알림을 받을 사람이 없다.
+    if (leagueTypeRef.current === "school") return;
     notifyPlayers(participantIds, {
       title: "🏁 경기 결과 등록!", body: summary || "경기 결과가 등록됐어요. 확인해 보세요.",
       // 푸시를 누르면 그 경기의 결과 창이 바로 뜨도록 match id 전달
@@ -3446,7 +3520,7 @@ function useLeagueStoreInternal() {
       : await apiUpdateReservationPlayers(id, ids);
     if (error) { toast.error("나가기 실패: " + error.message); return false; }
     if (cid) await loadScheduled(cid);
-    toast.success(ids.length <= 1 ? "예약에서 나갔어요. (인원이 부족해 예약이 취소됐어요)" : "예약에서 나갔어요.");
+    if (ids.length <= 1) toast.info("인원이 부족해 예약이 취소됐어요.");
     return true;
   }, [loadScheduled, myPlayerId, scheduledMatches]);
 
@@ -3472,7 +3546,7 @@ function useLeagueStoreInternal() {
         url: cid ? classPath(cid, "?tab=matches") : "/", tag: `resv-add-${id}-${pid}`,
       });
     }
-    toast.success(pid !== myPlayerId ? `${nameOf(pid)}님을 추가하고 알림을 보냈어요.` : "예약에 참가했어요.");
+    if (pid !== myPlayerId) toast.success(`${nameOf(pid)}님을 추가하고 알림을 보냈어요.`);
     return true;
   }, [loadScheduled, myPlayerId, scheduledMatches, students]);
 
@@ -3530,7 +3604,6 @@ function useLeagueStoreInternal() {
       toast.error("호칭 저장에 실패했어요.");
       return false;
     }
-    toast.success(titleId ? "대표 호칭을 장착했어요." : "호칭을 해제했어요.");
     return true;
   }, [myPlayerId, titleIndex, students]);
 
@@ -3707,7 +3780,6 @@ function useLeagueStoreInternal() {
       const { error } = await apiRenameSeason(classId, oldName, newName);
       if (error) throw error;
       await loadClassDataRef.current?.(classId);
-      toast.success(`시즌 이름을 '${newName}'(으)로 변경했습니다.`);
       return { success: true };
     } catch (err: any) {
       toast.error(err.message || "시즌 이름 변경에 실패했습니다.");
@@ -3722,7 +3794,6 @@ function useLeagueStoreInternal() {
       const { error } = await apiDeleteSeason(classId, season, deleteMatches);
       if (error) throw error;
       await loadClassDataRef.current?.(classId);
-      toast.success(`'${season}' 시즌을 삭제했습니다.`);
       return { success: true };
     } catch (err: any) {
       toast.error(err.message || "시즌 삭제에 실패했습니다.");
@@ -3735,7 +3806,6 @@ function useLeagueStoreInternal() {
   const claimPlayer = useCallback(async (playerId: string): Promise<boolean> => {
     const { error } = await apiClaimPlayer(playerId);
     if (error) { toast.error("연동에 실패했습니다: " + error.message); return false; }
-    toast.success("닉네임에 연동되었습니다!");
     const cid = currentClassIdRef.current;
     if (cid) await loadClassDataRef.current?.(cid);
     return true;
@@ -3755,7 +3825,6 @@ function useLeagueStoreInternal() {
     if (!isClassManagerRef.current) { toast.error("권한이 없습니다."); return false; }
     const { error } = await apiUnlinkPlayer(playerId);
     if (error) { toast.error("연동 해제에 실패했습니다: " + error.message); return false; }
-    toast.success("계정 연동을 해제했습니다.");
     const cid = currentClassIdRef.current;
     if (cid) await loadClassDataRef.current?.(cid, true);
     return true;
@@ -3806,6 +3875,9 @@ function useLeagueStoreInternal() {
     setLevels,
     saveLevels,
     sport,
+    lockPin,
+    lockEpoch,
+    saveLockSettings,
     leagueType,
     ownerUid,
     adminUids,
@@ -3841,6 +3913,8 @@ function useLeagueStoreInternal() {
     updateStudentGender,
     deleteStudent,
     deleteStudents,
+    fetchApartPairs,
+    setApartPair,
     updateStudentInfo,
     bulkUpdateStudents,
     fetchDeletedStudents,
@@ -3888,6 +3962,7 @@ function useLeagueStoreInternal() {
     callScheduledMatch,
     removeScheduledMatch,
     removeScheduledMatches,
+    endClassQueue,
     replaceQueuePlayer,
     createReservation,
     cancelReservation,

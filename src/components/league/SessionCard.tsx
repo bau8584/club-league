@@ -7,7 +7,7 @@ import { classKeyOf, classLabel, type ScheduledMatch } from "@/lib/league-types"
 import { useQueueRows } from "@/lib/use-queue-rows";
 import { SessionRoster } from "./SessionRoster";
 import { ClubRoster } from "./ClubRoster";
-import { liveSession } from "@/lib/session-today";
+import { liveSession, STALE_MS } from "@/lib/session-today";
 import { MatchQueue } from "./MatchQueue";
 
 /**
@@ -22,12 +22,9 @@ import { MatchQueue } from "./MatchQueue";
  */
 export function SessionCard({
   canManage,
-  canReserve = false,
   onRecordRow,
 }: {
   canManage: boolean;
-  /** 회원이 직접 줄을 만들 수 있는가(동호회 예약). 운영진은 항상 가능. */
-  canReserve?: boolean;
   onRecordRow: (row: ScheduledMatch) => void;
 }) {
   const { students, assignmentSession: rawSession, matches, leagueType } = useLeagueStore();
@@ -38,7 +35,9 @@ export function SessionCard({
   // 명단 펼침. 세션이 없으면 접을 것이 없다 — 명단을 정하는 것이 지금 할 일이다.
   const [rosterOpen, setRosterOpen] = useState(false);
 
-  const present = assignmentSession?.player_ids ?? [];
+  // 명단에서 빠진(전학·삭제) 학생은 오늘 명단에 id가 남아 있어도 세지 않는다.
+  const alive = new Set(students.map((s) => s.id));
+  const present = (assignmentSession?.player_ids ?? []).filter((id) => alive.has(id));
   const hasSession = !!assignmentSession && present.length > 0;
 
   // 지금 세션이 어느 반으로 돌아가는지. 반 정보가 없는 명단이면 붙일 이름이 없다.
@@ -60,10 +59,10 @@ export function SessionCard({
    */
   const idleCount = (() => {
     if (!hasSession) return 0;
-    // 학교는 이 수업(세션) 동안, 동호회는 오늘 하루 동안. 동호회는 운동 중간에
-    // [오늘 운동 시작]을 눌러도 그 전에 뛴 것이 오늘 뛴 것이다.
+    // 학교는 이 수업(세션) 동안, 동호회는 최근 12시간 동안(밤샘이 자정을 넘어도 이어진다).
+    // 동호회는 운동 중간에 [오늘 운동 시작]을 눌러도 그 전에 뛴 것이 오늘 뛴 것이다.
     const from = isClub
-      ? new Date(new Date().toDateString()).getTime()
+      ? Date.now() - STALE_MS
       : new Date(assignmentSession!.started_at).getTime();
     const played = new Set<string>();
     for (const m of matches ?? []) {
@@ -95,7 +94,7 @@ export function SessionCard({
             </p>
           </div>
         </div>
-        <MatchQueue canManage={false} canReserve={canReserve} onRecordRow={onRecordRow} />
+        <MatchQueue canManage={false} onRecordRow={onRecordRow} />
       </Card>
     );
   }

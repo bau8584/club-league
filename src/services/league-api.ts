@@ -1,5 +1,6 @@
 import { supabase } from "../supabaseClient";
 import type { PlayerInsert, MatchInsert, MatchUpdate } from "../lib/database.types";
+import { staleCutoffIso } from "../lib/session-today";
 import { buildAssignedMatchRows, type AssignedMatchInput } from "../domain/assignment-rows";
 
 // 동호회 스키마(leagues/players/matches/league_secrets/players_public)에 대응.
@@ -134,6 +135,34 @@ export async function apiBulkCreateAssignedMatches(payload: AssignedMatchInput) 
 // 명단과 큐가 다른 저장소에 있으면 계산이 틀린다. 큐가 이미 서버에 있으므로 명단도 서버에 둔다.
 
 /** 내 세션을 찾는다. 학교는 `ownerId`(내 계정)로, 동호회는 주인 없는 한 행으로. */
+// --- 같이 안 붙이기 (player_apart) ---
+// 관리 권한자만 읽고 쓴다(RLS). 짝은 (작은 id, 큰 id)로 한 줄만 둔다.
+const apartKey = (a: string, b: string): [string, string] => (a < b ? [a, b] : [b, a]);
+
+export async function apiFetchApartPairs(classId: string) {
+  return (supabase as any)
+    .from("player_apart")
+    .select("player_a, player_b")
+    .eq("league_id", classId) as Promise<{ data: { player_a: string; player_b: string }[] | null; error: any }>;
+}
+
+export async function apiAddApartPair(classId: string, a: string, b: string) {
+  const [pa, pb] = apartKey(a, b);
+  return (supabase as any)
+    .from("player_apart")
+    .upsert({ league_id: classId, player_a: pa, player_b: pb }, { onConflict: "league_id,player_a,player_b", ignoreDuplicates: true });
+}
+
+export async function apiRemoveApartPair(classId: string, a: string, b: string) {
+  const [pa, pb] = apartKey(a, b);
+  return (supabase as any)
+    .from("player_apart")
+    .delete()
+    .eq("league_id", classId)
+    .eq("player_a", pa)
+    .eq("player_b", pb);
+}
+
 export async function apiFetchAssignmentSession(classId: string, ownerId?: string | null) {
   const q = supabase.from("assignment_sessions").select("*").eq("league_id", classId);
   return (ownerId ? q.eq("owner_id", ownerId) : q.is("owner_id", null)).maybeSingle();
@@ -218,6 +247,16 @@ export async function apiClearQueue(classId: string, opts?: { sessionId?: string
   if (!opts?.sessionId) return q;
   const mine = opts.myUid ? `,and(session_id.is.null,created_by.eq.${opts.myUid})` : "";
   return q.or(`session_id.eq.${opts.sessionId}${mine}`);
+}
+
+/** 지난 수업에 못 치른 줄을 치운다. 결과 기록(matches)은 건드리지 않는다. */
+export async function apiDeleteStaleQueue(classId: string) {
+  return supabase
+    .from("scheduled_matches")
+    .delete()
+    .eq("league_id", classId)
+    .in("status", ["waiting", "called"])
+    .lt("created_at", staleCutoffIso());
 }
 
 export async function apiUpdateScheduledStatus(id: string, status: "waiting" | "called" | "done" | "cancelled") {

@@ -182,8 +182,10 @@ export function AdminPanel({
   const parsed = useMemo(() => parsePaste(text), [text]);
 
   const commit = async () => {
-    if (parsed.rows.length === 0) return toast.error("등록할 선수이 없습니다");
+    if (parsed.rows.length === 0) return toast.error("등록할 선수가 없습니다");
     const { added, kept } = await onUpsert(parsed.rows);
+    // 0/0은 저장이 막혔거나 실패한 경우다 — 그때는 저장 쪽이 이미 알렸다.
+    if (added + kept === 0) return;
     setText("");
     toast.success(`신규 ${added}명 등록, 기존 ${kept}명 전적 유지`);
   };
@@ -220,7 +222,6 @@ export function AdminPanel({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    toast.success("전체 데이터 JSON 백업 다운로드가 완료되었습니다!");
   };
 
   // JSON backup restore upload

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { liveSession } from "./session-today";
+import { liveSession, staleCutoffIso } from "./session-today";
 import type { AssignmentSession } from "./league-types";
 
 const at = (iso: string) =>
@@ -13,6 +13,14 @@ describe("liveSession", () => {
   test("동호회는 오늘 시작한 것만", () => {
     expect(liveSession(at("2026-09-12T18:00:00+09:00"), "club", now)).not.toBeNull();
     expect(liveSession(at("2026-09-05T18:00:00+09:00"), "club", now)).toBeNull();
+  });
+  test("밤샘 운동은 자정을 넘어도 살아 있다 (12시간 기준)", () => {
+    const after = new Date("2026-09-13T03:00:00+09:00");
+    expect(liveSession(at("2026-09-12T19:00:00+09:00"), "club", after)).not.toBeNull();
+    expect(liveSession(at("2026-09-12T19:00:00+09:00"), "club", new Date("2026-09-13T08:00:00+09:00"))).toBeNull();
+  });
+  test("줄의 기준 시각은 지금부터 12시간 전", () => {
+    expect(staleCutoffIso(now)).toBe(new Date("2026-09-12T08:00:00+09:00").toISOString());
   });
   test("명단이 비면 없는 것", () => {
     const s = { ...at("2026-09-12T18:00:00+09:00"), player_ids: [] } as unknown as AssignmentSession;

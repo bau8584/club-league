@@ -766,11 +766,7 @@ export function RecordMatch({
       matchType
     );
     if (!matchObj) return;
-
-    const winnerNameText = matchType === "double"
-      ? `${playerLabel(aWon ? playerA : playerB)} & ${playerLabel(aWon ? playerA2! : playerB2!)}`
-      : `${playerLabel(aWon ? playerA : playerB)}`;
-    toast.success(`${winnerNameText} 팀 승리! 결과가 등록되었습니다.`);
+    // 등록 알림 토스트는 띄우지 않는다 — 바로 뜨는 결과 창이 같은 내용을 보여 준다.
 
     // 3. Extract exact custom deltas & bonuses calculated in league-store
     const getPlayerResult = (student: Student, role: "A" | "A2" | "B" | "B2", won: boolean, score: number): PlayerResult => {

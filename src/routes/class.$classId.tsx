@@ -16,8 +16,9 @@ import { SeasonSummary } from "@/components/league/SeasonSummary";
 import { Toaster } from "@/components/ui/sonner";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { Crown, Swords, Trophy, Users, User, Pencil, LogOut, School, ShieldAlert, BarChart3, ArrowLeft, Lock, MoreVertical, Palette, CalendarDays, RefreshCw, IdCard, QrCode } from "lucide-react";
+import { Crown, Swords, Trophy, Users, User, Pencil, LogOut, School, ShieldAlert, BarChart3, ArrowLeft, Lock, LockOpen, MoreVertical, Palette, CalendarDays, RefreshCw, IdCard, QrCode } from "lucide-react";
 import { InviteDialog, type ShareMode } from "@/components/league/InviteDialog";
+import { useDeviceLock, PinGate, SetPinDialog } from "@/components/league/DeviceLock";
 import { ThemePicker } from "@/components/ThemePicker";
 import { useTheme, isDarkTheme } from "@/lib/use-theme";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
@@ -87,7 +88,16 @@ export function LeagueApp({ classId }: { classId: string }) {
     currentSeason,
     currentViewSeason,
     changeViewSeason,
+    lockPin,
+    lockEpoch,
+    saveLockSettings,
   } = useLeagueStore();
+
+  // 입력용 기기 잠금: 잠긴 기기에선 경기장(·내 카드) 밖 탭과 로그아웃·로비가 핀 뒤로 간다.
+  const deviceLock = useDeviceLock(classId, lockPin, lockEpoch);
+  const [pinUnlocked, setPinUnlocked] = useState(false);
+  const [setPinOpen, setSetPinOpen] = useState(false);
+  const gated = deviceLock.locked && !pinUnlocked;
 
   useEffect(() => {
     if (classId) {
@@ -157,6 +167,30 @@ export function LeagueApp({ classId }: { classId: string }) {
     }
   }, [session, isClassManager, tab]);
 
+  // 핀으로 잠깐 풀었어도 경기장으로 돌아오면 저절로 다시 잠긴다.
+  useEffect(() => {
+    if (tab === "matches") setPinUnlocked(false);
+  }, [tab]);
+
+  const lockThisDevice = () => {
+    if (!lockPin) {
+      if (!isClassOwner) { toast.error("방장이 먼저 잠금 핀을 정해야 해요."); return; }
+      setSetPinOpen(true);
+      return;
+    }
+    deviceLock.lock();
+    setPinUnlocked(false);
+    setTab("matches");
+    toast.success("이 기기를 잠갔어요. 경기장만 열려 있어요.");
+  };
+  const unlockThisDevice = () => {
+    deviceLock.release();
+    setPinUnlocked(false);
+    toast.success("이 기기 잠금을 껐어요.");
+  };
+  // 핀을 넣어야 하는 탭: 경기장·내 카드 밖 전부(랭킹·하이라이트·시즌 요약·관리자)
+  const tabGated = gated && tab !== "matches" && tab !== "myRecord";
+
   // Prevent closing the page during synchronization
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -178,7 +212,7 @@ export function LeagueApp({ classId }: { classId: string }) {
 
   return (
     <div className="min-h-screen animate-in fade-in duration-300">
-      <Toaster theme={isDarkTheme(theme) ? "dark" : "light"} position="bottom-center" richColors duration={2500} />
+      <Toaster theme={isDarkTheme(theme) ? "dark" : "light"} position="top-center" richColors duration={2500} />
 
       {/* Header */}
       <header className="border-b border-border/60 bg-card/40 backdrop-blur-xl">
@@ -191,7 +225,7 @@ export function LeagueApp({ classId }: { classId: string }) {
                 <Crown className="size-5 text-primary-foreground" />
               </div>
               <div>
-                {editingTitle && session.role !== "STUDENT" && isClassOwner ? (
+                {editingTitle && session.role !== "STUDENT" && isClassOwner && !gated ? (
                   <Input
                     autoFocus
                     value={title}
@@ -208,15 +242,15 @@ export function LeagueApp({ classId }: { classId: string }) {
                   />
                 ) : (
                   <button 
-                    onClick={() => session.role !== "STUDENT" && isClassOwner && setEditingTitle(true)} 
-                    disabled={session.role === "STUDENT" || !isClassOwner}
+                    onClick={() => session.role !== "STUDENT" && isClassOwner && !gated && setEditingTitle(true)} 
+                    disabled={session.role === "STUDENT" || !isClassOwner || gated}
                     className={cn(
                       "flex items-center gap-2 text-lg font-bold tracking-tight hover:text-neon-blue sm:text-xl",
-                      (session.role === "STUDENT" || !isClassOwner) && "cursor-default hover:text-foreground"
+                      (session.role === "STUDENT" || !isClassOwner || gated) && "cursor-default hover:text-foreground"
                     )}
                   >
                     {title}
-                    {session.role !== "STUDENT" && isClassOwner && <Pencil className="size-3.5 text-muted-foreground" />}
+                    {session.role !== "STUDENT" && isClassOwner && !gated && <Pencil className="size-3.5 text-muted-foreground" />}
                   </button>
                 )}
               </div>
@@ -224,6 +258,33 @@ export function LeagueApp({ classId }: { classId: string }) {
 
             {/* Sync status + 통합 메뉴(케밥) */}
             <div className="flex items-center gap-2">
+
+              {/* 입력용 기기 잠금 버튼 (관리자만) */}
+              {session.role !== "STUDENT" && isClassManager && currentViewSeason === "현재 시즌" && (
+                deviceLock.locked ? (
+                  pinUnlocked ? (
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => { setPinUnlocked(false); setTab("matches"); }} title="다시 잠그고 경기장으로"
+                        className="flex items-center gap-1.5 rounded-lg border border-amber-500/50 bg-amber-500/10 px-2.5 py-1.5 text-xs font-bold text-amber-500 active:scale-95 transition-all">
+                        <Lock className="size-3.5" /> 다시 잠그기
+                      </button>
+                      <button onClick={unlockThisDevice} title="이 기기 잠금 끄기"
+                        className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-card/60 px-2.5 py-1.5 text-xs font-bold text-muted-foreground hover:text-foreground active:scale-95 transition-all">
+                        <LockOpen className="size-3.5" /> 잠금 끄기
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="flex items-center gap-1.5 rounded-lg border border-amber-500/50 bg-amber-500/10 px-2.5 py-1.5 text-xs font-bold text-amber-500">
+                      <Lock className="size-3.5" /> 입력용
+                    </span>
+                  )
+                ) : (
+                  <button onClick={lockThisDevice} title="이 기기를 입력용으로 잠그기"
+                    className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-card/60 px-2.5 py-1.5 text-xs font-bold text-muted-foreground hover:text-amber-500 hover:border-amber-500/40 active:scale-95 transition-all">
+                    <Lock className="size-3.5" /> 잠그기
+                  </button>
+                )
+              )}
 
               {/* Real-time Sync Badge (동기화 중에만) */}
               {isSyncing && (
@@ -244,7 +305,7 @@ export function LeagueApp({ classId }: { classId: string }) {
                 </span>
 
                 {/* 시즌 */}
-                <div className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-card/60 px-2.5 py-1 text-xs">
+                {!gated && <div className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-card/60 px-2.5 py-1 text-xs">
                   <span className="font-bold text-muted-foreground">시즌</span>
                   <select
                     value={currentViewSeason}
@@ -256,7 +317,7 @@ export function LeagueApp({ classId }: { classId: string }) {
                       <option key={season} value={season} className="bg-background text-foreground">{season}</option>
                     ))}
                   </select>
-                </div>
+                </div>}
 
                 {/* 등록 선수 */}
                 <div className="flex items-center gap-1.5 rounded-full border border-border/60 bg-card/60 px-3 py-1.5 text-xs">
@@ -277,7 +338,7 @@ export function LeagueApp({ classId }: { classId: string }) {
 
                 {/* 공유 — 학교는 공개 순위표, 동호회는 QR 초대. 케밥 메뉴가 모바일 전용이라
                     데스크톱에서는 이 버튼이 유일한 통로다. */}
-                {isSchool ? (
+                {gated ? null : isSchool ? (
                   <button onClick={() => openShare("ranking")} title="공개 순위표 보기·공유"
                     className="flex size-9 items-center justify-center rounded-lg border border-border/60 bg-card/60 text-muted-foreground hover:text-neon-blue hover:border-neon-blue/40 active:scale-95 transition-all">
                     <Trophy className="size-4" />
@@ -299,16 +360,16 @@ export function LeagueApp({ classId }: { classId: string }) {
                 <PushToggle leagueId={classId} />
 
                 {/* 리그 로비 (school 라우트에서는 학교 로비로, club 라우트에서는 클럽 로비로) */}
-                <button onClick={() => { window.location.href = window.location.pathname.startsWith("/school") ? "/school" : "/"; }} title="리그 로비로"
+                {!gated && <button onClick={() => { window.location.href = window.location.pathname.startsWith("/school") ? "/school" : "/"; }} title="리그 로비로"
                   className="flex size-9 items-center justify-center rounded-lg border border-border/60 bg-card/60 text-muted-foreground hover:text-neon-blue hover:border-neon-blue/40 active:scale-95 transition-all">
                   <ArrowLeft className="size-4" />
-                </button>
+                </button>}
 
-                {/* 로그아웃 */}
-                <button onClick={logoutUser} title="로그아웃"
+                {/* 로그아웃 — 잠긴 기기에선 숨김(로그아웃→구글 한 번 톡 재로그인으로 뚫리는 길 차단) */}
+                {!gated && <button onClick={logoutUser} title="로그아웃"
                   className="flex items-center gap-2 rounded-lg border border-border/60 bg-card/60 px-3 py-1.5 text-xs font-bold text-muted-foreground hover:text-destructive hover:border-destructive/40 active:scale-95 transition-all">
                   <LogOut className="size-4" /> 로그아웃
-                </button>
+                </button>}
               </div>
 
               {/* 모바일: 새로고침 + 경기 알림 버튼 (케밥 옆에 직접 노출) */}
@@ -345,7 +406,7 @@ export function LeagueApp({ classId }: { classId: string }) {
                   </div>
 
                   {/* 시즌 선택 */}
-                  <div className="border-b border-border/40 py-1">
+                  {!gated && <div className="border-b border-border/40 py-1">
                     <div className="px-3 pt-1 pb-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">시즌</div>
                     <DropdownMenuItem
                       onSelect={() => changeViewSeason("현재 시즌")}
@@ -362,7 +423,7 @@ export function LeagueApp({ classId }: { classId: string }) {
                         {season}
                       </DropdownMenuItem>
                     ))}
-                  </div>
+                  </div>}
 
                   {/* 테마 (메뉴 유지 — 클릭해도 안 닫힘) */}
                   <div className="border-b border-border/40 px-3 py-2.5">
@@ -372,23 +433,25 @@ export function LeagueApp({ classId }: { classId: string }) {
                   {/* 액션 */}
                   {/* 학교 리그의 초대는 '선생님을 공동 관리자로' 넣는 동작이라, 학생을 초대할
                       물건으로 오해하기 쉽다. 그래서 리그 화면에서는 빼고 로비에서만 다룬다. */}
-                  {!isSchool && isClassManager && (
+                  {!gated && !isSchool && isClassManager && (
                     <DropdownMenuItem onSelect={() => openShare("invite")} className="gap-2 text-xs cursor-pointer">
                       <QrCode className="size-4 text-neon-blue" /> QR로 초대하기
                     </DropdownMenuItem>
                   )}
                   {/* 공개 순위표는 학교 리그 기능 — 동호회에서는 노출하지 않는다. */}
-                  {isSchool && (
+                  {!gated && isSchool && (
                     <DropdownMenuItem onSelect={() => openShare("ranking")} className="gap-2 text-xs cursor-pointer">
                       <Trophy className="size-4 text-neon-blue" /> 공개 순위표 보기·공유
                     </DropdownMenuItem>
                   )}
+                  {!gated && <>
                   <DropdownMenuItem onSelect={() => { window.location.href = window.location.pathname.startsWith("/school") ? "/school" : "/"; }} className="gap-2 text-xs cursor-pointer">
                     <ArrowLeft className="size-4" /> 리그 로비로
                   </DropdownMenuItem>
                   <DropdownMenuItem onSelect={logoutUser} className="gap-2 text-xs cursor-pointer text-destructive focus:text-destructive">
                     <LogOut className="size-4" /> 로그아웃
                   </DropdownMenuItem>
+                  </>}
                 </DropdownMenuContent>
               </DropdownMenu>
 
@@ -519,6 +582,16 @@ export function LeagueApp({ classId }: { classId: string }) {
             알림 배너가 뜨면 안내만 가로막으므로 띄우지 않는다(헤더 종 버튼으로는 켤 수 있다). */}
         {!isSchool && <PushPrompt leagueId={classId} />}
 
+        <SetPinDialog
+          open={setPinOpen}
+          onOpenChange={setSetPinOpen}
+          onSave={async (pin) => {
+            const ok = await saveLockSettings({ lockPin: pin });
+            if (ok) { deviceLock.lock(); setPinUnlocked(false); setTab("matches"); toast.success("핀을 정하고 이 기기를 잠갔어요."); }
+            return ok;
+          }}
+        />
+
         {/* 관리자 QR 초대 다이얼로그 */}
         <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} classId={classId} leagueName={title} defaultMode={shareMode} allowRanking={isSchool} allowInvite={!isSchool} ownerId={isSchool ? myUid : null} />
 
@@ -540,8 +613,10 @@ export function LeagueApp({ classId }: { classId: string }) {
           </div>
         )}
 
+        {tabGated && <PinGate expected={lockPin} onUnlock={() => setPinUnlocked(true)} />}
+
         {/* Tenant Panels */}
-        {tab === "seasonSummary" && currentViewSeason !== "현재 시즌" && (
+        {!tabGated && tab === "seasonSummary" && currentViewSeason !== "현재 시즌" && (
           <SeasonSummary
             season={currentViewSeason}
             students={students}
@@ -550,14 +625,14 @@ export function LeagueApp({ classId }: { classId: string }) {
           />
         )}
 
-        {tab === "leaderboard" && (
+        {!tabGated && tab === "leaderboard" && (
           <Leaderboard
             students={students}
             thresholds={tierThresholds}
           />
         )}
 
-        {tab === "daily" && <DailyResults />}
+        {!tabGated && tab === "daily" && <DailyResults />}
 
         {tab === "matches" && (
           <MatchesTab openMatchId={openMatchId} onConsumeMatchId={() => setOpenMatchId(null)} />
@@ -577,7 +652,7 @@ export function LeagueApp({ classId }: { classId: string }) {
         )}
 
 
-         {session.role !== "STUDENT" && tab === "admin" && isClassManager && (
+         {!tabGated && session.role !== "STUDENT" && tab === "admin" && isClassManager && (
           <AdminPanel
             isOwner={isClassOwner}
             students={students}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetchClassOptionsPublic, apiFetchClassViewPublic } from "@/services/league-api";
 import { cn } from "@/lib/utils";
 import {
@@ -63,7 +63,14 @@ function writePref(classId: string, p: Pref) {
 
 // 수업 중에는 대기열이 자주 바뀐다. 로그인이 없어 실시간 구독을 못 쓰므로(구독은 인증을
 // 요구한다) 주기적으로 다시 읽는다. 아이가 새로고침을 누르지 않아도 따라오게.
+// 요청 1번 = 서버 로그 1줄이라, 바뀔 게 없을 때는 느리게 묻는다:
+//   내 반 수업 중 + 화면이 보임 + 최근 10분 안에 바뀐 게 있음 → 15초, 그 외 → 1분.
+//   화면이 다시 보이거나 내용이 바뀌면 곧바로 빠르게 돌아온다.
+//   안 보일 때 멈추지 않고 느리게만 하는 건, "안 보임"을 잘못 알리는 기기에서
+//   화면이 멈춘 채 아무도 모르는 일을 막기 위해서다.
 const POLL_MS = 15000;
+const SLOW_POLL_MS = 60000;
+const QUIET_AFTER_MS = 10 * 60 * 1000;
 
 export function ClassroomView({ classId, ownerId }: { classId: string; ownerId?: string | null }) {
   // 주소에 선생님이 들어 있으면(교실 화면) 기본이 "따라가기"다.
@@ -77,6 +84,11 @@ export function ClassroomView({ classId, ownerId }: { classId: string; ownerId?:
   const askGrade = pref.follow ? null : pref.grade ?? null;
   const askClass = pref.follow ? null : pref.classNum ?? null;
 
+  const lastSigRef = useRef<string | null>(null);
+  const lastChangeRef = useRef(Date.now());
+  const stateRef = useRef<ClassView["state"] | null>(null);
+  stateRef.current = view?.state ?? null;
+
   const load = useCallback(async ({ quiet = false }: { quiet?: boolean } = {}) => {
     if (!quiet) setLoading(true);
     setError(null);
@@ -85,6 +97,8 @@ export function ClassroomView({ classId, ownerId }: { classId: string; ownerId?:
         classId, ownerId, grade: askGrade, classNum: askClass,
       });
       if (err) throw err;
+      const sig = JSON.stringify(data);
+      if (sig !== lastSigRef.current) { lastSigRef.current = sig; lastChangeRef.current = Date.now(); }
       setView(data as ClassView);
     } catch (e: any) {
       setError(e?.message || "불러오지 못했어요.");
@@ -95,8 +109,27 @@ export function ClassroomView({ classId, ownerId }: { classId: string; ownerId?:
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
-    const t = setInterval(() => load({ quiet: true }), POLL_MS);
-    return () => clearInterval(t);
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const nextDelay = () => {
+      const visible = typeof document === "undefined" || document.visibilityState === "visible";
+      const fresh = Date.now() - lastChangeRef.current < QUIET_AFTER_MS;
+      return stateRef.current === "session" && visible && fresh ? POLL_MS : SLOW_POLL_MS;
+    };
+    const schedule = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(async () => { await load({ quiet: true }); schedule(); }, nextDelay());
+    };
+    const onVisibility = () => {
+      if (document.visibilityState !== "visible") return;
+      lastChangeRef.current = Date.now();   // 다시 켜면 빠르게부터
+      void load({ quiet: true }).then(schedule);
+    };
+    schedule();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      if (timer) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [load]);
 
   useEffect(() => {
