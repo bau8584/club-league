@@ -169,8 +169,10 @@ export function MatchQueue({
       const { teamA, teamB, pool } = teamsOf(r);
       for (const id of [...teamA, ...teamB, ...pool]) busy.add(id);
     }
-    return (assignmentSession?.player_ids ?? []).filter((id) => !busy.has(id));
-  }, [queue, assignmentSession?.player_ids]);
+    // 명단에서 빠진(전학·삭제) 학생은 오늘 명단에 id가 남아 있어도 세지 않는다.
+    const alive = new Set(students.map((s) => s.id));
+    return (assignmentSession?.player_ids ?? []).filter((id) => alive.has(id) && !busy.has(id));
+  }, [queue, assignmentSession?.player_ids, students]);
   const free = freeIds.length;
   // 남녀 따로 — 세션 설정이 "따로"이고 이 리그가 성별을 쓸 때만(스토어와 같은 조건).
   const separate = assignmentSession?.gender_mode === "separate" && genderEnabled;

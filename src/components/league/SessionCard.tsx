@@ -35,7 +35,9 @@ export function SessionCard({
   // 명단 펼침. 세션이 없으면 접을 것이 없다 — 명단을 정하는 것이 지금 할 일이다.
   const [rosterOpen, setRosterOpen] = useState(false);
 
-  const present = assignmentSession?.player_ids ?? [];
+  // 명단에서 빠진(전학·삭제) 학생은 오늘 명단에 id가 남아 있어도 세지 않는다.
+  const alive = new Set(students.map((s) => s.id));
+  const present = (assignmentSession?.player_ids ?? []).filter((id) => alive.has(id));
   const hasSession = !!assignmentSession && present.length > 0;
 
   // 지금 세션이 어느 반으로 돌아가는지. 반 정보가 없는 명단이면 붙일 이름이 없다.
