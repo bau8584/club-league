@@ -115,6 +115,11 @@ export interface AssignmentInput {
    * 서로 다른 그룹이 섞이는 일은 없다. 생략하면 지금처럼 전부 섞는다.
    */
   groupOf?: Record<string, string>;
+  /**
+   * 같은 경기에 절대 넣지 않는 두 사람(같은 편도, 상대편도 안 됨). 완화 단계에서도 풀지 않는다 —
+   * 못 붙이면 그 경기를 안 뽑는다. 생략하면 지금과 같다.
+   */
+  apart?: Array<[string, string]>;
 }
 
 export interface AssignedMatch {
@@ -493,6 +498,22 @@ export function calculateAssignment(input: AssignmentInput): AssignmentOutput {
     return false;
   };
 
+  // 떼어 놓을 짝. 명단에 없는 사람이 낀 짝은 볼 필요가 없다.
+  const apartOf = new Map<string, Set<string>>();
+  for (const [a, b] of input.apart ?? []) {
+    if (!a || !b || a === b || !roster.has(a) || !roster.has(b)) continue;
+    if (!apartOf.has(a)) apartOf.set(a, new Set());
+    if (!apartOf.has(b)) apartOf.set(b, new Set());
+    apartOf.get(a)!.add(b);
+    apartOf.get(b)!.add(a);
+  }
+  /** 한 경기 안에 떼어 놓을 두 사람이 같이 있는가. */
+  const hasApart = (members: string[]) =>
+    members.some((id) => {
+      const set = apartOf.get(id);
+      return !!set && members.some((o) => set.has(o));
+    });
+
   const matches: AssignedMatch[] = [];
   let shortfall = 0;
 
@@ -551,6 +572,7 @@ export function calculateAssignment(input: AssignmentInput): AssignmentOutput {
         for (const rest of combinations(window, needed - 1)) {
           const group = [anchor, ...rest];
           if (groupOf.size > 0 && mixesGroups(group)) continue;
+          if (apartOf.size > 0 && hasApart(group)) continue;
           for (const [teamA, teamB] of splitsOf(group, teamSize)) {
             const parts = costParts(teamA, teamB, stats, ratings, w, relaxed, jitter, groupOf);
             const key = sortKey(parts, preset, balanceLimit, skillGranularity);

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { ClipboardCheck, X } from "lucide-react";
+import { ClipboardCheck, Link2, UserPlus, X } from "lucide-react";
 import { useLeagueStore } from "@/lib/league-store";
 import { useGenderEnabled } from "@/lib/league-terms";
 import type { GenderMode } from "@/domain/gender-split";
@@ -104,8 +104,17 @@ export function SessionRoster({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const { students, assignmentSession, startAssignmentSession, updateAssignmentSession } =
-    useLeagueStore();
+  const {
+    students,
+    matches,
+    assignmentSession,
+    startAssignmentSession,
+    updateAssignmentSession,
+    fetchApartPairs,
+    setApartPair,
+    deleteStudent,
+    upsertStudents,
+  } = useLeagueStore();
   // 성별을 안 쓰는 리그엔 "남녀" 칩 자체가 없다 → 그 리그는 지금과 완전히 같다.
   const genderEnabled = useGenderEnabled();
 
@@ -166,6 +175,8 @@ export function SessionRoster({
     classKeys,
   ]);
 
+  const byId = useMemo(() => new Map(students.map((s) => [s.id, s])), [students]);
+
   /** 고른 반의 학생 전원. 이것이 명단의 모집단이다. */
   const scopeStudents = useMemo(
     () => roster.filter((s) => selected.includes(classKeyOf(s))),
@@ -200,6 +211,86 @@ export function SessionRoster({
         [key]: list.includes(s.id) ? list.filter((x) => x !== s.id) : [...list, s.id],
       };
     });
+  };
+
+  /**
+   * 학생 칩을 누르면 무엇을 하나. 평소엔 결석 표시.
+   * - apart: 같이 안 붙이기 — 두 명을 차례로 누르면 짝이 묶이고/풀린다. 반에 기억된다
+   * - move:  전학 — 누르면 명단에서 뺀다(기록은 남고 관리 탭에서 되돌릴 수 있다)
+   * 칩은 하나인데 할 일이 셋이라, 모드를 바꿔 같은 칩이 다른 일을 한다.
+   */
+  const [mode, setMode] = useState<"attend" | "apart" | "move">("attend");
+  const [apartPairs, setApartPairs] = useState<Array<[string, string]>>([]);
+  const [apartFirst, setApartFirst] = useState<string | null>(null);
+  const [confirmMove, setConfirmMove] = useState<Student | null>(null);
+  const [addName, setAddName] = useState("");
+  const [addNo, setAddNo] = useState("");
+  const [addKey, setAddKey] = useState<string | null>(null);
+
+  // 창을 열 때마다 짝 목록을 새로 읽는다(다른 기기·다른 선생님이 묶었을 수 있다).
+  useEffect(() => {
+    if (!open) {
+      setMode("attend");
+      setApartFirst(null);
+      return;
+    }
+    let alive = true;
+    fetchApartPairs().then((p) => alive && setApartPairs(p));
+    return () => {
+      alive = false;
+    };
+  }, [open, fetchApartPairs]);
+
+  const apartIds = useMemo(() => new Set(apartPairs.flat()), [apartPairs]);
+
+  /** 오늘 몇 판 했나 — 적게 한 아이를 한눈에. */
+  const todayCount = useMemo(() => {
+    const today = new Date().toDateString();
+    const out = new Map<string, number>();
+    for (const m of matches) {
+      if (new Date(m.date).toDateString() !== today) continue;
+      for (const id of [m.playerAId, m.playerBId, m.playerA2Id, m.playerB2Id]) {
+        if (id) out.set(id, (out.get(id) ?? 0) + 1);
+      }
+    }
+    return out;
+  }, [matches]);
+
+  const tapApart = async (s: Student) => {
+    if (!apartFirst) return setApartFirst(s.id);
+    if (apartFirst === s.id) return setApartFirst(null);
+    const a = apartFirst;
+    setApartFirst(null);
+    const on = !apartPairs.some(([x, y]) => (x === a && y === s.id) || (x === s.id && y === a));
+    if (await setApartPair(a, s.id, on)) setApartPairs(await fetchApartPairs());
+  };
+  const unpair = async (a: string, b: string) => {
+    if (await setApartPair(a, b, false)) setApartPairs(await fetchApartPairs());
+  };
+
+  const tapStudent = (s: Student) => {
+    if (mode === "apart") return void tapApart(s);
+    if (mode === "move") return setConfirmMove(s);
+    toggleAbsent(s);
+  };
+
+  const addTransfer = async () => {
+    const key = addKey && selected.includes(addKey) ? addKey : selected[0];
+    const [g, c] = (key ?? "").split("-");
+    const r = await upsertStudents([
+      {
+        name: addName.trim(),
+        grade: g ? Number(g) : null,
+        classNum: c ? Number(c) : null,
+        studentNo: addNo ? Number(addNo) : null,
+      },
+    ]);
+    if (r.added > 0) {
+      setAddName("");
+      setAddNo("");
+      // 명단에 새 사람이 생겼으니 [명단 반영]이 떠야 한다.
+      setEditing(true);
+    }
   };
 
   // 여러 반을 섞는 것(학년 대전)은 일 년에 몇 번 있는 예외다. 그래서 기본 화면에서는
@@ -351,6 +442,109 @@ export function SessionRoster({
             </p>
           ) : (
             <>
+              {/* 누르면 무엇을 하나 — 결석(평소) · 같이 안 붙이기 · 전학 */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="mr-1 text-xs font-bold text-muted-foreground">누르면</span>
+                {(
+                  [
+                    ["attend", "결석"],
+                    ["apart", "같이 안 붙이기"],
+                    ["move", "전학"],
+                  ] as const
+                ).map(([m, label]) => (
+                  <Chip
+                    key={m}
+                    on={mode === m}
+                    onClick={() => {
+                      setMode(m);
+                      setApartFirst(null);
+                    }}
+                  >
+                    {label}
+                  </Chip>
+                ))}
+              </div>
+
+              {mode === "apart" && (
+                <div className="rounded-xl border border-neon-blue/30 bg-neon-blue/5 p-3 text-xs">
+                  <p className="font-bold text-foreground">
+                    {apartFirst
+                      ? `${dn(byId.get(apartFirst))} — 떼어 놓을 학생을 누르세요.`
+                      : "두 학생을 차례로 누르면, 대기열이 둘을 한 경기에 넣지 않아요."}
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    선생님 화면에만 보여요. 이유는 적지 않아요. 다음 수업에도 그대로 지켜져요.
+                  </p>
+                  {apartPairs.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {apartPairs.map(([a, b]) => (
+                        <span
+                          key={a + b}
+                          className="inline-flex items-center gap-1 rounded-lg border border-border/40 bg-background px-2 py-1 font-bold"
+                        >
+                          {dn(byId.get(a))} · {dn(byId.get(b))}
+                          <button
+                            type="button"
+                            onClick={() => unpair(a, b)}
+                            aria-label="짝 풀기"
+                            className="text-muted-foreground hover:text-foreground"
+                          >
+                            <X className="size-3.5" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {mode === "move" && (
+                <div className="space-y-2 rounded-xl border border-border/40 bg-muted/10 p-3 text-xs">
+                  <p className="font-bold text-foreground">전학 간 학생은 이름을 누르세요.</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    명단에서 빠지고 경기 기록은 남아요. 잘못 눌렀으면 관리 탭 학생 관리의 '삭제한 학생'에서 되돌려요.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-1.5 border-t border-border/30 pt-2">
+                    <UserPlus className="size-4 text-neon-green" />
+                    <span className="font-bold text-foreground">전학 온 학생</span>
+                    {selected.length > 1 && (
+                      <select
+                        value={addKey ?? selected[0]}
+                        onChange={(e) => setAddKey(e.target.value)}
+                        className="h-8 rounded-lg border border-border/40 bg-background px-2"
+                      >
+                        {selected.map((k) => (
+                          <option key={k} value={k}>
+                            {classLabel(k)}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    <input
+                      value={addNo}
+                      onChange={(e) => setAddNo(e.target.value.replace(/[^0-9]/g, ""))}
+                      inputMode="numeric"
+                      placeholder="번호"
+                      className="h-8 w-14 rounded-lg border border-border/40 bg-background px-2"
+                    />
+                    <input
+                      value={addName}
+                      onChange={(e) => setAddName(e.target.value)}
+                      placeholder="이름"
+                      className="h-8 w-28 rounded-lg border border-border/40 bg-background px-2"
+                    />
+                    <Button
+                      size="sm"
+                      disabled={!addName.trim()}
+                      onClick={addTransfer}
+                      className="h-8 rounded-lg bg-neon-green px-3 text-xs font-black text-primary-foreground hover:bg-neon-green/90"
+                    >
+                      넣기
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               {/* 명단 — 결과 입력의 선수 칸과 같은 모양(모서리·테두리·가운데 이름). */}
               <div className="rounded-xl border border-border/30 bg-input/30 p-2">
                 <div className="mb-2 flex items-center gap-2 px-1">
@@ -403,14 +597,19 @@ export function SessionRoster({
                         >
                           {group.map((s) => {
                             const out = absentIds.has(s.id);
+                            const played = todayCount.get(s.id) ?? 0;
                             return (
                               <button
                                 key={s.id}
                                 type="button"
-                                onClick={() => toggleAbsent(s)}
+                                onClick={() => tapStudent(s)}
                                 className={cn(
                                   "flex h-9 min-w-0 items-center gap-1.5 rounded-lg border px-2.5 text-sm font-bold transition-all active:scale-95",
-                                  out
+                                  mode === "apart" && apartFirst === s.id
+                                    ? "border-neon-blue bg-neon-blue/25 text-neon-blue ring-2 ring-neon-blue/60"
+                                    : mode === "move"
+                                      ? "border-border/50 bg-muted/20 text-foreground hover:border-red-500/60"
+                                      : out
                                     ? // 결석은 눈에 띄어야 한다 — 교사가 훑어보는 대상은 빠진 사람이다.
                                       "border-amber-500/40 bg-amber-500/10 text-amber-600/80 line-through dark:text-amber-400/80"
                                     : // 참석은 초록 — 한눈에 "다 왔다"가 보이고, 빠진 사람만 색이 다르다.
@@ -423,6 +622,13 @@ export function SessionRoster({
                                   </span>
                                 )}
                                 <span className="min-w-0 flex-1 truncate text-left">{dn(s)}</span>
+                                {/* 짝 표시는 짝 모드에서만 — 평소 화면엔 흔적이 없다. */}
+                                {mode === "apart" && apartIds.has(s.id) && (
+                                  <Link2 className="size-3.5 shrink-0 text-neon-blue" aria-label="짝 있음" />
+                                )}
+                                {mode === "attend" && played > 0 && (
+                                  <span className="shrink-0 text-[11px] font-black tabular-nums opacity-70">{played}판</span>
+                                )}
                               </button>
                             );
                           })}
@@ -490,6 +696,41 @@ export function SessionRoster({
           </div>
         )}
       </div>
+
+      {confirmMove && (
+        <div
+          className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4"
+          onClick={(e) => {
+            e.stopPropagation();
+            setConfirmMove(null);
+          }}
+        >
+          <div
+            className="w-full max-w-xs rounded-2xl border border-border/50 bg-background p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-sm font-black text-foreground">{dn(confirmMove)} 학생을 전학 처리할까요?</p>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              명단에서 빠지고 경기 기록은 남아요. 관리 탭에서 되돌릴 수 있어요.
+            </p>
+            <div className="mt-4 flex gap-2">
+              <Button variant="outline" className="h-10 flex-1 rounded-xl" onClick={() => setConfirmMove(null)}>
+                취소
+              </Button>
+              <Button
+                className="h-10 flex-1 rounded-xl bg-red-500 font-black text-white hover:bg-red-500/90"
+                onClick={async () => {
+                  const s = confirmMove;
+                  setConfirmMove(null);
+                  await deleteStudent(s.id);
+                }}
+              >
+                전학 처리
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>,
     document.body,
   );

@@ -68,6 +68,9 @@ import {
   apiBulkCreateAssignedMatches,
   apiFetchAssignmentSession,
   apiUpsertAssignmentSession,
+  apiFetchApartPairs,
+  apiAddApartPair,
+  apiRemoveApartPair,
   apiClearQueue,
   apiAllocMatchSeq,
   apiUpdateScheduledStatus,
@@ -3221,6 +3224,33 @@ function useLeagueStoreInternal() {
     return true;
   }, [sessionOwnerId]);
 
+  // ── 같이 안 붙이기 ───────────────────────────────────
+  // 리그에 붙는 짝 목록. 채우기 직전에 매번 서버에서 새로 읽는다 — 다른 기기에서 방금 묶은
+  // 짝을 모른 채 뽑으면 안 된다. 읽기가 실패하면 마지막으로 읽은 목록을 쓴다(빈 목록으로 떨어지지 않게).
+  const apartCacheRef = useRef<{ classId: string; pairs: Array<[string, string]> } | null>(null);
+  const fetchApartPairs = useCallback(async (): Promise<Array<[string, string]>> => {
+    const cid = currentClassIdRef.current;
+    if (!cid || !isClassManagerRef.current) return [];
+    const cached = apartCacheRef.current?.classId === cid ? apartCacheRef.current.pairs : [];
+    try {
+      const { data, error } = await apiFetchApartPairs(cid);
+      if (error) return cached;
+      const pairs = (data ?? []).map((r) => [r.player_a, r.player_b] as [string, string]);
+      apartCacheRef.current = { classId: cid, pairs };
+      return pairs;
+    } catch {
+      return cached;
+    }
+  }, []);
+  const setApartPair = useCallback(async (a: string, b: string, on: boolean): Promise<boolean> => {
+    if (!isClassManagerRef.current) { toast.error("권한이 없습니다."); return false; }
+    const cid = currentClassIdRef.current;
+    if (!cid || a === b) return false;
+    const { error } = on ? await apiAddApartPair(cid, a, b) : await apiRemoveApartPair(cid, a, b);
+    if (error) { toast.error("저장 실패: " + error.message); return false; }
+    return true;
+  }, []);
+
   // ── 배정: 큐 채우기 ───────────────────────────────────
   // 계산은 순수 함수(domain/assignment-calculator)가 한다. 여기서는 재료를 모아 주고
   // 결과를 배정 전용 bulk insert로 큐에 넣는 일만 한다. 누적 카운터는 저장하지 않는다 —
@@ -3345,6 +3375,7 @@ function useLeagueStoreInternal() {
       for (const [id, d] of Object.entries(debt)) playCountOffset[id] = -d;
     }
 
+    const apart = await fetchApartPairs();
     const out = calculateAssignment({
       participants: students
         .filter((s) => participantIds!.includes(s.id))
@@ -3365,6 +3396,7 @@ function useLeagueStoreInternal() {
       seed: opts?.seed,
       // 섞어서 모드(또는 성별 꺼짐)는 groupOf 자체를 안 넘긴다 — 계산기 경로가 전과 같다.
       ...(separate ? { groupOf: genderGroupOf(participantIds, genderOf) } : {}),
+      ...(apart.length ? { apart } : {}),
     });
 
     if (out.matches.length === 0) {
@@ -3401,7 +3433,7 @@ function useLeagueStoreInternal() {
     // 배정된 대진은 목록에 바로 보인다. 모자란 경우만 알린다.
     if (out.shortfall > 0) toast.info(`인원이 모자라 ${out.shortfall}경기는 못 뽑았어요.`);
     return out.matches.length;
-  }, [genderEnabled, levels, loadScheduled, matches, scheduledMatches, students]);
+  }, [fetchApartPairs, genderEnabled, levels, loadScheduled, matches, scheduledMatches, students]);
 
   // 예약할 수 있는 권한: 관리자 또는 (자율 입력 모드에서) 연동된 회원
   const canReserve = () => isClassManagerRef.current || (matchInputModeRef.current !== "admin-only" && !!myPlayerId);
@@ -3881,6 +3913,8 @@ function useLeagueStoreInternal() {
     updateStudentGender,
     deleteStudent,
     deleteStudents,
+    fetchApartPairs,
+    setApartPair,
     updateStudentInfo,
     bulkUpdateStudents,
     fetchDeletedStudents,
