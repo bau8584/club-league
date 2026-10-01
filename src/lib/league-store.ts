@@ -1614,7 +1614,7 @@ function useLeagueStoreInternal() {
       if (s.id !== studentId) return s;
       return {
         ...s,
-        name: info.name,
+        name: info.nickname || info.name,
         nickname: info.nickname ?? s.nickname,
         group: info.group ?? s.group,
         gender: info.gender,
@@ -1694,7 +1694,7 @@ function useLeagueStoreInternal() {
       if (!u) return s;
       return {
         ...s,
-        name: u.name ?? s.name,
+        name: u.nickname || u.name || s.name,
         nickname: u.nickname ?? s.nickname,
         group: u.group ?? s.group,
         gender: u.gender ?? s.gender,

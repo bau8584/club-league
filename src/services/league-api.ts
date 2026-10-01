@@ -519,6 +519,9 @@ function trimNames<T extends { name?: string | null; nickname?: string | null }>
   const out = { ...fields };
   if (typeof out.name === "string") out.name = out.name.trim();
   if (typeof out.nickname === "string") out.nickname = out.nickname.trim();
+  // 이름은 하나다. 관리 표의 "이름" 칸은 닉네임을 고치므로, 진짜 이름 칸도 같이 맞춘다 —
+  // 안 맞추면 교실 화면(이름 칸을 먼저 본다)에 고치기 전 이름이 남는다.
+  if (out.nickname) out.name = out.nickname;
   return out;
 }
 
