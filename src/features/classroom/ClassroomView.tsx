@@ -286,7 +286,7 @@ function Queue({ rows, courts }: { rows: QueueRow[]; courts: boolean }) {
         return (
           <div key={c.key}
             className="rounded-2xl border-2 border-neon-green bg-neon-green/15 px-4 py-4 text-neon-green animate-in zoom-in-95 fade-in duration-300 xl:py-5">
-            <p className="text-2xl font-black lg:text-3xl xl:text-4xl">{c.court}코트 비었어요!</p>
+            <p className="text-2xl font-black lg:text-3xl xl:text-4xl">코트 비었어요!</p>
             <p className="mt-1 text-lg font-black text-foreground lg:text-xl xl:text-2xl">
               {c.seq != null ? `#${c.seq} ` : ""}{r ? who(r) : ""} 들어가세요
             </p>
@@ -308,7 +308,7 @@ function Queue({ rows, courts }: { rows: QueueRow[]; courts: boolean }) {
             </span>
             {court && (
               <span className="shrink-0 rounded-lg bg-neon-green/20 px-2 py-1 text-xs font-black text-neon-green lg:text-sm xl:text-base">
-                {court}코트 경기 중
+                경기 중
               </span>
             )}
             <span className="min-w-0 flex-1 text-base font-bold leading-snug text-foreground lg:text-lg xl:text-2xl">

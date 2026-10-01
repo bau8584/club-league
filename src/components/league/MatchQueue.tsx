@@ -216,7 +216,7 @@ export function MatchQueue({
       {/* 방금 코트가 빈 줄 — 선생님 화면에서는 확인용 한 줄. 크게는 교실 화면이 띄운다. */}
       {callout.length > 0 && (
         <div className="mb-2 rounded-xl border border-neon-green/50 bg-neon-green/10 px-3 py-2 text-sm font-black text-neon-green animate-in fade-in duration-200">
-          {callout.map((c) => `${c.court}코트 → ${seqMark(c.seq) || "다음 줄"} 들어가세요`).join(" · ")}
+          {callout.map((c) => `코트 비었어요 → ${seqMark(c.seq) || "다음 줄"} 들어가세요`).join(" · ")}
         </div>
       )}
       {/*
@@ -239,7 +239,7 @@ export function MatchQueue({
                 </span>
                 {court && (
                   <span className="shrink-0 rounded-md bg-neon-green/15 px-1.5 py-0.5 text-[10px] font-black text-neon-green">
-                    {court}코트
+                    경기 중
                   </span>
                 )}
                 <span className="min-w-0 flex-1 truncate text-left text-sm font-bold text-foreground">
@@ -552,7 +552,7 @@ export function MatchQueue({
                 ))}
               </div>
               <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
-                앞쪽 줄에 "○코트"가 붙고, 결과가 들어오면 빈 코트가 다음 줄로 넘어가요. 교실 화면에 크게 떠요.
+                앞쪽 줄에 "경기 중"이 붙고, 결과가 들어오면 다음 줄이 들어가요. 코트 번호는 안 정해요. 교실 화면에 크게 떠요.
               </p>
             </div>
           )}
