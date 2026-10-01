@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetchClassOptionsPublic, apiFetchClassViewPublic } from "@/services/league-api";
 import { cn } from "@/lib/utils";
 import {
-  getTier, isUnranked, nextStepGap, TIER_ORDER, TIER_STYLES, type TierName,
+  getTier, isUnranked, TIER_ORDER, TIER_STYLES, type TierName,
 } from "@/lib/league-types";
 import { RefreshCw, SlidersHorizontal, Radio } from "lucide-react";
 import { useCourtCallout } from "@/components/league/MatchQueue";
@@ -211,10 +211,10 @@ export function ClassroomView({ classId, ownerId }: { classId: string; ownerId?:
         )}
         <section className={cn("lg:min-h-0 lg:overflow-y-auto lg:pr-1", !inSession && "lg:col-span-2")}>
           {/*
-            `+23`이 뭔지 한 줄로 알린다. 줄마다 "다음까지"를 스물일곱 번 되풀이하는 대신
-            머리말에서 한 번 말한다 — 되풀이하면 정작 중요한 이름이 밀린다.
+            막대가 뭔지 한 줄로 알린다. 줄마다 되풀이하는 대신 머리말에서 한 번 말한다
+            — 되풀이하면 정작 중요한 이름이 밀린다.
           */}
-          <SectionTitle hint="숫자는 다음 등급까지 남은 점수예요">
+          <SectionTitle hint="막대가 차면 다음 등급">
             {inSession ? "오늘 등급" : "등급"}
           </SectionTitle>
           <TierGroups
@@ -395,8 +395,7 @@ function TierGroups({
             </div>
             <div className={cn("grid grid-cols-1 gap-1.5 lg:gap-1", cols)}>
               {list.map((p) => (
-                <Row key={p.id} p={p} mine={isMe(p)}
-                  trailing={<Gap n={nextStepGap(p.rp, thresholds)} />} />
+                <Row key={p.id} p={p} mine={isMe(p)} progress={tierProgress(p.rp, thresholds)} />
               ))}
             </div>
           </div>
@@ -434,10 +433,15 @@ function TierGroups({
  * 순위처럼 읽히지 않게 흐리게 둔다 — 목록이 번호순이라 위에서부터 1, 2, 3 이 되는데
  * 이게 순위로 보이면 등급으로 묶은 이유가 사라진다.
  */
-function Row({ p, mine, trailing }: { p: ViewPlayer; mine: boolean; trailing: React.ReactNode }) {
+function Row({ p, mine, trailing, progress }: {
+  p: ViewPlayer; mine: boolean; trailing?: React.ReactNode;
+  /** 다음 등급까지 0~1, 최고 등급이면 null, 등급 없는 줄은 undefined. */
+  progress?: number | null;
+}) {
+  const near = progress != null && progress >= NEAR;
   return (
     <div className={cn(
-      "flex items-center gap-2 rounded-lg px-2.5 py-2 lg:py-2.5 xl:gap-2.5 xl:px-3",
+      "relative flex items-center overflow-hidden gap-2 rounded-lg px-2.5 py-2 lg:py-2.5 xl:gap-2.5 xl:px-3",
       mine ? "bg-neon-blue/10 ring-1 ring-neon-blue/40" : "bg-input/30",
     )}>
       <span className="w-5 shrink-0 text-right text-xs font-bold tabular-nums text-muted-foreground/60 xl:w-6 xl:text-sm">
@@ -451,16 +455,39 @@ function Row({ p, mine, trailing }: { p: ViewPlayer; mine: boolean; trailing: Re
           {p.today_plays}판
         </span>
       )}
+      {near && <span className="shrink-0 text-xs font-black text-neon-blue lg:text-sm" aria-label="곧 승급">⬆</span>}
+      {progress === null && <span className="shrink-0 text-[11px] font-black text-muted-foreground lg:text-xs">최고</span>}
       {trailing}
+      {/* 이름 칸을 뺏지 않게 줄 바닥에 깐다. 읽지 않아도 "얼마나 찼나"가 보인다. */}
+      {progress != null && (
+        <span className="absolute inset-x-0 bottom-0 h-1 bg-foreground/5" aria-label={`다음 등급까지 ${Math.round(progress * 100)}%`}>
+          <span className={cn("block h-full", near ? "bg-neon-blue" : "bg-muted-foreground/40")}
+            style={{ width: `${Math.max(4, progress * 100)}%` }} />
+        </span>
+      )}
     </div>
   );
 }
 
-const Gap = ({ n }: { n: number | null }) => (
-  <span className="w-12 shrink-0 text-right text-[11px] font-bold tabular-nums text-muted-foreground lg:w-11 xl:w-14 lg:text-xs xl:text-sm">
-    {n == null ? "최고" : `+${n}`}
-  </span>
-);
+/**
+ * 다음 등급까지 얼마나 왔나 — 0~1. 다이아몬드는 위가 없어 null.
+ * 숫자(+23)는 아이들이 "얻은 점수"로 읽어서, 읽지 않아도 보이는 막대로 바꿨다.
+ */
+function tierProgress(rp: number, thresholds?: Record<TierName, number>): number | null {
+  const tier = getTier(rp, thresholds);
+  const i = TIER_ORDER.indexOf(tier);
+  // TIER_ORDER 는 높은 등급부터다.
+  const nextTier = TIER_ORDER[i - 1];
+  if (!nextTier) return null;
+  const t = thresholds ?? { Bronze: 0, Silver: 1000, Gold: 1200, Platinum: 1400, Diamond: 1600 };
+  const lo = tier === "Bronze" ? Math.min(t.Bronze ?? 0, rp) : t[tier];
+  const hi = t[nextTier];
+  if (hi <= lo) return 1;
+  return Math.min(1, Math.max(0, (rp - lo) / (hi - lo)));
+}
+
+/** 이만큼 오면 "곧 승급" — 오늘 한두 판이면 닿는 거리. */
+const NEAR = 0.8;
 
 /* ── 무엇을 볼지 고르기 ──────────────────────────────── */
 
