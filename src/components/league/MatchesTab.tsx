@@ -360,6 +360,7 @@ export function MatchesTab({
           <RecordMatch
             students={students}
             onRecord={handleRecord}
+            queueHint={reservations.length > 0}
             initials={initials}
             onClearInitials={noop}
             thresholds={tierThresholds}
@@ -515,6 +516,7 @@ export function MatchesTab({
             <RecordMatch
               students={students}
               onRecord={handleRecord}
+            queueHint={reservations.length > 0}
               initials={initials}
               onClearInitials={noop}
               thresholds={tierThresholds}

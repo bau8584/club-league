@@ -124,7 +124,7 @@ export function SessionRoster({
   const classKeys = useMemo(() => {
     const set = new Set<string>();
     for (const s of roster) set.add(classKeyOf(s));
-    return Array.from(set).sort();
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "ko", { numeric: true }));
   }, [roster]);
   const singleClass = classKeys.length <= 1;
 
@@ -197,7 +197,7 @@ export function SessionRoster({
     setEditing(true);
     setSelected((prev) => {
       if (!additive) return [key];
-      return prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key].sort();
+      return prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key].sort((a, b) => a.localeCompare(b, "ko", { numeric: true }));
     });
   };
 
@@ -299,7 +299,7 @@ export function SessionRoster({
   const [multi, setMulti] = useState(false);
 
   /** 학년 목록. 학년이 하나뿐이면 학년 줄은 군더더기다. */
-  const gradeKeys = useMemo(() => Array.from(new Set(classKeys.map(gradeOf))).sort(), [classKeys]);
+  const gradeKeys = useMemo(() => Array.from(new Set(classKeys.map(gradeOf))).sort((a, b) => a.localeCompare(b, "ko", { numeric: true })), [classKeys]);
 
   // 반 줄에 지금 펼쳐 둔 학년. 고른 반이 있으면 그 반의 학년에서 시작한다.
   // 섞기 모드에서는 이것이 "보기 전환"이 되어, 학년을 넘나들며 고를 수 있게 한다.

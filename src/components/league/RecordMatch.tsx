@@ -93,8 +93,11 @@ export function RecordMatch({
   presetResult,
   onCloseResult,
   onDirtyChange,
+  queueHint,
 }: {
   students: Student[];
+  /** 대기열에 줄이 있으면 빈 칸 안내가 대기열 [점수 넣기]를 가리킨다(직접 고르기는 대기열 밖 경기용). */
+  queueHint?: boolean;
   lockedPlayerId?: string | null; // 설정 시 슬롯 A를 이 선수로 고정(일반회원 본인 경기 기록)
   /**
    * 슬롯 A에 미리 넣어 두는 선수(운영진 본인). 잠그지 않는다 — ✕로 빼면 남의 경기다.
@@ -1464,10 +1467,21 @@ export function RecordMatch({
           ) : !allPicked ? (
             <div className="flex min-h-[8rem] flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-border/50 bg-card/30 p-6 text-center">
               <Users className="size-5 text-muted-foreground/70" />
-              <p className="text-xs font-bold text-muted-foreground">
-                {matchType === "double" ? "네 자리" : "두 자리"}를 모두 채우면 점수를 입력할 수 있어요.
-              </p>
-              <p className="text-[11px] text-muted-foreground/80">비어 있는 자리를 눌러 {terms.member}를 고르세요.</p>
+              {queueHint ? (
+                <>
+                  <p className="text-xs font-bold text-foreground">
+                    대기열에서 <span className="text-neon-blue">[점수 넣기]</span>를 누르면 한 번에 채워져요.
+                  </p>
+                  <p className="text-[11px] text-muted-foreground/80">대기열에 없는 경기만 빈 자리를 눌러 고르세요.</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs font-bold text-muted-foreground">
+                    {matchType === "double" ? "네 자리" : "두 자리"}를 모두 채우면 점수를 입력할 수 있어요.
+                  </p>
+                  <p className="text-[11px] text-muted-foreground/80">비어 있는 자리를 눌러 {terms.member}를 고르세요.</p>
+                </>
+              )}
             </div>
           ) : null}
 

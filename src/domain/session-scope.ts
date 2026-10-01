@@ -16,7 +16,7 @@ export function sessionClassKeys(playerIds: string[], students: Student[]): stri
     const s = byId.get(id);
     if (s) set.add(classKeyOf(s));
   }
-  return Array.from(set).sort();
+  return Array.from(set).sort((a, b) => a.localeCompare(b, "ko", { numeric: true }));
 }
 
 export type ClassScope = { grade: number | null; classNum: number | null };

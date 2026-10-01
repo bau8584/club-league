@@ -204,7 +204,7 @@ export function DailyResults() {
     if (!filterOn) return null;
     const keys = new Set<string>();
     for (const s of dayPlayers) if (inScope(s)) keys.add(classKeyOf(s));
-    const labels = Array.from(keys).filter((k) => k !== "").sort().map(classLabel);
+    const labels = Array.from(keys).filter((k) => k !== "").sort((a, b) => a.localeCompare(b, "ko", { numeric: true })).map(classLabel);
     if (labels.length > 0) return labels.join(", ");
     if (filterGrade != null && filterClass != null) return `${filterGrade}-${filterClass}반`;
     if (filterClass != null) return `${filterClass}반`;

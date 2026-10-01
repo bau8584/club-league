@@ -47,7 +47,7 @@ export function SessionCard({
       const s = students.find((x) => x.id === id);
       if (s) keys.add(classKeyOf(s));
     }
-    const list = Array.from(keys).sort();
+    const list = Array.from(keys).sort((a, b) => a.localeCompare(b, "ko", { numeric: true }));
     if (list.length === 1 && list[0] === "") return "";
     return list.map(classLabel).join(", ");
   })();

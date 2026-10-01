@@ -359,10 +359,14 @@ export function MatchQueue({
                 <button
                   type="button"
                   onClick={() => onRecordRow(r)}
-                  className="flex min-h-11 min-w-0 flex-1 items-center gap-2 text-left transition-colors hover:text-neon-blue"
+                  className="group flex min-h-11 min-w-0 flex-1 items-center gap-2 text-left"
                 >
                   {names}
-                  <ChevronRight className="size-4 shrink-0 text-muted-foreground/60" />
+                  {/* 화살표만으로는 아이들이 "누르면 한 번에 채워진다"를 몰랐다(2026-10-01) → 버튼처럼 보이게. */}
+                  <span className="flex h-8 shrink-0 items-center gap-0.5 rounded-lg bg-neon-blue px-2.5 text-[11px] font-black text-primary-foreground group-hover:bg-neon-blue/90">
+                    점수 넣기
+                    <ChevronRight className="size-3.5" />
+                  </span>
                 </button>
                 {/* 사람 바꾸기는 연필로. 이름을 눌러 바꾸게 하면 폰에서 이름이 행 대부분이라
                     결과 입력하려다 바꾸기 창이 뜬다 — 행 누르기의 뜻은 하나여야 한다. */}
