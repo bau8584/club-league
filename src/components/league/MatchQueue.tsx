@@ -1094,7 +1094,7 @@ function PoolAddDialog({
 }
 
 /**
- * 방금 코트를 받은 줄 — "2코트 → #7 들어가세요". 20초 동안 보여 준다.
+ * 방금 코트를 받은 줄 — "2코트 → #7 들어가세요". 1분 동안 보여 준다.
  *
  * 처음 화면을 열 때 이미 코트에 있던 줄은 안내하지 않는다. 그 조는 이미 뛰고 있다.
  * 교실 화면(ClassroomView)도 같은 규칙으로 크게 띄운다.
@@ -1120,7 +1120,7 @@ export function useCourtCallout<T extends { seq?: number | null; court?: string 
 
   useEffect(() => {
     if (items.length === 0) return;
-    const t = setTimeout(() => setItems((old) => old.filter((o) => Date.now() - o.at < 20_000)), 20_000);
+    const t = setTimeout(() => setItems((old) => old.filter((o) => Date.now() - o.at < 60_000)), 60_000);
     return () => clearTimeout(t);
   }, [items]);
 
