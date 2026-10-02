@@ -375,7 +375,50 @@ describe("그룹 제약(남녀 따로) — groupOf", () => {
         }).matches.map((m) => [m.teamA, m.teamB, m.relaxedPlayerIds]);
       }
     }
-    expect(got).toEqual(SNAPSHOT_BEFORE_GROUPS);
+    // 큐에 든 사람을 다시 쓴(완화) 경기는 2026-10 "같은 넷 재대결 피하기"로 일부러 바뀌었다.
+    // 완화 없이 뽑힌 경기는 여전히 한 글자도 달라지면 안 된다.
+    type Row = [string[], string[], string[]];
+    const unrelaxed = (rows: Record<string, unknown>) =>
+      Object.fromEntries(
+        Object.entries(rows).map(([k, v]) => [k, (v as Row[]).map((m, i) => ((SNAPSHOT_BEFORE_GROUPS as unknown as Record<string, Row[]>)[k][i][2].length ? "relaxed" : m))]),
+      );
+    expect(unrelaxed(got)).toEqual(unrelaxed(SNAPSHOT_BEFORE_GROUPS));
+  });
+});
+
+describe("같은 넷 재대결 피하기", () => {
+  const key = (m: { teamA: string[]; teamB: string[] }) => [...m.teamA, ...m.teamB].sort().join();
+  const rated = (n: number): AssignmentPlayer[] =>
+    Array.from({ length: n }, (_, i) => ({ id: `p${i + 1}`, rating: 1000 + ((i * 137) % 400) }));
+
+  it("노는 사람이 없는데 1경기를 연달아 눌러도 같은 넷(단식은 둘)이 다시 묶이지 않는다", () => {
+    for (const [n, teamSize] of [[16, 2], [20, 2], [12, 1]] as const) {
+      const q: AssignmentHistoryMatch[] = [];
+      q.push(...calculateAssignment({ participants: rated(n), count: n / (teamSize * 2), teamSize }).matches);
+      for (let k = 0; k < 10; k++) {
+        q.push(
+          ...calculateAssignment({
+            participants: rated(n),
+            busyPlayerIds: q.flatMap((m) => [...m.teamA, ...m.teamB]),
+            history: q,
+            count: 1,
+            teamSize,
+          }).matches,
+        );
+      }
+      expect(new Set(q.map(key)).size).toBe(q.length);
+    }
+  });
+
+  it("편만 바꾼 재대결보다 새 넷을 고른다", () => {
+    const out = calculateAssignment({
+      participants: rated(8),
+      history: [{ teamA: ["p1", "p2"], teamB: ["p3", "p4"] }],
+      playHistory: [],
+      count: 1,
+      seed: 3,
+    });
+    expect(key(out.matches[0])).not.toBe(["p1", "p2", "p3", "p4"].sort().join());
   });
 });
 

@@ -186,6 +186,13 @@ const DEFAULT_BALANCE_LIMIT = 300;
 const DEFAULT_SKILL_GRANULARITY = 25;
 
 /**
+ * [절충]에서 같은 사람들이 다시 한 경기에 모일 때의 감점. 판 수·실력 차를 다 합친 것보다는
+ * 크고, 큐에 든 사람 한 명을 다시 쓰는 감점(busyReuse 1000)보다는 작다 — 반복을 피하려고
+ * 이미 줄 선 아이를 빼 오지는 않는다.
+ */
+const REGROUP_PENALTY = 500;
+
+/**
  * 조합 후보 상한. 한 경기를 뽑을 때 우선순위 상위 이만큼만 완전 탐색한다.
  * 4명 기준 C(11,3) = 165가지 × 팀 나누기 3가지라 30명이 와도 즉시 끝난다.
  */
@@ -211,10 +218,19 @@ export interface HistoryStats {
   playCount: Map<string, number>;
   partner: Map<string, number>;
   opponent: Map<string, number>;
+  /**
+   * 같은 사람들이 한 경기에 다시 모인 횟수(편 나누기 무관). 파트너·상대만 세면
+   * ㄱㄴ/ㄷㄹ → ㄱㄷ/ㄴㄹ → ㄱㄹ/ㄴㄷ 처럼 편만 바꾼 재대결이 거의 공짜가 된다.
+   */
+  group: Map<string, number>;
 }
 
 function emptyStats(): HistoryStats {
-  return { playCount: new Map(), partner: new Map(), opponent: new Map() };
+  return { playCount: new Map(), partner: new Map(), opponent: new Map(), group: new Map() };
+}
+
+function groupKey(ids: string[]): string {
+  return ids.slice().sort().join("|");
 }
 
 function bump(map: Map<string, number>, key: string, by = 1) {
@@ -232,6 +248,7 @@ function applyMatch(stats: HistoryStats, teamA: string[], teamB: string[]) {
   for (const a of teamA) {
     for (const b of teamB) bump(stats.opponent, pairKey(a, b));
   }
+  if (teamA.length && teamB.length) bump(stats.group, groupKey([...teamA, ...teamB]));
 }
 
 /**
@@ -271,6 +288,8 @@ interface CostParts {
    * 골라야 나중에 다른 쪽이 인원이 안 모여 못 뽑는 일이 줄어든다.
    */
   ungrouped: number;
+  /** 같은 사람들이 다시 한 경기에 모였는가(편 무관). 반복 후보가 없으면 늘 0이라 결과가 전과 같다. */
+  regroup: number;
   /** 동점을 결정론적으로 가르는 미세값. */
   jitter: number;
 }
@@ -335,6 +354,7 @@ function costParts(
     homogeneity: gap + spreadSum,
     relax,
     ungrouped,
+    regroup: stats.group.get(groupKey(members)) ?? 0,
     jitter: jit,
   };
 }
@@ -351,6 +371,7 @@ function sortKey(
       // 실력은 느슨한 제약(한계를 넘었는가 0/1)일 뿐, 그 안에서는 다양성이 항상 이긴다.
       return [
         parts.relax,
+        parts.regroup,
         parts.gap > balanceLimit ? 1 : 0,
         parts.diversity,
         parts.play,
@@ -363,6 +384,7 @@ function sortKey(
       return [
         parts.relax,
         Math.round(parts.homogeneity / skillGranularity),
+        parts.regroup,
         parts.diversity,
         parts.play,
         parts.ungrouped,
@@ -373,8 +395,10 @@ function sortKey(
     default:
       // 하나의 가중합. 세 항목이 서로를 밀고 당긴다.
       // 미지정 아끼기는 지터보다만 큰 미세값 — 다른 항목이 같을 때만 갈리게.
+      // 같은 사람들끼리 다시 모이는 것은 큰 감점 — 다만 큐에 든 사람을 다시 쓰는 것(busyReuse)보다는 작게.
       return [
         parts.relax +
+          parts.regroup * REGROUP_PENALTY +
           parts.diversity +
           parts.play +
           parts.balance +
@@ -554,8 +578,10 @@ export function calculateAssignment(input: AssignmentInput): AssignmentOutput {
                 compatible(anchorGroup, id),
             )
             .sort(playPriority);
+          // 딱 모자란 만큼만 데려오면 고를 게 없어 늘 같은 넷이 다시 묶인다(연타 때 줄줄이 재대결).
+          // 후보 창만큼 데려오고, 몇 명을 다시 쓸지는 감점(relax)이 정한다.
           for (const id of extra) {
-            if (pool.length >= needed) break;
+            if (pool.length >= Math.max(needed, CANDIDATE_WINDOW)) break;
             pool = [...pool, id];
             relaxed.add(id);
           }

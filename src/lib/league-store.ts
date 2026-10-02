@@ -13,6 +13,7 @@ import {
 } from "@/domain/assignment-calculator";
 import { carriedPlayDebt } from "@/domain/play-debt";
 import { countByGender, genderGroupOf, separateRoundCount, type GenderMode } from "@/domain/gender-split";
+import { REGROUP_NEEDS_CONFIRM, roundGamesKeepingOut } from "@/domain/round-size";
 import { skillRating } from "@/domain/skill-rating";
 import { mapMatchRow, mapPlayerRows } from "@/domain/calc-context";
 import { getTodayPlayerIds } from "./today-players";
@@ -3194,6 +3195,11 @@ function useLeagueStoreInternal() {
     mode?: "round" | "one";
     /** 뽑을 경기 수를 직접 지정. mode보다 우선한다. */
     count?: number;
+    /**
+     * [+1경기]에서 같은 넷(단식은 둘)이 다시 묶이게 돼도 그대로 넣는다. 생략하면 넣지 않고
+     * REGROUP_NEEDS_CONFIRM 을 돌려준다 — 코트가 비었는지는 선생님만 알아서 한 번 묻는다.
+     */
+    allowRegroup?: boolean;
     teamSize?: TeamSize;
     /**
      * 배정 기준. 생략하면 리그 유형이 기본값을 고른다(school → 다양성 우선,
@@ -3256,7 +3262,13 @@ function useLeagueStoreInternal() {
     const roundCount = separate
       ? separateRoundCount(countByGender(freeIds, genderOf), teamSize * 2)
       : Math.floor(freeIds.length / (teamSize * 2));
-    const count = Math.max(1, opts?.count ?? (opts?.mode === "one" ? 1 : roundCount));
+    // 한 바퀴는 밖에 한 경기 분량을 남긴다(round-size.ts) — 끝난 넷끼리 다시 묶이는 것을 막는다.
+    const keptRound = roundGamesKeepingOut(roundCount, freeIds.length, teamSize * 2, queue.length);
+    if (opts?.count == null && opts?.mode !== "one" && roundCount > 0 && keptRound === 0) {
+      toast.info("방금 끝난 친구들끼리만 남아 있어요. 다음 경기가 끝나면 섞어서 넣을게요.");
+      return 0;
+    }
+    const count = Math.max(1, opts?.count ?? (opts?.mode === "one" ? 1 : keptRound));
 
     const queueHistory = queue.map(teamsOfScheduled).filter(Boolean) as AssignmentHistoryMatch[];
     // 팀 미정 예약: 판 수만 센다(만남은 아직 모른다).
@@ -3314,6 +3326,15 @@ function useLeagueStoreInternal() {
     if (out.matches.length === 0) {
       toast.error("인원이 모자라 대진을 뽑지 못했어요.");
       return 0;
+    }
+
+    // [+1경기]: 오늘(또는 줄에서) 이미 같이 뛴 넷이 그대로 다시 묶였으면 넣기 전에 묻는다.
+    if (opts?.count === 1 && !opts.allowRegroup) {
+      const groupKey = (t: AssignmentHistoryMatch) => [...t.teamA, ...t.teamB].sort().join("|");
+      const met = new Set(
+        [...matches.filter(isTodayMatch).map(teamsOfMatch), ...queueHistory].map(groupKey),
+      );
+      if (out.matches.some((m) => met.has(groupKey(m)))) return REGROUP_NEEDS_CONFIRM;
     }
 
     // 큐 맨 뒤에 붙인다. 기존 마지막 행보다 뒤 시각이어야 순서가 유지된다.

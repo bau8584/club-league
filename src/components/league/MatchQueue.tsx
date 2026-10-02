@@ -8,6 +8,7 @@ import { teamsOf, useQueueRows } from "@/lib/use-queue-rows";
 import { sortStudentsForRoster, type ScheduledMatch, type Student } from "@/lib/league-types";
 import { liveSession } from "@/lib/session-today";
 import type { AssignmentPreset } from "@/domain/assignment-calculator";
+import { REGROUP_NEEDS_CONFIRM, roundGamesKeepingOut } from "@/domain/round-size";
 import { countByGender, separateRoundBreakdown, separateRoundCount, type GenderCounts } from "@/domain/gender-split";
 
 const dn = (s?: Student | null) => (s ? s.nickname || s.name : "?");
@@ -49,9 +50,12 @@ const PRESETS: {
  * 놀고 있는 사람이 한 경기 인원도 안 되면 바퀴가 없고, [+1경기]는 이미 줄에 선 사람으로
  * 다음 판을 미리 잡는다(계산기가 판 수 적은 순으로 다시 쓴다).
  */
-function roundHint(free: number, perMatch: number): string {
-  const rounds = Math.floor(free / perMatch);
-  if (rounds === 0) return "놀고 있는 사람이 모자라요. +1경기는 이미 줄에 선 사람으로 다음 판을 미리 잡아요.";
+function roundHint(free: number, perMatch: number, queued: number): string {
+  const all = Math.floor(free / perMatch);
+  if (all === 0) return "놀고 있는 사람이 모자라요. +1경기는 이미 줄에 선 사람으로 다음 판을 미리 잡아요.";
+  const rounds = roundGamesKeepingOut(all, free, perMatch, queued);
+  if (rounds === 0) return "방금 끝난 친구들끼리만 남아 있어요. 다음 경기가 끝나면 섞어서 넣어요.";
+  if (rounds < all) return `한 바퀴 = ${rounds}경기 · ${free - rounds * perMatch}명은 남겨 두었다가 다음에 끝난 친구들과 섞어요.`;
   const rest = free - rounds * perMatch;
   return rest === 0
     ? `한 바퀴 = ${rounds}경기 · 놀고 있는 ${free}명 전원이 한 번씩.`
@@ -67,7 +71,7 @@ function separateRoundHint(free: GenderCounts, perMatch: number): string {
 }
 
 const ROUND_HELP =
-  "놀고 있는 사람 전원이 한 번씩 들어가는 만큼 뽑아요. 복식은 4명, 단식은 2명이 한 경기예요. 4명(2명)으로 안 나눠떨어지면 남는 사람은 다음 바퀴에 먼저 들어가요.";
+  "놀고 있는 사람 전원이 한 번씩 들어가는 만큼 뽑아요. 복식은 4명, 단식은 2명이 한 경기예요. 4명(2명)으로 안 나눠떨어지면 남는 사람은 다음 바퀴에 먼저 들어가요. 줄에 경기가 남아 있으면 몇 명은 남겨 두었다가 다음에 끝난 친구들과 섞어요 — 같은 친구들끼리만 계속 만나지 않게요.";
 
 /**
  * 대기열 — 순서 목록 하나.
@@ -193,15 +197,28 @@ export function MatchQueue({
    * "한 사람 한 번"이고, 두 번 들어갈 사람을 고르는 규칙이 따로 필요해진다.
    * 남녀 따로면 남 바퀴 + 여 바퀴. 실제 경기 수는 스토어가 같은 계산으로 다시 센다.
    */
-  const roundCount = separate ? separateRoundCount(freeByGender, perMatch) : Math.floor(free / perMatch);
+  const roundCount = roundGamesKeepingOut(
+    separate ? separateRoundCount(freeByGender, perMatch) : Math.floor(free / perMatch),
+    free,
+    perMatch,
+    queue.length,
+  );
+  // [+1경기]가 같은 친구들끼리 재대결이라 멈췄을 때 — 넣을지 한 번 묻는 줄.
+  const [regroupAsk, setRegroupAsk] = useState(false);
+  // 줄이 바뀌면(경기가 끝나거나 들어가면) 물음은 낡는다 — 다시 누르면 그때 새로 판단한다.
+  useEffect(() => setRegroupAsk(false), [queue.length]);
   // [한 바퀴] 옆 물음표를 누르면 뜨는 말풍선.
   const [helpOpen, setHelpOpen] = useState(false);
 
-  const fill = async (n: number | "round") => {
+  const fill = async (n: number | "round", allowRegroup = false) => {
     setFilling(true);
+    setRegroupAsk(false);
     // 종목·남녀는 세션 설정이다. 여기서는 경기 수만 정한다 — 한 바퀴는 스토어가 센다
     // (남녀 따로일 때 남 바퀴 + 여 바퀴를 여기와 같은 규칙으로 세므로 어긋날 일이 없다).
-    await fillAssignmentQueue(n === "round" ? { mode: "round", policy: preset } : { count: n, policy: preset });
+    const made = await fillAssignmentQueue(
+      n === "round" ? { mode: "round", policy: preset } : { count: n, policy: preset, allowRegroup },
+    );
+    if (made === REGROUP_NEEDS_CONFIRM) setRegroupAsk(true);
     setFilling(false);
   };
 
@@ -517,6 +534,27 @@ export function MatchQueue({
             )}
           </div>
 
+          {regroupAsk && (
+            <div className="mt-2 flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs animate-in fade-in duration-150">
+              <span className="min-w-0 flex-1 font-bold text-foreground">방금 같이 뛴 친구들끼리 또 붙어요. 그래도 넣을까요?</span>
+              <button
+                type="button"
+                onClick={() => fill(1, true)}
+                disabled={filling}
+                className="shrink-0 rounded-md bg-amber-500 px-2.5 py-1 font-black text-black"
+              >
+                넣기
+              </button>
+              <button
+                type="button"
+                onClick={() => setRegroupAsk(false)}
+                className="shrink-0 rounded-md border border-border/40 px-2.5 py-1 font-bold text-muted-foreground"
+              >
+                다음 경기 끝나고
+              </button>
+            </div>
+          )}
+
           {/* 2층 — 방식(설정) · 안내. 물음표를 눌렀으면 안내 자리에 설명이 온다. */}
           <div className="mt-2 flex items-start gap-1.5 text-[11px] text-muted-foreground">
             <button
@@ -553,7 +591,7 @@ export function MatchQueue({
               </button>
             ) : (
               <span className="min-w-0 flex-1">
-                {separate ? separateRoundHint(freeByGender, perMatch) : roundHint(free, perMatch)}
+                {separate ? separateRoundHint(freeByGender, perMatch) : roundHint(free, perMatch, queue.length)}
               </span>
             )}
           </div>
