@@ -93,6 +93,7 @@ export function LeagueApp({ classId }: { classId: string }) {
     lockEpoch,
     saveLockSettings,
     assignmentSession,
+    loadAssignmentSession,
   } = useLeagueStore();
 
   // 입력용 기기 잠금: 잠긴 기기에선 경기장(·내 카드) 밖 탭과 로그아웃·로비가 핀 뒤로 간다.
@@ -610,7 +611,7 @@ export function LeagueApp({ classId }: { classId: string }) {
         />
 
         {/* 관리자 QR 초대 다이얼로그 */}
-        <ScoreInputDialog open={scoreInputOpen} onOpenChange={setScoreInputOpen} sessionId={assignmentSession?.id ?? null} />
+        <ScoreInputDialog open={scoreInputOpen} onOpenChange={setScoreInputOpen} sessionId={assignmentSession?.id ?? null} onChanged={() => loadAssignmentSession(classId)} />
         <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} classId={classId} leagueName={title} defaultMode={shareMode} allowRanking={isSchool} allowInvite={!isSchool} ownerId={isSchool ? myUid : null} />
 
         {/* 명단이 비어 있으면 첫 화면에서 바로 붙여넣기로. 개설 → 관리자 탭 → 학생 관리 → 붙여넣기까지

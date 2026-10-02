@@ -21,7 +21,8 @@ export function mapMatchRow(m: any): Match {
     rpDeltaB2: m.rp_delta_loser2 ?? undefined,
     date: m.created_at || new Date().toISOString(),
     matchType: m.winner2_id ? "double" : "single",
-    rpBreakdown: m.rp_breakdown ?? null
+    rpBreakdown: m.rp_breakdown ?? null,
+    inputSource: m.input_source ?? null
   };
 }
 

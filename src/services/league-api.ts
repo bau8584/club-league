@@ -786,7 +786,7 @@ export async function apiFetchScoreInputView(key: string) {
   return supabase.rpc("get_score_input_view", { p_key: key });
 }
 /** 학생: 점수만 보낸다. RP 계산·저장은 서버 함수(score-input)가 한다. scoreA = 줄의 앞 팀. */
-export async function apiSubmitScoreInput(payload: { key: string; scheduledId: string; scoreA: number; scoreB: number }) {
+export async function apiSubmitScoreInput(payload: { key: string; scheduledId?: string; teamA?: string[]; teamB?: string[]; scoreA: number; scoreB: number }) {
   const { data, error } = await supabase.functions.invoke("score-input", { body: payload });
   if (error) {
     // 서버 함수가 400·409 로 돌려준 안내 문구를 꺼낸다.

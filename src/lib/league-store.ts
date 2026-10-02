@@ -68,6 +68,7 @@ import {
   apiCreateScheduledMatch,
   apiBulkCreateAssignedMatches,
   apiFetchAssignmentSession,
+  apiCloseScoreInput,
   apiUpsertAssignmentSession,
   apiFetchApartPairs,
   apiAddApartPair,
@@ -3105,9 +3106,14 @@ function useLeagueStoreInternal() {
       myUid: leagueTypeRef.current === "school" ? myUidRef.current : null,
     });
     if (error) { toast.error("정리 실패: " + error.message); return false; }
+    // 점수입력판도 같이 닫는다 — 수업이 끝난 뒤 학생 QR로 들어오는 입력을 막는다(2026-10-02).
+    if (assignmentSessionRef.current?.input_key) {
+      await apiCloseScoreInput(sid);
+      await loadAssignmentSession(cid);
+    }
     await loadScheduled(cid);
     return true;
-  }, [loadScheduled]);
+  }, [loadScheduled, loadAssignmentSession]);
 
   /**
    * 명단·종목만 고친다(세션 경계 아님). 지각·조퇴가 여기로 들어온다 —
@@ -3912,6 +3918,7 @@ function useLeagueStoreInternal() {
     removeScheduledMatch,
     removeScheduledMatches,
     endClassQueue,
+    loadAssignmentSession,
     replaceQueuePlayer,
     createReservation,
     cancelReservation,

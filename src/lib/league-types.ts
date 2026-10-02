@@ -95,6 +95,8 @@ export type AssignmentSession = {
   court_count?: number | null;       // 코트 수. 없으면 코트 안내 없음(지금 동작). 줄의 court 는 서버가 매긴다
   queue_mode?: QueueMode | null;     // 운영 방식. 없으면 줄서기(지금 동작)
   auto_round?: boolean | null;       // 한 바퀴 자동. 없으면 꺼짐(지금 동작). 붙일 기기는 서버(claim_auto_round)가 정한다
+  input_key?: string | null;         // 점수입력판 열쇠. 없으면 닫힘
+  input_key_day?: string | null;     // 열쇠가 유효한 날(한국 날짜)
   started_at: string;
   updated_at?: string;
 };
@@ -195,6 +197,8 @@ export type Match = {
 
   // 결과 영수증 완전 복원용 스냅샷(선수별 이전/최종RP·티어·보너스 내역). DB: rp_breakdown(jsonb)
   rpBreakdown?: unknown | null;
+  /** 'student' = 점수입력판(학생 QR)으로 들어온 경기. 없으면 교사 입력 */
+  inputSource?: string | null;
 };
 
 /**

@@ -180,6 +180,9 @@ export function MatchQueue({
 
   // 코트 — 켜 두면 서버가 앞쪽 줄에 코트 번호를 붙인다. 여기서는 보여주기만 한다.
   const courtCount = assignmentSession?.court_count ?? null;
+  // 점수입력판이 오늘 열려 있나 — 열려 있으면 줄이 없어도 [수업 종료]를 보여 QR까지 닫게 한다.
+  const inputOpen = !!rawSession?.input_key
+    && rawSession.input_key_day === new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
   const [courtOpen, setCourtOpen] = useState(false);
   const callout = useCourtCallout(courtCount ? queue : []);
 
@@ -698,14 +701,14 @@ export function MatchQueue({
 
       {/* 수업 종료 — 같은 날 다음 반이 들어오기 전에 남은 줄만 비운다. 명단은 그대로.
           안 눌러도 12시간 뒤엔 저절로 치워지므로 눌러야 하는 의무가 아니다. */}
-      {canManage && !isClub && !picking && queue.length > 0 && (
+      {canManage && !isClub && !picking && (queue.length > 0 || inputOpen) && (
         <div className="mt-3 flex justify-end">
           <button
             type="button"
             onClick={() => setConfirmEnd(true)}
             className="text-[11px] font-bold text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
           >
-            수업 종료 · 남은 {queue.length}줄 비우기
+            {queue.length > 0 ? `수업 종료 · 남은 ${queue.length}줄 비우기` : "수업 종료"}{inputOpen && " · 점수입력판 닫기"}
           </button>
         </div>
       )}
@@ -721,7 +724,9 @@ export function MatchQueue({
           >
             <h3 className="text-base font-black text-foreground">수업을 마칠까요?</h3>
             <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-              아직 안 치른 {queue.length}줄이 사라져요. 경기 기록과 출석 명단은 그대로예요.
+              {queue.length > 0 && `아직 안 치른 ${queue.length}줄이 사라져요. `}
+              {inputOpen && "학생 점수입력판 QR도 닫혀요. "}
+              경기 기록과 출석 명단은 그대로예요.
             </p>
             <div className="mt-4 flex flex-col gap-2">
               <Button

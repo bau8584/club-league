@@ -281,6 +281,10 @@ export function AdminMatchRecords({
               return (
                 <div key={m.id} className="flex items-center gap-2 sm:gap-3 rounded-lg border border-border/30 bg-input/40 px-2.5 py-2 hover:bg-accent/10 transition-colors">
                   <span className="hidden sm:block w-[88px] shrink-0 text-[10px] leading-tight text-muted-foreground">{matchDateStr}</span>
+                  {/* 점수입력판(학생 QR)으로 들어온 경기 — 이상한 경기를 금방 찾아 지우게 */}
+                  {m.inputSource === "student" && (
+                    <span className="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-black text-amber-600">학생 입력</span>
+                  )}
 
                   {/* 대결 요약: A팀  점수  B팀 (승자 강조) */}
                   <div className="flex min-w-0 flex-1 items-center justify-center gap-2 text-xs">

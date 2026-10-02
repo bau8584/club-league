@@ -17,11 +17,13 @@ export function scoreInputEnabled(): boolean {
 
 const seoulToday = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
 
-export function ScoreInputDialog({ open, onOpenChange, sessionId }: {
+export function ScoreInputDialog({ open, onOpenChange, sessionId, onChanged }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   /** 이 선생님의 오늘 수업. 없으면 수업을 먼저 시작해야 한다. */
   sessionId: string | null;
+  /** 켜기·닫기 뒤 — 리그 화면이 수업 정보를 다시 읽게(수업 종료 버튼이 QR 상태를 안다). */
+  onChanged?: () => void;
 }) {
   const [key, setKey] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -45,6 +47,7 @@ export function ScoreInputDialog({ open, onOpenChange, sessionId }: {
     setBusy(false);
     if (error) { toast.error("열지 못했어요: " + error.message); return; }
     setKey(data as string);
+    onChanged?.();
   };
   const close = async () => {
     if (!sessionId) return;
@@ -53,6 +56,7 @@ export function ScoreInputDialog({ open, onOpenChange, sessionId }: {
     setBusy(false);
     if (error) { toast.error("닫지 못했어요: " + error.message); return; }
     setKey(null);
+    onChanged?.();
     toast.success("점수입력판을 닫았어요. 옛 QR로는 넣을 수 없어요.");
   };
 
@@ -69,9 +73,9 @@ export function ScoreInputDialog({ open, onOpenChange, sessionId }: {
         ) : !key ? (
           <>
             <p className="mt-3 text-sm text-muted-foreground">
-              켜면 학생 태블릿·폰이 QR로 들어와 대기열 경기 점수를 넣어요. 순위에 바로 반영되고, 잘못 넣은 경기는 최근 경기에서 지우면 돼요.
+              켜면 학생 태블릿·폰이 QR로 들어와 점수판으로 경기하고 결과를 등록해요. 순위에 바로 반영되고, 잘못 넣은 경기는 관리자 › 리그 기록 관리에서 지우면 돼요.
             </p>
-            <p className="mt-2 text-xs text-muted-foreground">QR은 오늘만 쓸 수 있어요. 공개 순위표 링크와는 따로예요.</p>
+            <p className="mt-2 text-xs text-muted-foreground">QR은 오늘만 쓸 수 있고, [수업 종료]를 누르면 같이 닫혀요. 공개 순위표 링크와는 따로예요.</p>
             <button onClick={openNew} disabled={busy}
               className="mt-4 w-full rounded-xl bg-neon-blue py-3 font-black text-background disabled:opacity-60">
               점수입력판 켜기

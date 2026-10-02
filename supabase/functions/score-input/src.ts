@@ -1,7 +1,9 @@
 // 점수입력판 Edge Function — 원본. 배포할 것은 같은 폴더의 index.ts(묶은 결과)다.
 //   npm run build:fn   → index.ts 를 다시 만든다. 계산 파일(src/domain·src/lib)이 바뀌면 꼭 다시 묶어 배포.
 //
-// 학생 기기는 점수만 보낸다: { key, scheduledId, scoreA, scoreB }  (A = 줄의 team_a)
+// 학생 기기는 점수와 경기만 보낸다:
+//   대기열 경기  { key, scheduledId, scoreA, scoreB }          (A = 줄의 team_a)
+//   직접 고르기  { key, teamA: [id, id?], teamB: [id, id?], scoreA, scoreB }
 // 서버가 교사 태블릿과 같은 코드(computeScoreInput)로 RP 를 계산하고 record_match_by_key 로 저장한다.
 // SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY 는 Edge 런타임이 자동 주입한다(따로 비밀 설정 없음).
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -26,10 +28,15 @@ Deno.serve(async (req: Request) => {
   let body: any;
   try { body = await req.json(); } catch { return fail("잘못된 요청이에요."); }
   const key = String(body?.key ?? "");
-  const scheduledId = String(body?.scheduledId ?? "");
+  const scheduledId = body?.scheduledId ? String(body.scheduledId) : null;
+  const ids = (v: unknown) => (Array.isArray(v) ? v.filter((x) => typeof x === "string" && x).map(String) : []);
+  const directA = ids(body?.teamA), directB = ids(body?.teamB);
   const scoreA = Number(body?.scoreA), scoreB = Number(body?.scoreB);
   const okScore = (n: number) => Number.isInteger(n) && n >= 0 && n <= 999;
-  if (key.length < 12 || !scheduledId || !okScore(scoreA) || !okScore(scoreB)) return fail("점수를 다시 확인해 주세요.");
+  if (key.length < 12 || !okScore(scoreA) || !okScore(scoreB)) return fail("점수를 다시 확인해 주세요.");
+  if (!scheduledId && (directA.length < 1 || directA.length > 2 || directB.length < 1 || directB.length > 2)) {
+    return fail("팀마다 1~2명을 골라 주세요.");
+  }
   if (scoreA === scoreB) return fail("비긴 경기는 넣을 수 없어요. 이긴 팀 점수가 더 커야 해요.");
 
   const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
@@ -42,13 +49,19 @@ Deno.serve(async (req: Request) => {
     .select("id, league_id").eq("input_key", key).eq("input_key_day", today).maybeSingle();
   if (!sess) return fail("입력이 닫혔어요. 선생님께 새 QR을 받아 주세요.", 403);
 
-  // 2) 줄
-  const { data: row } = await db.from("scheduled_matches")
-    .select("id, session_id, status, player_a_id, player_a2_id, player_b_id, player_b2_id")
-    .eq("id", scheduledId).maybeSingle();
-  if (!row || row.session_id !== sess.id) return fail("이 경기를 찾을 수 없어요.", 404);
-  if (row.status !== "waiting" && row.status !== "called") return fail("이미 기록된 경기예요.", 409);
-  if (!row.player_a_id || !row.player_b_id) return fail("팀이 아직 안 정해진 줄이에요.");
+  // 2) 경기 — 대기열 줄이면 줄의 팀, 아니면 직접 고른 팀(이 리그 학생인지는 저장 함수가 확인)
+  let teamA = directA, teamB = directB;
+  if (scheduledId) {
+    const { data: row } = await db.from("scheduled_matches")
+      .select("id, session_id, status, player_a_id, player_a2_id, player_b_id, player_b2_id")
+      .eq("id", scheduledId).maybeSingle();
+    if (!row || row.session_id !== sess.id) return fail("이 경기를 찾을 수 없어요.", 404);
+    if (row.status !== "waiting" && row.status !== "called") return fail("이미 기록된 경기예요.", 409);
+    if (!row.player_a_id || !row.player_b_id) return fail("팀이 아직 안 정해진 줄이에요.");
+    teamA = [row.player_a_id, row.player_a2_id].filter(Boolean);
+    teamB = [row.player_b_id, row.player_b2_id].filter(Boolean);
+  }
+  if (new Set([...teamA, ...teamB]).size !== teamA.length + teamB.length) return fail("같은 학생이 두 번 들어갔어요.");
 
   // 3) 계산 재료 — 리그 설정·선수·이번 시즌 경기
   const { data: league } = await db.from("leagues").select("settings").eq("id", sess.league_id).single();
@@ -72,8 +85,7 @@ Deno.serve(async (req: Request) => {
   try {
     out = computeScoreInput({
       settings: league?.settings, playerRows: players || [], matchRows,
-      teamA: [row.player_a_id, row.player_a2_id].filter(Boolean),
-      teamB: [row.player_b_id, row.player_b2_id].filter(Boolean),
+      teamA, teamB,
       scoreA, scoreB, matchId, nowIso: new Date().toISOString(),
     });
   } catch (e) {

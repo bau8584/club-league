@@ -534,7 +534,8 @@ function mapMatchRow(m) {
     rpDeltaB2: m.rp_delta_loser2 ?? void 0,
     date: m.created_at || (/* @__PURE__ */ new Date()).toISOString(),
     matchType: m.winner2_id ? "double" : "single",
-    rpBreakdown: m.rp_breakdown ?? null
+    rpBreakdown: m.rp_breakdown ?? null,
+    inputSource: m.input_source ?? null
   };
 }
 var localYmd = (iso) => {
@@ -1049,10 +1050,15 @@ Deno.serve(async (req) => {
     return fail("\uC798\uBABB\uB41C \uC694\uCCAD\uC774\uC5D0\uC694.");
   }
   const key = String(body?.key ?? "");
-  const scheduledId = String(body?.scheduledId ?? "");
+  const scheduledId = body?.scheduledId ? String(body.scheduledId) : null;
+  const ids = (v) => Array.isArray(v) ? v.filter((x) => typeof x === "string" && x).map(String) : [];
+  const directA = ids(body?.teamA), directB = ids(body?.teamB);
   const scoreA = Number(body?.scoreA), scoreB = Number(body?.scoreB);
   const okScore = (n) => Number.isInteger(n) && n >= 0 && n <= 999;
-  if (key.length < 12 || !scheduledId || !okScore(scoreA) || !okScore(scoreB)) return fail("\uC810\uC218\uB97C \uB2E4\uC2DC \uD655\uC778\uD574 \uC8FC\uC138\uC694.");
+  if (key.length < 12 || !okScore(scoreA) || !okScore(scoreB)) return fail("\uC810\uC218\uB97C \uB2E4\uC2DC \uD655\uC778\uD574 \uC8FC\uC138\uC694.");
+  if (!scheduledId && (directA.length < 1 || directA.length > 2 || directB.length < 1 || directB.length > 2)) {
+    return fail("\uD300\uB9C8\uB2E4 1~2\uBA85\uC744 \uACE8\uB77C \uC8FC\uC138\uC694.");
+  }
   if (scoreA === scoreB) return fail("\uBE44\uAE34 \uACBD\uAE30\uB294 \uB123\uC744 \uC218 \uC5C6\uC5B4\uC694. \uC774\uAE34 \uD300 \uC810\uC218\uAC00 \uB354 \uCEE4\uC57C \uD574\uC694.");
   const db = createClient(Deno.env.get("SUPABASE_URL"), Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"), {
     auth: { persistSession: false }
@@ -1060,10 +1066,16 @@ Deno.serve(async (req) => {
   const today = new Date(Date.now() + 9 * 3600 * 1e3).toISOString().slice(0, 10);
   const { data: sess } = await db.from("assignment_sessions").select("id, league_id").eq("input_key", key).eq("input_key_day", today).maybeSingle();
   if (!sess) return fail("\uC785\uB825\uC774 \uB2EB\uD614\uC5B4\uC694. \uC120\uC0DD\uB2D8\uAED8 \uC0C8 QR\uC744 \uBC1B\uC544 \uC8FC\uC138\uC694.", 403);
-  const { data: row } = await db.from("scheduled_matches").select("id, session_id, status, player_a_id, player_a2_id, player_b_id, player_b2_id").eq("id", scheduledId).maybeSingle();
-  if (!row || row.session_id !== sess.id) return fail("\uC774 \uACBD\uAE30\uB97C \uCC3E\uC744 \uC218 \uC5C6\uC5B4\uC694.", 404);
-  if (row.status !== "waiting" && row.status !== "called") return fail("\uC774\uBBF8 \uAE30\uB85D\uB41C \uACBD\uAE30\uC608\uC694.", 409);
-  if (!row.player_a_id || !row.player_b_id) return fail("\uD300\uC774 \uC544\uC9C1 \uC548 \uC815\uD574\uC9C4 \uC904\uC774\uC5D0\uC694.");
+  let teamA = directA, teamB = directB;
+  if (scheduledId) {
+    const { data: row } = await db.from("scheduled_matches").select("id, session_id, status, player_a_id, player_a2_id, player_b_id, player_b2_id").eq("id", scheduledId).maybeSingle();
+    if (!row || row.session_id !== sess.id) return fail("\uC774 \uACBD\uAE30\uB97C \uCC3E\uC744 \uC218 \uC5C6\uC5B4\uC694.", 404);
+    if (row.status !== "waiting" && row.status !== "called") return fail("\uC774\uBBF8 \uAE30\uB85D\uB41C \uACBD\uAE30\uC608\uC694.", 409);
+    if (!row.player_a_id || !row.player_b_id) return fail("\uD300\uC774 \uC544\uC9C1 \uC548 \uC815\uD574\uC9C4 \uC904\uC774\uC5D0\uC694.");
+    teamA = [row.player_a_id, row.player_a2_id].filter(Boolean);
+    teamB = [row.player_b_id, row.player_b2_id].filter(Boolean);
+  }
+  if ((/* @__PURE__ */ new Set([...teamA, ...teamB])).size !== teamA.length + teamB.length) return fail("\uAC19\uC740 \uD559\uC0DD\uC774 \uB450 \uBC88 \uB4E4\uC5B4\uAC14\uC5B4\uC694.");
   const { data: league } = await db.from("leagues").select("settings").eq("id", sess.league_id).single();
   const season = league?.settings?.season || "\uC2DC\uC98C 1";
   const { data: players, error: pe } = await db.from("players").select(PLAYER_COLS).eq("league_id", sess.league_id).or("is_deleted.is.null,is_deleted.eq.false");
@@ -1082,8 +1094,8 @@ Deno.serve(async (req) => {
       settings: league?.settings,
       playerRows: players || [],
       matchRows,
-      teamA: [row.player_a_id, row.player_a2_id].filter(Boolean),
-      teamB: [row.player_b_id, row.player_b2_id].filter(Boolean),
+      teamA,
+      teamB,
       scoreA,
       scoreB,
       matchId,
