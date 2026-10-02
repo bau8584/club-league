@@ -18,7 +18,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { Crown, Swords, Trophy, Users, User, Pencil, LogOut, School, ShieldAlert, BarChart3, ArrowLeft, Lock, LockOpen, MoreVertical, Palette, CalendarDays, RefreshCw, IdCard, QrCode, ClipboardPen } from "lucide-react";
 import { InviteDialog, type ShareMode } from "@/components/league/InviteDialog";
-import { ScoreInputDialog, scoreInputEnabled } from "@/components/league/ScoreInputDialog";
+import { ScoreInputDialog } from "@/components/league/ScoreInputDialog";
 import { useDeviceLock, PinGate, SetPinDialog } from "@/components/league/DeviceLock";
 import { ThemePicker } from "@/components/ThemePicker";
 import { useTheme, isDarkTheme } from "@/lib/use-theme";
@@ -123,10 +123,8 @@ export function LeagueApp({ classId }: { classId: string }) {
   // 초대 QR / 공개 순위표 공유는 같은 다이얼로그를 탭만 바꿔 쓴다.
   const [shareMode, setShareMode] = useState<ShareMode>("invite");
   const openShare = (mode: ShareMode) => { setShareMode(mode); setInviteOpen(true); };
-  // 점수입력판(학생 QR 입력) — 시험 중이라 스위치 켠 기기에서만 보인다(scoreInputEnabled).
+  // 점수입력판(학생 QR 입력) — 학교 리그 관리자에게 보인다(2026-10-02 공개).
   const [scoreInputOpen, setScoreInputOpen] = useState(false);
-  const [showScoreInput, setShowScoreInput] = useState(false);
-  useEffect(() => { setShowScoreInput(scoreInputEnabled()); }, []);
   // 결과 푸시(?match=<id>)로 진입하면 경기 탭에서 그 경기 결과 창을 연다
   const [openMatchId, setOpenMatchId] = useState<string | null>(
     () => (typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("match") : null)
@@ -345,7 +343,7 @@ export function LeagueApp({ classId }: { classId: string }) {
 
                 {/* 공유 — 학교는 공개 순위표, 동호회는 QR 초대. 케밥 메뉴가 모바일 전용이라
                     데스크톱에서는 이 버튼이 유일한 통로다. */}
-                {!gated && isSchool && isClassManager && showScoreInput && (
+                {!gated && isSchool && isClassManager && (
                   <button onClick={() => setScoreInputOpen(true)} title="점수입력판 (학생 QR 입력)"
                     className="flex size-9 items-center justify-center rounded-lg border border-border/60 bg-card/60 text-muted-foreground hover:text-neon-blue hover:border-neon-blue/40 active:scale-95 transition-all">
                     <ClipboardPen className="size-4" />
@@ -452,7 +450,7 @@ export function LeagueApp({ classId }: { classId: string }) {
                     </DropdownMenuItem>
                   )}
                   {/* 공개 순위표는 학교 리그 기능 — 동호회에서는 노출하지 않는다. */}
-                  {!gated && isSchool && isClassManager && showScoreInput && (
+                  {!gated && isSchool && isClassManager && (
                     <DropdownMenuItem onSelect={() => setScoreInputOpen(true)} className="gap-2 text-xs cursor-pointer">
                       <ClipboardPen className="size-4 text-neon-blue" /> 점수입력판
                     </DropdownMenuItem>

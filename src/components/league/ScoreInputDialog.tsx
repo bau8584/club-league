@@ -10,11 +10,6 @@ import { apiCloseScoreInput, apiOpenScoreInput } from "@/services/league-api";
  * 열쇠는 오늘만. [새 QR] = 옛 QR 무효, [닫기] = 입력 끝. 공개 순위표 링크와는 따로다.
  */
 
-/** 점수입력판 버튼을 보일지. 서버 함수 배포·시험 전까지는 이 기기에서 켠 사람만 본다. */
-export function scoreInputEnabled(): boolean {
-  try { return localStorage.getItem("dev:scoreInput") === "1"; } catch { return false; }
-}
-
 const seoulToday = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
 
 export function ScoreInputDialog({ open, onOpenChange, sessionId, onChanged }: {
