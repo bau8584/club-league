@@ -235,7 +235,16 @@ export function MatchQueue({
       {/* 방금 코트가 빈 줄 — 선생님 화면에서는 확인용 한 줄. 크게는 교실 화면이 띄운다. */}
       {callout.length > 0 && (
         <div className="mb-2 rounded-xl border border-neon-green/50 bg-neon-green/10 px-3 py-2 text-sm font-black text-neon-green animate-in fade-in duration-200">
-          {callout.map((c) => `코트 비었어요 → ${seqMark(c.seq) || "다음 줄"} 들어가세요`).join(" · ")}
+          코트 들어가세요 →{" "}
+          {callout
+            .map((c) => {
+              const r = queue.find((x) => x.seq === c.seq);
+              if (!r) return seqMark(c.seq) || "다음 줄";
+              const { teamA, teamB, pool } = teamsOf(r);
+              const nm = (ids: string[]) => ids.map((id) => dn(byId.get(id))).join("·");
+              return teamA.length && teamB.length ? `${nm(teamA)} vs ${nm(teamB)}` : nm(pool);
+            })
+            .join(" / ")}
         </div>
       )}
       {/*
