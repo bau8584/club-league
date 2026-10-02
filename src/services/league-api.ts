@@ -241,8 +241,9 @@ export async function apiUpsertAssignmentSession(payload: {
  * 한 바퀴 자동: 지금 이 기기가 붙여도 되는지 서버에 묻는다. true 를 받은 기기 하나만 붙인다.
  * 서버가 스위치·코트 수·대기 줄 수를 직접 다시 확인한다(화면 판단만 믿지 않는다).
  */
-export async function apiClaimAutoRound(sessionId: string) {
-  return supabase.rpc("claim_auto_round", { p_session_id: sessionId });
+export async function apiClaimAutoRound(sessionId: string, seenSeq?: number) {
+  // seenSeq = 이 기기가 본 줄의 마지막 번호(없으면 0). 서버 것과 다르면 화면이 낡았다 → 거절.
+  return supabase.rpc("claim_auto_round", { p_session_id: sessionId, ...(seenSeq !== undefined ? { p_seen_seq: seenSeq } : {}) });
 }
 
 export async function apiAllocMatchSeq(sessionId: string, n: number) {

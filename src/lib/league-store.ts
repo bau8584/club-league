@@ -3380,11 +3380,13 @@ function useLeagueStoreInternal() {
 
   // 한 바퀴 자동: 이 기기가 붙여도 되는지 서버에 묻는다. 폰과 태블릿이 같은 순간 물어도
   // 한 기기만 true 를 받는다. 실패(마이그레이션 전 등)는 조용히 false — 손으로 누르면 된다.
-  const claimAutoRound = useCallback(async (): Promise<boolean> => {
+  const claimAutoRound = useCallback(async (seenSeq?: number): Promise<boolean> => {
     if (!isClassManagerRef.current) return false;
     const sid = assignmentSessionRef.current?.id;
     if (!sid) return false;
-    const { data, error } = await apiClaimAutoRound(sid);
+    let { data, error } = await apiClaimAutoRound(sid, seenSeq);
+    // DB 에 새 함수가 아직 없으면(마이그레이션 전) 옛 방식으로 한 번 더.
+    if (error && seenSeq !== undefined) ({ data, error } = await apiClaimAutoRound(sid));
     if (error) { console.warn("한 바퀴 자동 확인 실패:", error.message); return false; }
     return data === true;
   }, []);

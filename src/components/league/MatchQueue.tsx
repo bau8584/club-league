@@ -248,7 +248,9 @@ export function MatchQueue({
     if (!autoDue) return;
     let cancelled = false;
     (async () => {
-      if (!(await claimAutoRound()) || cancelled) return;
+      // 내가 본 줄의 마지막 번호를 같이 보낸다 — 다른 기기가 방금 붙인 줄을 못 봤으면 서버가 거절한다.
+      const seenSeq = queue.reduce((m, r) => Math.max(m, r.seq ?? 0), 0);
+      if (!(await claimAutoRound(seenSeq)) || cancelled) return;
       await fill("round");
     })();
     return () => { cancelled = true; };
