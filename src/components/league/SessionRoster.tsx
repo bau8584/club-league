@@ -137,6 +137,8 @@ export function SessionRoster({
   const [draftGender, setDraftGender] = useState<GenderMode>("mixed");
   // 운영 방식 — 줄 서서 기다려요 | 모두 동시에 해요. 없으면 줄서기(옛 세션 그대로).
   const [draftMode, setDraftMode] = useState<QueueMode>("queue");
+  // 새 수업은 방식을 꼭 고르게 한다 — 지난번 것은 "지난번" 표시로 한 번에 누르게만.
+  const [modePicked, setModePicked] = useState(false);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -322,6 +324,10 @@ export function SessionRoster({
       ? true
       : selected.some((k) => !sessionClasses.includes(k));
 
+  // 새 수업 시작일 때만 묻는다. 지각·조퇴(명단만 고침)는 묻지 않는다.
+  const mustPickMode = classesChanged && !modePicked;
+  const lastMode: QueueMode = assignmentSession?.queue_mode === "simultaneous" ? "simultaneous" : "queue";
+
   // 반 정보가 없는 명단에서는 "반 미지정"을 제목에 붙이지 않는다 — 고를 것이 없으니
   // 그냥 오늘 수업이다. 여러 반 중 하나로 섞여 있을 때만 이름이 필요하다.
   const labelOf = (keys: string[]) =>
@@ -355,6 +361,7 @@ export function SessionRoster({
   // 닫는 것은 곧 편집을 그만두는 것이다 → 저장 안 한 손질은 버리고 세션으로 되돌린다.
   useEffect(() => {
     if (!open) setEditing(false);
+    setModePicked(false);
   }, [open]);
 
   if (collapsed) return null;
@@ -659,15 +666,20 @@ export function SessionRoster({
                     onClick={() => {
                       setEditing(true);
                       setDraftMode(m);
+                      setModePicked(true);
                     }}
                     className={cn(
-                      "rounded-xl border px-3 py-2.5 text-left transition-all active:scale-95",
-                      draftMode === m
+                      "relative rounded-xl border px-3 py-2.5 text-left transition-all active:scale-95",
+                      mustPickMode && "border-amber-500/50",
+                      !mustPickMode && draftMode === m
                         ? "border-neon-blue/60 bg-neon-blue/15 ring-1 ring-neon-blue/40"
                         : "border-border/40 hover:bg-muted/30",
                     )}
                   >
-                    <span className={cn("block text-sm font-black", draftMode === m ? "text-neon-blue" : "text-foreground")}>{title}</span>
+                    {mustPickMode && hasSession && lastMode === m && (
+                      <span className="absolute right-2 top-1.5 rounded-full bg-muted px-1.5 text-[10px] font-bold text-muted-foreground">지난번</span>
+                    )}
+                    <span className={cn("block text-sm font-black", !mustPickMode && draftMode === m ? "text-neon-blue" : "text-foreground")}>{title}</span>
                     <span className="block text-[11px] text-muted-foreground">{sub}</span>
                   </button>
                 ))}
@@ -717,13 +729,15 @@ export function SessionRoster({
           <div className="sticky bottom-0 rounded-b-2xl border-t border-border/30 bg-background/95 px-4 py-3 backdrop-blur sm:px-6">
             <Button
               onClick={save}
-              disabled={saving || picked.length === 0}
+              disabled={saving || picked.length === 0 || mustPickMode}
               className="h-11 w-full rounded-xl bg-neon-green text-sm font-black text-primary-foreground hover:bg-neon-green/90"
             >
               {classesChanged ? `${scopeText ? `${scopeText} ` : ""}수업 시작` : "명단 반영"}
             </Button>
             <p className="mt-1.5 text-center text-[11px] text-muted-foreground">
-              {classesChanged
+              {mustPickMode
+                ? "위에서 줄 서서 기다릴지, 모두 동시에 할지 골라 주세요."
+                : classesChanged
                 ? "대기 중인 경기를 지우고 이 명단으로 새로 시작합니다."
                 : "대기 중인 경기는 그대로 두고 명단만 고칩니다. (지각·조퇴)"}
             </p>
