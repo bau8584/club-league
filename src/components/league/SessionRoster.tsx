@@ -7,6 +7,7 @@ import { ClipboardCheck, Link2, UserPlus, X } from "lucide-react";
 import { useLeagueStore } from "@/lib/league-store";
 import { useGenderEnabled } from "@/lib/league-terms";
 import type { GenderMode } from "@/domain/gender-split";
+import type { QueueMode } from "@/lib/league-types";
 import { classKeyOf, classLabel, sortStudentsForRoster, type Student } from "@/lib/league-types";
 import { sessionClassKeys } from "@/domain/session-scope";
 
@@ -134,6 +135,8 @@ export function SessionRoster({
   const [draftType, setDraftType] = useState<"single" | "double">("double");
   // 남녀 섞어서/따로 — 종목처럼 그날 수업의 설정이라 세션에 같이 저장된다.
   const [draftGender, setDraftGender] = useState<GenderMode>("mixed");
+  // 운영 방식 — 줄 서서 기다려요 | 모두 동시에 해요. 없으면 줄서기(옛 세션 그대로).
+  const [draftMode, setDraftMode] = useState<QueueMode>("queue");
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -161,6 +164,7 @@ export function SessionRoster({
       });
       setDraftType(assignmentSession?.match_type === "single" ? "single" : "double");
       setDraftGender(assignmentSession?.gender_mode === "separate" ? "separate" : "mixed");
+      setDraftMode(assignmentSession?.queue_mode === "simultaneous" ? "simultaneous" : "queue");
     } else if (singleClass && classKeys.length === 1) {
       setSelected(classKeys);
     }
@@ -326,9 +330,11 @@ export function SessionRoster({
 
   const save = async () => {
     setSaving(true);
+    // 방식은 바뀌었을 때만 보낸다 — 고른 적 없는 옛 세션은 칸을 비워 둔 채(=줄서기) 그대로.
+    const queueMode = draftMode !== (assignmentSession?.queue_mode ?? "queue") ? draftMode : undefined;
     const ok = classesChanged
-      ? await startAssignmentSession({ playerIds: picked, matchType: draftType, genderMode: draftGender })
-      : await updateAssignmentSession({ playerIds: picked, matchType: draftType, genderMode: draftGender });
+      ? await startAssignmentSession({ playerIds: picked, matchType: draftType, genderMode: draftGender, queueMode })
+      : await updateAssignmentSession({ playerIds: picked, matchType: draftType, genderMode: draftGender, queueMode });
     setSaving(false);
     // 저장이 곧 "정했다"는 뜻이다 → 접고 대기열에 자리를 내준다.
     if (ok) {
@@ -343,6 +349,7 @@ export function SessionRoster({
       picked.length !== present.length ||
       picked.some((id) => !present.includes(id)) ||
       draftType !== (assignmentSession?.match_type ?? "double") ||
+      draftMode !== (assignmentSession?.queue_mode ?? "queue") ||
       (genderEnabled && draftGender !== (assignmentSession?.gender_mode ?? "mixed")));
 
   // 닫는 것은 곧 편집을 그만두는 것이다 → 저장 안 한 손질은 버리고 세션으로 되돌린다.
@@ -637,6 +644,33 @@ export function SessionRoster({
                     );
                   })}
                 </div>
+              </div>
+
+              {/* 운영 방식 — 수업의 큰 틀이라 맨 위 카드 둘. 줄서기는 끝난 조부터 다음 경기로,
+                  모두 동시에는 가위바위보처럼 전원이 한 라운드를 같이 뛰고 다 끝나면 새로 짠다. */}
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  ["queue", "줄 서서 기다려요", "끝난 조부터 다음 경기"],
+                  ["simultaneous", "모두 동시에 해요", "다 끝나면 다음 라운드"],
+                ] as const).map(([m, title, sub]) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => {
+                      setEditing(true);
+                      setDraftMode(m);
+                    }}
+                    className={cn(
+                      "rounded-xl border px-3 py-2.5 text-left transition-all active:scale-95",
+                      draftMode === m
+                        ? "border-neon-blue/60 bg-neon-blue/15 ring-1 ring-neon-blue/40"
+                        : "border-border/40 hover:bg-muted/30",
+                    )}
+                  >
+                    <span className={cn("block text-sm font-black", draftMode === m ? "text-neon-blue" : "text-foreground")}>{title}</span>
+                    <span className="block text-[11px] text-muted-foreground">{sub}</span>
+                  </button>
+                ))}
               </div>
 
               {/* 종목은 명단이 아니라 수업 설정이지만 같이 저장된다 → 저장 버튼 바로 위에. */}

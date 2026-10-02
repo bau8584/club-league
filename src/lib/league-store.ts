@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo, createContext, useContext } from "react";
-import type { Student, Match, ScheduledMatch, AssignmentSession, Gender, TierName, TierSettings, DynamicBonuses, DynamicPenalties, TiersRecord, DecaySettingsRecord, MatchInputMode, LeagueType } from "./league-types";
+import type { Student, Match, ScheduledMatch, AssignmentSession, QueueMode, Gender, TierName, TierSettings, DynamicBonuses, DynamicPenalties, TiersRecord, DecaySettingsRecord, MatchInputMode, LeagueType } from "./league-types";
 import { studentKey, getTier, getTierSubdivision, getFullTierLabel, TIER_ORDER } from "./league-types";
 import { toast } from "sonner";
 import { supabase } from "../supabaseClient";
@@ -3058,6 +3058,7 @@ function useLeagueStoreInternal() {
     playerIds: string[];
     matchType?: "single" | "double";
     genderMode?: GenderMode;
+    queueMode?: QueueMode;
   }): Promise<boolean> => {
     if (!isClassManagerRef.current) { toast.error("권한이 없습니다."); return false; }
     const cid = currentClassIdRef.current;
@@ -3068,6 +3069,7 @@ function useLeagueStoreInternal() {
       playerIds: payload.playerIds,
       matchType: payload.matchType ?? "double",
       genderMode: payload.genderMode,
+      queueMode: payload.queueMode,
       startedAt: new Date().toISOString(),
       // 같은 행을 계속 쓰므로 번호는 저절로 1번으로 돌아가지 않는다. 여기서 되돌린다.
       resetSeq: true,
@@ -3118,6 +3120,7 @@ function useLeagueStoreInternal() {
     genderMode?: GenderMode;
     courtCount?: number | null;
     autoRound?: boolean;
+    queueMode?: QueueMode;
   }): Promise<boolean> => {
     if (!isClassManagerRef.current) { toast.error("권한이 없습니다."); return false; }
     const cid = currentClassIdRef.current;
@@ -3131,6 +3134,7 @@ function useLeagueStoreInternal() {
       genderMode: payload.genderMode,
       courtCount: payload.courtCount,
       autoRound: payload.autoRound,
+      queueMode: payload.queueMode,
     });
     if (error) { toast.error("명단 저장 실패: " + error.message); return false; }
     setAssignmentSession((data as AssignmentSession) ?? null);

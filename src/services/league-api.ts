@@ -188,6 +188,8 @@ export async function apiUpsertAssignmentSession(payload: {
   genderMode?: "mixed" | "separate";
   /** 코트 수. undefined = 안 건드림, null = 코트 안내 끄기. */
   courtCount?: number | null;
+  /** 운영 방식. undefined = 안 건드림. */
+  queueMode?: "queue" | "simultaneous";
   /** 한 바퀴 자동. undefined = 안 건드림. */
   autoRound?: boolean;
   startedAt?: string;
@@ -202,6 +204,7 @@ export async function apiUpsertAssignmentSession(payload: {
     ...(payload.courtCount !== undefined ? { court_count: payload.courtCount } : {}),
     ...(payload.startedAt ? { started_at: payload.startedAt } : {}),
     ...(payload.autoRound !== undefined ? { auto_round: payload.autoRound } : {}),
+    ...(payload.queueMode !== undefined ? { queue_mode: payload.queueMode } : {}),
     // 번호를 되돌리면 자동 붙이기 표도 지운다 — 옛 표가 새 번호와 우연히 같으면 한 번 놓친다.
     ...(payload.resetSeq ? { next_seq: 1, auto_round_mark: null } : {}),
     updated_at: new Date().toISOString(),

@@ -52,26 +52,37 @@ const PRESETS: {
  */
 function roundHint(free: number, perMatch: number, queued: number): string {
   const all = Math.floor(free / perMatch);
-  if (all === 0) return "놀고 있는 사람이 모자라요. +1경기는 이미 줄에 선 사람으로 다음 판을 미리 잡아요.";
+  if (all === 0) return "놀고 있는 사람이 모자라요. [+1]은 이미 줄에 선 사람으로 다음 판을 미리 잡아요.";
   const rounds = roundGamesKeepingOut(all, free, perMatch, queued);
   if (rounds === 0) return "방금 끝난 친구들끼리만 남아 있어요. 다음 경기가 끝나면 섞어서 넣어요.";
-  if (rounds < all) return `한 바퀴 = ${rounds}경기 · ${free - rounds * perMatch}명은 남겨 두었다가 다음에 끝난 친구들과 섞어요.`;
+  if (rounds < all) return `채우기 = ${rounds}경기 · ${free - rounds * perMatch}명은 남겨 두었다가 다음에 끝난 친구들과 섞어요.`;
   const rest = free - rounds * perMatch;
   return rest === 0
-    ? `한 바퀴 = ${rounds}경기 · 놀고 있는 ${free}명 전원이 한 번씩.`
-    : `한 바퀴 = ${rounds}경기 · ${free - rest}명이 한 번씩, ${rest}명은 다음에.`;
+    ? `채우기 = ${rounds}경기 · 놀고 있는 ${free}명 전원이 한 번씩.`
+    : `채우기 = ${rounds}경기 · ${free - rest}명이 한 번씩, ${rest}명은 다음에.`;
 }
 
 /** 남녀 따로일 때의 안내 — 남 몇 경기·여 몇 경기, 미지정은 자리 남는 쪽에. */
 function separateRoundHint(free: GenderCounts, perMatch: number): string {
   const { m, f } = separateRoundBreakdown(free, perMatch);
-  if (m + f === 0) return "남녀 따로 · 남자도 여자도 한 경기 인원이 안 돼요. +1경기는 이미 줄에 선 사람으로 잡아요.";
+  if (m + f === 0) return "남녀 따로 · 남자도 여자도 한 경기 인원이 안 돼요. [+1]은 이미 줄에 선 사람으로 잡아요.";
   const u = free.u > 0 ? ` · 미지정 ${free.u}명은 자리 남는 쪽에` : "";
   return `남녀 따로 · 남 ${m}경기 · 여 ${f}경기${u}`;
 }
 
+/** 모두 동시에 — 라운드 안내. 줄이 남아 있으면 진행 중, 비면 다음 라운드 크기. */
+function simulHint(queued: number, rounds: number, free: number, perMatch: number): string {
+  if (queued > 0) return `라운드 진행 중 · ${queued}경기 남았어요. 다 끝나면 [다음 라운드]를 눌러요.`;
+  if (rounds === 0) return "놀고 있는 사람이 한 경기 인원도 안 돼요.";
+  const rest = free - rounds * perMatch;
+  return rest === 0 ? `다음 라운드 = ${rounds}경기 · ${free}명 전원.` : `다음 라운드 = ${rounds}경기 · ${rest}명은 쉬고 다음 라운드에 먼저.`;
+}
+
+const SIMUL_HELP =
+  "가위바위보처럼 전원이 한 라운드를 같이 뛰어요. 라운드가 다 끝나야 다음 라운드를 짜요 — 먼저 끝난 친구들끼리 바로 붙이면 같은 친구들끼리만 계속 만나거든요. 결과를 못 넣은 줄은 [여러 줄 빼기]로 빼면 돼요.";
+
 const ROUND_HELP =
-  "놀고 있는 사람 전원이 한 번씩 들어가는 만큼 뽑아요. 복식은 4명, 단식은 2명이 한 경기예요. 4명(2명)으로 안 나눠떨어지면 남는 사람은 다음 바퀴에 먼저 들어가요. 줄에 경기가 남아 있으면 몇 명은 남겨 두었다가 다음에 끝난 친구들과 섞어요 — 같은 친구들끼리만 계속 만나지 않게요.";
+  "[다음 경기 채우기] = 놀고 있는 사람 전원이 한 번씩 들어가는 만큼 뽑아요. 복식은 4명, 단식은 2명이 한 경기예요. 4명(2명)으로 안 나눠떨어지면 남는 사람은 다음에 먼저 들어가요. 줄에 경기가 남아 있으면 몇 명은 남겨 두었다가 다음에 끝난 친구들과 섞어요 — 같은 친구들끼리만 계속 만나지 않게요.";
 
 /**
  * 대기열 — 순서 목록 하나.
@@ -225,7 +236,9 @@ export function MatchQueue({
   // 한 바퀴 자동 — 코트를 쓰고 스위치를 켰을 때만. 대기 줄(코트에 못 든 줄)이 코트 수 − 1 이
   // 되면 붙인다. −1 인 까닭: 한 경기가 더 끝난 뒤라 그 조까지 한 바퀴 계산에 들어간다.
   // 여기서는 "때가 됐다"만 보고, 실제로 붙일 기기 하나는 서버가 고른다(두 화면 → 한 바퀴).
-  const autoRound = !!courtCount && assignmentSession?.auto_round === true;
+  // 모두 동시에(라운드제)면 줄이 다 빠졌을 때만 다음 라운드 — 자동 채우기·+1은 없다.
+  const simul = assignmentSession?.queue_mode === "simultaneous";
+  const autoRound = !simul && !!courtCount && assignmentSession?.auto_round === true;
   const waitingRows = courtCount ? Math.max(queue.length - courtCount, 0) : 0;
   const autoDue = autoRound && canManage && !filling && roundCount > 0 && waitingRows <= courtCount! - 1;
   useEffect(() => {
@@ -241,7 +254,8 @@ export function MatchQueue({
   }, [autoDue, queue.length]);
 
   // 학교는 한 바퀴씩, 동호회는 몇 경기씩 그때그때. 자주 쓰는 쪽을 진하게.
-  const roundPrimary = leagueType === "school";
+  const roundPrimary = leagueType === "school" || simul;
+  const roundBlocked = filling || roundCount === 0 || (simul && queue.length > 0);
   const primaryBtn = "bg-neon-blue text-primary-foreground hover:bg-neon-blue/90";
   const secondaryBtn = "border border-border/40 bg-transparent text-foreground hover:bg-muted/40";
 
@@ -487,21 +501,21 @@ export function MatchQueue({
               className={cn(
                 "relative flex h-10 flex-1 items-stretch overflow-hidden rounded-lg",
                 roundPrimary ? "bg-neon-blue text-primary-foreground" : "border border-border/40 text-foreground",
-                (filling || roundCount === 0) && "opacity-50",
+                roundBlocked && "opacity-50",
               )}
             >
               <button
                 type="button"
                 onClick={() => fill("round")}
-                disabled={filling || roundCount === 0}
+                disabled={roundBlocked}
                 className="min-w-0 flex-1 whitespace-nowrap px-2 text-xs font-black transition-colors hover:bg-black/5 disabled:cursor-not-allowed"
               >
-                한 바퀴
+                {simul ? "다음 라운드" : "다음 경기 채우기"}
               </button>
               <button
                 type="button"
                 onClick={() => setHelpOpen((v) => !v)}
-                aria-label="한 바퀴가 뭔가요"
+                aria-label={simul ? "다음 라운드가 뭔가요" : "다음 경기 채우기가 뭔가요"}
                 className={cn(
                   "flex w-8 shrink-0 items-center justify-center border-l transition-colors hover:bg-black/5",
                   roundPrimary ? "border-white/25" : "border-border/40 text-muted-foreground",
@@ -513,13 +527,15 @@ export function MatchQueue({
 
             {/* +1경기 — 한 건. 누르는 횟수가 곧 경기 수라 숫자를 고를 필요가 없다.
                 놀고 있는 사람이 모자라도 뽑힌다(다음 판 미리 잡기). */}
+            {!simul && (
             <Button
               onClick={() => fill(1)}
               disabled={filling}
               className={cn("h-10 flex-1 whitespace-nowrap rounded-lg px-2 text-xs font-black", roundPrimary ? secondaryBtn : primaryBtn)}
             >
-              <Plus className="mr-0.5 size-3.5" /> 1경기
+              <Plus className="mr-0.5 size-3.5" />1
             </Button>
+            )}
 
             {/* 여러 줄 빼기 — 줄이 있을 때만. 오른쪽 끝, 아이콘만(드물게 쓴다). */}
             {queue.length > 0 && (
@@ -587,11 +603,13 @@ export function MatchQueue({
                 onClick={() => setHelpOpen(false)}
                 className="min-w-0 flex-1 text-left leading-relaxed text-foreground animate-in fade-in duration-150"
               >
-                {ROUND_HELP}
+                {simul ? SIMUL_HELP : ROUND_HELP}
               </button>
             ) : (
               <span className="min-w-0 flex-1">
-                {separate ? separateRoundHint(freeByGender, perMatch) : roundHint(free, perMatch, queue.length)}
+                {simul
+                  ? simulHint(queue.length, roundCount, free, perMatch)
+                  : separate ? separateRoundHint(freeByGender, perMatch) : roundHint(free, perMatch, queue.length)}
               </span>
             )}
           </div>
@@ -622,7 +640,7 @@ export function MatchQueue({
                 앞쪽 줄에 "경기 중"이 붙고, 결과가 들어오면 다음 줄이 들어가요. 코트 번호는 안 정해요. 교실 화면에 크게 떠요.
               </p>
               {/* 스위치는 DB 에 칸이 생긴 뒤에만 보인다(마이그레이션 전에 눌러 저장 실패가 나지 않게). */}
-              {courtCount && assignmentSession && "auto_round" in assignmentSession && (
+              {!simul && courtCount && assignmentSession && "auto_round" in assignmentSession && (
                 <button
                   type="button"
                   onClick={() => updateAssignmentSession({ autoRound: !autoRound })}
@@ -642,7 +660,7 @@ export function MatchQueue({
                     />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="font-black text-foreground">한 바퀴 자동</span>
+                    <span className="font-black text-foreground">자동으로 채우기</span>
                     <span className="block text-[11px] text-muted-foreground">
                       기다리는 줄이 {courtCount - 1 === 0 ? "다 들어가면" : `${courtCount - 1}줄이 되면`} 저절로 붙여요. 수업 끝나 갈 때 끄세요.
                     </span>

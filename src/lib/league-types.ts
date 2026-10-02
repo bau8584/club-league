@@ -81,6 +81,9 @@ export type ScheduledMatch = {
 // 도는 반면, 동호회 리그는 그 자체가 하나의 모임이기 때문이다.
 //
 // 이력은 남기지 않는다 — 커버리지와 판 수는 전부 matches 에서 유도된다.
+/** 줄 서서 기다려요 | 모두 동시에 해요(라운드제). */
+export type QueueMode = "queue" | "simultaneous";
+
 export type AssignmentSession = {
   id: string;
   league_id: string;
@@ -90,6 +93,7 @@ export type AssignmentSession = {
   gender_mode?: "mixed" | "separate"; // 남녀 섞어서 | 따로. 없으면 mixed (옛 행)
   next_seq?: number;                 // 다음에 내줄 대진 번호
   court_count?: number | null;       // 코트 수. 없으면 코트 안내 없음(지금 동작). 줄의 court 는 서버가 매긴다
+  queue_mode?: QueueMode | null;     // 운영 방식. 없으면 줄서기(지금 동작)
   auto_round?: boolean | null;       // 한 바퀴 자동. 없으면 꺼짐(지금 동작). 붙일 기기는 서버(claim_auto_round)가 정한다
   started_at: string;
   updated_at?: string;
