@@ -239,10 +239,11 @@ export function MatchQueue({
           {callout
             .map((c) => {
               const r = queue.find((x) => x.seq === c.seq);
-              if (!r) return seqMark(c.seq) || "다음 줄";
+              const tag = c.seq != null ? `[대기열 ${c.seq}번] ` : "";
+              if (!r) return tag;
               const { teamA, teamB, pool } = teamsOf(r);
-              const nm = (ids: string[]) => ids.map((id) => dn(byId.get(id))).join("·");
-              return teamA.length && teamB.length ? `${nm(teamA)} vs ${nm(teamB)}` : nm(pool);
+              const nm = (ids: string[]) => ids.map((id) => dn(byId.get(id))).join(", ");
+              return tag + (teamA.length && teamB.length ? `${nm(teamA)} vs ${nm(teamB)}` : nm(pool));
             })
             .join(" / ")}
         </div>

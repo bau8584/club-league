@@ -271,7 +271,7 @@ function Queue({ rows, courts }: { rows: QueueRow[]; courts: boolean }) {
   // 코트가 방금 빈 줄 — 선생님이 부르지 않아도 아이들이 보고 들어가게 크게.
   const callout = useCourtCallout(courts ? rows : EMPTY);
   const who = (r: QueueRow) =>
-    r.team_a.length && r.team_b.length ? `${r.team_a.join("·")} vs ${r.team_b.join("·")}` : r.pool.join("·");
+    r.team_a.length && r.team_b.length ? `${r.team_a.join(", ")} vs ${r.team_b.join(", ")}` : r.pool.join(", ");
   if (rows.length === 0) {
     return (
       <p className="rounded-xl border border-border/30 bg-input/40 px-3 py-5 text-center text-sm font-bold text-muted-foreground">
@@ -288,7 +288,7 @@ function Queue({ rows, courts }: { rows: QueueRow[]; courts: boolean }) {
             const r = rows.find((x) => x.seq === c.seq);
             return (
               <p key={c.key} className="mt-1 text-lg font-black text-foreground lg:text-xl xl:text-2xl">
-                {r ? who(r) : c.seq != null ? `#${c.seq}` : "다음 줄"}
+                {c.seq != null ? `[대기열 ${c.seq}번] ` : ""}{r ? who(r) : ""}
               </p>
             );
           })}
