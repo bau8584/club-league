@@ -188,6 +188,8 @@ export async function apiUpsertAssignmentSession(payload: {
   genderMode?: "mixed" | "separate";
   /** 코트 수. undefined = 안 건드림, null = 코트 안내 끄기. */
   courtCount?: number | null;
+  /** 한 바퀴 자동. undefined = 안 건드림. */
+  autoRound?: boolean;
   startedAt?: string;
   /** [새로 시작]에서 번호를 1번으로 되돌린다. 같은 행을 계속 쓰므로 저절로 초기화되지 않는다. */
   resetSeq?: boolean;
@@ -199,7 +201,9 @@ export async function apiUpsertAssignmentSession(payload: {
     ...(payload.genderMode ? { gender_mode: payload.genderMode } : {}),
     ...(payload.courtCount !== undefined ? { court_count: payload.courtCount } : {}),
     ...(payload.startedAt ? { started_at: payload.startedAt } : {}),
-    ...(payload.resetSeq ? { next_seq: 1 } : {}),
+    ...(payload.autoRound !== undefined ? { auto_round: payload.autoRound } : {}),
+    // 번호를 되돌리면 자동 붙이기 표도 지운다 — 옛 표가 새 번호와 우연히 같으면 한 번 놓친다.
+    ...(payload.resetSeq ? { next_seq: 1, auto_round_mark: null } : {}),
     updated_at: new Date().toISOString(),
   };
 
@@ -230,6 +234,14 @@ export async function apiUpsertAssignmentSession(payload: {
  * 대진 번호 `n`개를 발급받아 첫 번호를 돌려준다.
  * 서버에서 원자적으로 더한다 — 폰과 태블릿이 동시에 채우면 #7 이 두 개 생기기 때문이다.
  */
+/**
+ * 한 바퀴 자동: 지금 이 기기가 붙여도 되는지 서버에 묻는다. true 를 받은 기기 하나만 붙인다.
+ * 서버가 스위치·코트 수·대기 줄 수를 직접 다시 확인한다(화면 판단만 믿지 않는다).
+ */
+export async function apiClaimAutoRound(sessionId: string) {
+  return supabase.rpc("claim_auto_round", { p_session_id: sessionId });
+}
+
 export async function apiAllocMatchSeq(sessionId: string, n: number) {
   return supabase.rpc("alloc_match_seq", { p_session_id: sessionId, p_n: n });
 }

@@ -90,6 +90,7 @@ export type AssignmentSession = {
   gender_mode?: "mixed" | "separate"; // 남녀 섞어서 | 따로. 없으면 mixed (옛 행)
   next_seq?: number;                 // 다음에 내줄 대진 번호
   court_count?: number | null;       // 코트 수. 없으면 코트 안내 없음(지금 동작). 줄의 court 는 서버가 매긴다
+  auto_round?: boolean | null;       // 한 바퀴 자동. 없으면 꺼짐(지금 동작). 붙일 기기는 서버(claim_auto_round)가 정한다
   started_at: string;
   updated_at?: string;
 };

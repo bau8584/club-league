@@ -73,6 +73,7 @@ import {
   apiRemoveApartPair,
   apiClearQueue,
   apiAllocMatchSeq,
+  apiClaimAutoRound,
   apiUpdateScheduledStatus,
   apiDeleteScheduledMatch,
   apiDeleteScheduledMatches,
@@ -3208,6 +3209,7 @@ function useLeagueStoreInternal() {
     matchType?: "single" | "double";
     genderMode?: GenderMode;
     courtCount?: number | null;
+    autoRound?: boolean;
   }): Promise<boolean> => {
     if (!isClassManagerRef.current) { toast.error("권한이 없습니다."); return false; }
     const cid = currentClassIdRef.current;
@@ -3220,6 +3222,7 @@ function useLeagueStoreInternal() {
       matchType: payload.matchType ?? base?.match_type ?? "double",
       genderMode: payload.genderMode,
       courtCount: payload.courtCount,
+      autoRound: payload.autoRound,
     });
     if (error) { toast.error("명단 저장 실패: " + error.message); return false; }
     setAssignmentSession((data as AssignmentSession) ?? null);
@@ -3436,6 +3439,17 @@ function useLeagueStoreInternal() {
     if (out.shortfall > 0) toast.info(`인원이 모자라 ${out.shortfall}경기는 못 뽑았어요.`);
     return out.matches.length;
   }, [fetchApartPairs, genderEnabled, levels, loadScheduled, matches, scheduledMatches, students]);
+
+  // 한 바퀴 자동: 이 기기가 붙여도 되는지 서버에 묻는다. 폰과 태블릿이 같은 순간 물어도
+  // 한 기기만 true 를 받는다. 실패(마이그레이션 전 등)는 조용히 false — 손으로 누르면 된다.
+  const claimAutoRound = useCallback(async (): Promise<boolean> => {
+    if (!isClassManagerRef.current) return false;
+    const sid = assignmentSessionRef.current?.id;
+    if (!sid) return false;
+    const { data, error } = await apiClaimAutoRound(sid);
+    if (error) { console.warn("한 바퀴 자동 확인 실패:", error.message); return false; }
+    return data === true;
+  }, []);
 
   // 예약할 수 있는 권한: 관리자 또는 (자율 입력 모드에서) 연동된 회원
   const canReserve = () => isClassManagerRef.current || (matchInputModeRef.current !== "admin-only" && !!myPlayerId);
@@ -3961,6 +3975,7 @@ function useLeagueStoreInternal() {
     startAssignmentSession,
     updateAssignmentSession,
     fillAssignmentQueue,
+    claimAutoRound,
     callScheduledMatch,
     removeScheduledMatch,
     removeScheduledMatches,

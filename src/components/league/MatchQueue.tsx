@@ -97,6 +97,7 @@ export function MatchQueue({
     genderEnabled,
     assignmentSession: rawSession,
     fillAssignmentQueue,
+    claimAutoRound,
     removeScheduledMatch,
     removeScheduledMatches,
     endClassQueue,
@@ -203,6 +204,24 @@ export function MatchQueue({
     await fillAssignmentQueue(n === "round" ? { mode: "round", policy: preset } : { count: n, policy: preset });
     setFilling(false);
   };
+
+  // 한 바퀴 자동 — 코트를 쓰고 스위치를 켰을 때만. 대기 줄(코트에 못 든 줄)이 코트 수 − 1 이
+  // 되면 붙인다. −1 인 까닭: 한 경기가 더 끝난 뒤라 그 조까지 한 바퀴 계산에 들어간다.
+  // 여기서는 "때가 됐다"만 보고, 실제로 붙일 기기 하나는 서버가 고른다(두 화면 → 한 바퀴).
+  const autoRound = !!courtCount && assignmentSession?.auto_round === true;
+  const waitingRows = courtCount ? Math.max(queue.length - courtCount, 0) : 0;
+  const autoDue = autoRound && canManage && !filling && roundCount > 0 && waitingRows <= courtCount! - 1;
+  useEffect(() => {
+    if (!autoDue) return;
+    let cancelled = false;
+    (async () => {
+      if (!(await claimAutoRound()) || cancelled) return;
+      await fill("round");
+    })();
+    return () => { cancelled = true; };
+    // fill 은 매 렌더 새로 만들어지지만 때(autoDue·줄 수)가 바뀔 때만 다시 묻는다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoDue, queue.length]);
 
   // 학교는 한 바퀴씩, 동호회는 몇 경기씩 그때그때. 자주 쓰는 쪽을 진하게.
   const roundPrimary = leagueType === "school";
@@ -554,6 +573,34 @@ export function MatchQueue({
               <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
                 앞쪽 줄에 "경기 중"이 붙고, 결과가 들어오면 다음 줄이 들어가요. 코트 번호는 안 정해요. 교실 화면에 크게 떠요.
               </p>
+              {/* 스위치는 DB 에 칸이 생긴 뒤에만 보인다(마이그레이션 전에 눌러 저장 실패가 나지 않게). */}
+              {courtCount && assignmentSession && "auto_round" in assignmentSession && (
+                <button
+                  type="button"
+                  onClick={() => updateAssignmentSession({ autoRound: !autoRound })}
+                  className="mt-2 flex w-full items-center gap-2 rounded-lg border border-border/40 px-3 py-2 text-left text-xs transition-colors hover:bg-muted/40"
+                >
+                  <span
+                    className={cn(
+                      "relative h-5 w-9 shrink-0 rounded-full transition-colors",
+                      autoRound ? "bg-neon-blue" : "bg-muted",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "absolute top-0.5 size-4 rounded-full bg-white transition-all",
+                        autoRound ? "left-[18px]" : "left-0.5",
+                      )}
+                    />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="font-black text-foreground">한 바퀴 자동</span>
+                    <span className="block text-[11px] text-muted-foreground">
+                      기다리는 줄이 {courtCount - 1 === 0 ? "다 들어가면" : `${courtCount - 1}줄이 되면`} 저절로 붙여요. 수업 끝나 갈 때 끄세요.
+                    </span>
+                  </span>
+                </button>
+              )}
             </div>
           )}
 
