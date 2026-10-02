@@ -9,13 +9,14 @@ import { cn } from "@/lib/utils";
  * 컬링·야구 모드는 실제로 리그에 쓸 때 하나씩 옮긴다(hq/DECISIONS 2026-10-02).
  */
 
-export const RED = "#e53935";
-export const BLUE = "#1e88e5";
+// 리그 교사 입력 화면과 같은 팀 색: 팀 A = 앰버, 팀 B = 바이올렛(RecordMatch ACCENT). 흰 글자가 읽히게 한 단계 진하게.
+export const TEAM_A = "#d97706";
+export const TEAM_B = "#7c3aed";
 
 export function ScoreBoard({ a, b, nameA, nameB, onAdd, top }: {
   a: number; b: number;
   nameA: string; nameB: string;
-  /** team 0 = 빨강(A), 1 = 파랑(B). 빠르게 연달아 눌러도 빠짐없이 더해지도록 부모가 최신 값에 더한다. */
+  /** team 0 = 팀 A, 1 = 팀 B. 빠르게 연달아 눌러도 빠짐없이 더해지도록 부모가 최신 값에 더한다. */
   onAdd: (team: 0 | 1, d: number) => void;
   top?: React.ReactNode;
 }) {
@@ -33,9 +34,9 @@ export function ScoreBoard({ a, b, nameA, nameB, onAdd, top }: {
 
   return (
     <div className="fixed inset-0 z-40 flex select-none bg-black">
-      <Half name={nameA} score={a} color={RED} side="left"
+      <Half name={nameA} score={a} color={TEAM_A} side="left"
         onPlus={() => onAdd(0, 1)} onMinus={() => onAdd(0, -1)} />
-      <Half name={nameB} score={b} color={BLUE} side="right"
+      <Half name={nameB} score={b} color={TEAM_B} side="right"
         onPlus={() => onAdd(1, 1)} onMinus={() => onAdd(1, -1)} />
       {top && <div className="absolute left-1/2 top-3 flex -translate-x-1/2 items-center gap-2">{top}</div>}
     </div>

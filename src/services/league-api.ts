@@ -794,5 +794,5 @@ export async function apiSubmitScoreInput(payload: { key: string; scheduledId?: 
     try { const b = await (error as any).context?.json?.(); if (b?.message) message = b.message; } catch { /* 기본 문구 */ }
     return { data: null, error: { message } };
   }
-  return { data: data as { ok: true; aWon: boolean; deltaA: (number | null)[]; deltaB: (number | null)[] }, error: null };
+  return { data: data as { ok: true; aWon: boolean; deltaA: (number | null)[]; deltaB: (number | null)[]; receipt?: unknown }, error: null };
 }

@@ -101,6 +101,8 @@ Deno.serve(async (req: Request) => {
     p_rp_delta_winner2: out.rpDeltaWinner2, p_rp_delta_loser2: out.rpDeltaLoser2,
   });
   if (re) return fail(re.message || "저장하지 못했어요.", 409);
+  // 결과 영수증 저장(교사 화면과 같은 결과 창으로 다시 볼 수 있게). 실패해도 기록은 이미 됐다.
+  await db.from("matches").update({ rp_breakdown: out.receipt }).eq("id", matchId);
 
   const aWon = scoreA > scoreB;
   return json({
@@ -109,5 +111,6 @@ Deno.serve(async (req: Request) => {
     deltaA: [out.playerStats.find((p) => p.role === "A")?.delta ?? 0, out.playerStats.find((p) => p.role === "A2")?.delta ?? null],
     deltaB: [out.playerStats.find((p) => p.role === "B")?.delta ?? 0, out.playerStats.find((p) => p.role === "B2")?.delta ?? null],
     aWon,
+    receipt: out.receipt,
   });
 });

@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeftRight, ListOrdered, RotateCcw, X } from "lucide-react";
-import { ScoreBoard, RED, BLUE } from "./ScoreBoard";
+import { ScoreBoard, TEAM_A, TEAM_B } from "./ScoreBoard";
 import { apiFetchScoreInputView, apiSubmitScoreInput } from "@/services/league-api";
 import { cn } from "@/lib/utils";
+import { buildMatchReceipt } from "@/domain/match-receipt";
+import { MatchResultModal, type MatchResultData } from "@/components/league/MatchResultModal";
 import { Shell, Note, SectionTitle, Queue, TierGroups, type ClassView, type QueueRow } from "./ClassroomView";
 
 /**
  * 점수입력판 — 학생이 QR(열쇠 링크)로 들어와 경기 결과를 넣는다. (docs/PLAN-student-input.md)
  *
- * 흐름: 점수판이 먼저 뜬다 → 경기 → [결과 등록] → 대기열에서 고르거나 반 명단에서 직접 고른다 → [기록].
+ * 흐름: 점수판(팀 A·팀 B — 리그 입력 화면과 같은 이름·색)이 먼저 뜬다 → 경기 → [결과 등록] → 대기열에서 고르거나 반 명단에서 직접 고른다 → [기록].
  * (점수판 웹을 쓰던 순서 그대로. 대기열·출석을 안 쓰는 반도 쓸 수 있게 직접 고르기를 둔다.)
  *
  * 실시간 연결도 자동 반복 조회도 없다 — 열 때·[결과 등록]·입력 직후·화면으로 돌아올 때만 읽는다(동시 접속 한도).
@@ -19,8 +21,8 @@ type RosterP = { id: string; name: string; grade: number | null; class_num: numb
 type Row = { id: string; seq: number };
 type InputView = { state: "closed" } | { state: "open"; view: ClassView; rows: Row[]; roster?: RosterP[] };
 type Done = { names: string; delta: number | null; won: boolean }[];
-/** 기록할 경기 — 빨강(A)·파랑(B) 팀. 대기열 줄이면 scheduledId 가 있다. */
-type Pick = { scheduledId: string | null; seq: number | null; /** 대기열 줄과 빨강·파랑이 뒤집혔나(빨강 = 줄의 team_b) */ flip?: boolean; red: { ids?: string[]; names: string[] }; blue: { ids?: string[]; names: string[] } };
+/** 기록할 경기 — 팀 A·팀 B. 대기열 줄이면 scheduledId 가 있다. */
+type Pick = { scheduledId: string | null; seq: number | null; /** 대기열 줄과 팀 A·B가 뒤집혔나(화면 팀 A = 줄의 team_b) */ flip?: boolean; red: { ids?: string[]; names: string[] }; blue: { ids?: string[]; names: string[] } };
 
 const SAVE_KEY = "score-input:board";
 const readScore = (): [number, number] => {
@@ -38,6 +40,8 @@ export function ScoreInputView({ inputKey }: { inputKey: string }) {
   const [[a, b], setScore] = useState<[number, number]>(readScore);
   const [panel, setPanel] = useState<null | "register" | "queue">(null);
   const [done, setDone] = useState<Done | null>(null);
+  // 교사 화면과 같은 결과 영수증 창. 서버가 영수증을 돌려주면 이걸, 아니면 간단한 창(DoneCard)을 띄운다.
+  const [receipt, setReceipt] = useState<MatchResultData | null>(null);
 
   useEffect(() => {
     try { localStorage.setItem(SAVE_KEY, JSON.stringify([a, b])); } catch { /* 무시 */ }
@@ -71,16 +75,18 @@ export function ScoreInputView({ inputKey }: { inputKey: string }) {
   }
 
   const submit = async (p: Pick): Promise<string | null> => {
-    // 대기열 줄은 서버가 줄의 팀 순서(A = team_a)로 받는다. 빨강이 team_b 면 점수를 뒤집어 보낸다.
+    // 대기열 줄은 서버가 줄의 팀 순서(A = team_a)로 받는다. 화면 팀 A가 team_b 면 점수를 뒤집어 보낸다.
     const [sa, sb] = p.scheduledId && p.flip ? [b, a] : [a, b];
     const body = p.scheduledId
       ? { key: inputKey, scheduledId: p.scheduledId, scoreA: sa, scoreB: sb }
       : { key: inputKey, teamA: p.red.ids!, teamB: p.blue.ids!, scoreA: a, scoreB: b };
     const { data: r, error: e } = DEMO(inputKey)
-      ? { data: { ok: true as const, aWon: sa > sb, deltaA: [sa > sb ? 24 : -8, null], deltaB: [sa > sb ? -8 : 24, null] }, error: null }
+      ? { data: { ok: true as const, aWon: sa > sb, deltaA: [sa > sb ? 24 : -8, null], deltaB: [sa > sb ? -8 : 24, null], receipt: demoReceipt(sa > sb, Math.max(a, b), Math.min(a, b)) }, error: null }
       : await apiSubmitScoreInput(body);
     if (e || !r) return e?.message ?? "저장하지 못했어요.";
     const flip = !!(p.scheduledId && p.flip);
+    if ((r as { receipt?: unknown }).receipt) setReceipt((r as { receipt?: unknown }).receipt as MatchResultData);
+    else
     setDone([
       { names: p.red.names.join("·"), delta: (flip ? r.deltaB : r.deltaA)[0], won: a > b },
       { names: p.blue.names.join("·"), delta: (flip ? r.deltaA : r.deltaB)[0], won: b > a },
@@ -95,7 +101,7 @@ export function ScoreInputView({ inputKey }: { inputKey: string }) {
   return (
     <>
       <ScoreBoard
-        a={a} b={b} nameA="빨강팀" nameB="파랑팀"
+        a={a} b={b} nameA="팀 A" nameB="팀 B"
         onAdd={(team, d) => setScore(([x, y]) => {
           const c = (n: number) => Math.max(0, Math.min(999, n));
           return team === 0 ? [c(x + d), y] : [x, c(y + d)];
@@ -131,7 +137,10 @@ export function ScoreInputView({ inputKey }: { inputKey: string }) {
         <Register a={a} b={b} data={data} onClose={() => setPanel(null)} onSubmit={submit} />
       )}
 
-      {done && <DoneCard done={done} onClose={() => setDone(null)} />}
+      {receipt ? (
+        <MatchResultModal resultData={receipt} thresholds={data.view.tier_thresholds ?? undefined}
+          genderEnabled={false} closeLabel="확인" onClose={() => setReceipt(null)} />
+      ) : done && <DoneCard done={done} onClose={() => setDone(null)} />}
     </>
   );
 }
@@ -163,7 +172,7 @@ function Register({ a, b, data, onClose, onSubmit }: {
     );
   }
 
-  // 확인 단계: 빨강 = ?, 파랑 = ? — 바꾸기 가능
+  // 확인 단계: 팀 A = ?, 팀 B = ? — 바꾸기 가능
   if (pick) {
     const swap = () => setPick({ ...pick, red: pick.blue, blue: pick.red, flip: !pick.flip });
     const save = async () => {
@@ -174,12 +183,12 @@ function Register({ a, b, data, onClose, onSubmit }: {
     return (
       <Sheet title="이 경기로 기록할까요?" onClose={busy ? undefined : () => setPick(null)} back>
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 text-center">
-          <TeamCard color={RED} label="빨강팀" names={pick.red.names} score={a} />
-          <button type="button" onClick={swap} disabled={busy} aria-label="빨강·파랑 바꾸기"
+          <TeamCard color={TEAM_A} label="팀 A" names={pick.red.names} score={a} />
+          <button type="button" onClick={swap} disabled={busy} aria-label="팀 A·B 바꾸기"
             className="flex flex-col items-center gap-1 rounded-xl border border-border/50 px-3 py-3 text-xs font-bold text-muted-foreground">
             <ArrowLeftRight className="size-5" /> 바꾸기
           </button>
-          <TeamCard color={BLUE} label="파랑팀" names={pick.blue.names} score={b} />
+          <TeamCard color={TEAM_B} label="팀 B" names={pick.blue.names} score={b} />
         </div>
         {msg && <p className="mt-4 text-center text-sm font-bold text-destructive">{msg}</p>}
         <button type="button" onClick={save} disabled={busy}
@@ -193,7 +202,7 @@ function Register({ a, b, data, onClose, onSubmit }: {
   return (
     <Sheet title="어느 경기였나요?" onClose={onClose}>
       <p className="mb-3 text-center text-2xl font-black tabular-nums">
-        <span style={{ color: RED }}>빨강 {a}</span><span className="mx-2 text-muted-foreground">:</span><span style={{ color: BLUE }}>{b} 파랑</span>
+        <span style={{ color: TEAM_A }}>팀 A {a}</span><span className="mx-2 text-muted-foreground">:</span><span style={{ color: TEAM_B }}>{b} 팀 B</span>
       </p>
       <div className="mb-4 grid grid-cols-2 gap-2 rounded-xl bg-input/50 p-1">
         {(["queue", "direct"] as const).map((m) => (
@@ -230,7 +239,7 @@ function Register({ a, b, data, onClose, onSubmit }: {
   );
 }
 
-/* ── 직접 고르기 — 반 → 빨강 1~2명 → 파랑 1~2명 ──────────── */
+/* ── 직접 고르기 — 반 → 팀 A 1~2명 → 팀 B 1~2명 ──────────── */
 
 function DirectPick({ roster, onDone }: {
   roster: RosterP[];
@@ -266,7 +275,7 @@ function DirectPick({ roster, onDone }: {
   const toggle = (id: string) => {
     if (red.includes(id)) { setRed(red.filter((x) => x !== id)); return; }
     if (blue.includes(id)) { setBlue(blue.filter((x) => x !== id)); return; }
-    // 빨강 첫 명을 고르면 파랑으로 넘어간다(단식이 흔하다). 복식이면 빨강 칸을 다시 눌러 한 명 더.
+    // 팀 A 첫 명을 고르면 팀 B로 넘어간다(단식이 흔하다). 복식이면 팀 A 칸을 다시 눌러 한 명 더.
     if (side === "red" && red.length < 2) { setRed([...red, id]); if (blue.length === 0) setSide("blue"); }
     else if (side === "blue" && blue.length < 2) setBlue([...blue, id]);
   };
@@ -279,9 +288,9 @@ function DirectPick({ roster, onDone }: {
           return (
             <button key={s} type="button" onClick={() => setSide(s)}
               className={cn("rounded-xl border-2 px-3 py-3 text-left", side === s ? "" : "opacity-60")}
-              style={{ borderColor: s === "red" ? RED : BLUE }}>
-              <p className="text-xs font-black" style={{ color: s === "red" ? RED : BLUE }}>
-                {s === "red" ? "빨강팀" : "파랑팀"} {side === s && "← 고르는 중"}
+              style={{ borderColor: s === "red" ? TEAM_A : TEAM_B }}>
+              <p className="text-xs font-black" style={{ color: s === "red" ? TEAM_A : TEAM_B }}>
+                {s === "red" ? "팀 A" : "팀 B"} {side === s && "← 고르는 중"}
               </p>
               <p className="mt-1 min-h-6 text-base font-bold">{ids.length ? ids.map(nameOf).join("·") : "1~2명"}</p>
             </button>
@@ -299,7 +308,7 @@ function DirectPick({ roster, onDone }: {
             <button key={p.id} type="button" onClick={() => toggle(p.id)}
               className={cn("rounded-xl border px-2 py-3 text-base font-bold",
                 onRed || onBlue ? "text-white" : "border-border/40 bg-input/40")}
-              style={onRed ? { background: RED, borderColor: RED } : onBlue ? { background: BLUE, borderColor: BLUE } : undefined}>
+              style={onRed ? { background: TEAM_A, borderColor: TEAM_A } : onBlue ? { background: TEAM_B, borderColor: TEAM_B } : undefined}>
               {p.student_no ? <span className="mr-1 text-xs opacity-70">{p.student_no}</span> : null}{p.name}
             </button>
           );
@@ -392,4 +401,14 @@ function demoView(): InputView {
       players: [p("1", "가*", 1250, 5, 2, 2), p("2", "나*", 1080, 3, 3, 1)],
     },
   };
+}
+function demoReceipt(_aWon: boolean, ws: number, ls: number) {
+  const st = (id: string, name: string, rp: number) => ({ id, name, nickname: name, group: null, gender: "U" as const, rp, wins: 2, losses: 1, recent: [], currentStreak: 1 });
+  const ps = (id: string, delta: number) => ({ id, delta, firstWinBonus: delta > 0 ? 10 : 0, streakBonus: delta > 0 ? 5 : 0 });
+  return buildMatchReceipt({
+    students: [st("w", "나래", 1190), st("l", "가온", 1010)] as never,
+    playerStats: [ps("w", 24), ps("l", -8)] as never,
+    winnerId: "w", winner2Id: null, loserId: "l", loser2Id: null, winnerScore: ws, loserScore: ls, aWon: true,
+    thresholds: { Bronze: 0, Silver: 1000, Gold: 1200, Platinum: 1400, Diamond: 1600 }, placement: { enabled: false, games: 3 },
+  });
 }

@@ -3,6 +3,7 @@
 import { calculateMatchResult, type PlayerStat } from "@/domain/match-calculator";
 import { mapMatchRow, mapPlayerRows, seoulYmd, sortMatchesNewestFirst } from "@/domain/calc-context";
 import { migrateSettings } from "@/lib/settings-migration";
+import { buildMatchReceipt } from "@/domain/match-receipt";
 
 export interface ScoreInputCalcInput {
   settings: any;            // leagues.settings
@@ -23,6 +24,8 @@ export interface ScoreInputCalcOutput {
   rpDeltaWinner2: number | null; rpDeltaLoser2: number | null;
   /** 항목별 보너스(비교 시험·영수증용) */
   playerStats: PlayerStat[];
+  /** 결과 영수증 — 교사 화면 결과 창과 같은 모양(MatchResultData). matches.rp_breakdown 에 저장한다. */
+  receipt: ReturnType<typeof buildMatchReceipt>;
 }
 
 export function computeScoreInput(input: ScoreInputCalcInput): ScoreInputCalcOutput {
@@ -59,5 +62,16 @@ export function computeScoreInput(input: ScoreInputCalcInput): ScoreInputCalcOut
     rpDeltaWinner: deltaOf(winnerId), rpDeltaLoser: deltaOf(loserId),
     rpDeltaWinner2: deltaOf(winner2Id), rpDeltaLoser2: deltaOf(loser2Id),
     playerStats,
+    receipt: buildMatchReceipt({
+      students, playerStats,
+      winnerId, winner2Id, loserId, loser2Id,
+      winnerScore: aWon ? scoreA : scoreB, loserScore: aWon ? scoreB : scoreA, aWon,
+      thresholds: m.tierThresholds,
+      // 교사 화면(league-store)과 같은 기본값: 배치고사 꺼짐, 3경기
+      placement: {
+        enabled: !!m.placement?.enabled,
+        games: typeof m.placement?.games === "number" ? m.placement.games : 3,
+      },
+    }),
   };
 }

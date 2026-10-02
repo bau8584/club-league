@@ -977,6 +977,83 @@ function migrateSettings(rawSettings) {
   return migrated;
 }
 
+// src/domain/match-receipt.ts
+var KEYS = [
+  "underdogBonus",
+  "scoreDiffBonus",
+  "rivalBonus",
+  "firstWinBonus",
+  "revengeBonus",
+  "freshnessBonus",
+  "streakBonus",
+  "comebackBonus",
+  "marginBonus",
+  "mentoringBonus",
+  "greatMatchBonus",
+  "lossComfortBonus",
+  "willOfSteelBonus",
+  "arrogancePenalty",
+  "crushingPenalty",
+  "revengeAllowedPenalty",
+  "championPenalty",
+  "swampPenalty"
+];
+function buildPlayerReceipt(student, stat, won, score, thresholds, placement) {
+  const v = (k) => stat?.[k] ?? 0;
+  const prevRp = student.rp;
+  const rpDelta = stat?.delta ?? 0;
+  const finalRp = Math.max(0, prevRp + rpDelta);
+  const prevTier = getTier(prevRp, thresholds);
+  const finalTier = getTier(finalRp, thresholds);
+  const prevSub = getTierSubdivision(prevRp, thresholds);
+  const finalSub = getTierSubdivision(finalRp, thresholds);
+  const gamesAfter = student.wins + student.losses + 1;
+  const unranked = placement.enabled && gamesAfter < placement.games;
+  const basePromoted = TIER_ORDER.indexOf(finalTier) < TIER_ORDER.indexOf(prevTier);
+  const subPromoted = finalTier === prevTier && finalSub < prevSub;
+  const promoted = won && (basePromoted || subPromoted) && !unranked;
+  const preStreak = student.currentStreak ?? 0;
+  const currentStreak = won ? preStreak >= 0 ? preStreak + 1 : 1 : preStreak <= 0 ? preStreak - 1 : -1;
+  const baseWin = won ? rpDelta - (v("underdogBonus") + v("scoreDiffBonus") + v("rivalBonus") + v("firstWinBonus") + v("revengeBonus") + v("freshnessBonus") + v("streakBonus") + v("comebackBonus") + v("marginBonus") + v("mentoringBonus") + v("greatMatchBonus") + v("willOfSteelBonus")) : 0;
+  const baseLoss = !won ? -rpDelta + v("freshnessBonus") + v("lossComfortBonus") + v("greatMatchBonus") - (v("arrogancePenalty") + v("crushingPenalty") + v("revengeAllowedPenalty") + v("championPenalty") + v("swampPenalty")) : 0;
+  const bonuses = Object.fromEntries(KEYS.map((k) => [k, v(k)]));
+  return {
+    name: student.nickname || student.name,
+    group: student.group ?? null,
+    gender: student.gender,
+    prevRp,
+    prevTier,
+    finalRp,
+    finalTier,
+    promoted,
+    score,
+    rpDelta,
+    ...bonuses,
+    baseWin,
+    baseLoss,
+    currentStreak,
+    unranked,
+    placementDone: gamesAfter,
+    placementNeed: placement.games
+  };
+}
+function buildMatchReceipt(args) {
+  const { students, playerStats, thresholds, placement } = args;
+  const one = (id, won, score) => {
+    if (!id) return void 0;
+    const s = students.find((x) => x.id === id);
+    return s ? buildPlayerReceipt(s, playerStats.find((p) => p.id === id), won, score, thresholds, placement) : void 0;
+  };
+  return {
+    matchType: args.winner2Id ? "double" : "single",
+    winner: one(args.winnerId, true, args.winnerScore),
+    winner2: one(args.winner2Id, true, args.winnerScore),
+    loser: one(args.loserId, false, args.loserScore),
+    loser2: one(args.loser2Id, false, args.loserScore),
+    aWon: args.aWon
+  };
+}
+
 // src/domain/score-input-calc.ts
 function computeScoreInput(input) {
   const { teamA, teamB, scoreA, scoreB } = input;
@@ -1026,7 +1103,24 @@ function computeScoreInput(input) {
     rpDeltaLoser: deltaOf(loserId),
     rpDeltaWinner2: deltaOf(winner2Id),
     rpDeltaLoser2: deltaOf(loser2Id),
-    playerStats
+    playerStats,
+    receipt: buildMatchReceipt({
+      students,
+      playerStats,
+      winnerId,
+      winner2Id,
+      loserId,
+      loser2Id,
+      winnerScore: aWon ? scoreA : scoreB,
+      loserScore: aWon ? scoreB : scoreA,
+      aWon,
+      thresholds: m.tierThresholds,
+      // 교사 화면(league-store)과 같은 기본값: 배치고사 꺼짐, 3경기
+      placement: {
+        enabled: !!m.placement?.enabled,
+        games: typeof m.placement?.games === "number" ? m.placement.games : 3
+      }
+    })
   };
 }
 
@@ -1120,12 +1214,14 @@ Deno.serve(async (req) => {
     p_rp_delta_loser2: out.rpDeltaLoser2
   });
   if (re) return fail(re.message || "\uC800\uC7A5\uD558\uC9C0 \uBABB\uD588\uC5B4\uC694.", 409);
+  await db.from("matches").update({ rp_breakdown: out.receipt }).eq("id", matchId);
   const aWon = scoreA > scoreB;
   return json({
     ok: true,
     // 학생 화면에 보여 줄 것: 줄의 팀 순서(A/B) 기준 RP 변화
     deltaA: [out.playerStats.find((p) => p.role === "A")?.delta ?? 0, out.playerStats.find((p) => p.role === "A2")?.delta ?? null],
     deltaB: [out.playerStats.find((p) => p.role === "B")?.delta ?? 0, out.playerStats.find((p) => p.role === "B2")?.delta ?? null],
-    aWon
+    aWon,
+    receipt: out.receipt
   });
 });
