@@ -1,5 +1,5 @@
 import { supabase } from "../supabaseClient";
-import type { PlayerInsert, MatchInsert, MatchUpdate } from "../lib/database.types";
+import type { PlayerInsert, MatchInsert } from "../lib/database.types";
 import { staleCutoffIso } from "../lib/session-today";
 import { buildAssignedMatchRows, type AssignedMatchInput } from "../domain/assignment-rows";
 
@@ -384,35 +384,30 @@ export async function apiInsertMatchesBulk(matches: any[]) {
     .insert(matches);
 }
 
-export async function apiUpdateMatchWinnerLoser(
+/**
+ * 경기 수정 — 서버가 옛 결과의 델타·승패를 빼고 새 결과를 더한다(edit_match).
+ * 예전엔 화면이 선수 rp·승·패를 자기가 알던 값으로 통째 저장해, 다른 기기 입력분이 사라졌다.
+ * 영수증(rp_breakdown)은 서버가 비운다 — 화면이 델타로 다시 구성(MatchesTab.buildResultFromMatch).
+ */
+export async function apiEditMatch(
+  classId: string,
   matchId: string,
-  winnerId: string,
-  loserId: string,
-  extra?: {
-    winner2Id?: string | null; loser2Id?: string | null;
-    winnerScore?: number | null; loserScore?: number | null;
-    rpDeltaWinner?: number | null; rpDeltaLoser?: number | null;
-    rpDeltaWinner2?: number | null; rpDeltaLoser2?: number | null;
-  }
+  p: {
+    winnerId: string; loserId: string;
+    winner2Id: string | null; loser2Id: string | null;
+    winnerScore: number; loserScore: number;
+    rpDeltaWinner: number | null; rpDeltaLoser: number | null;
+    rpDeltaWinner2: number | null; rpDeltaLoser2: number | null;
+  },
 ) {
-  const patch: MatchUpdate = { winner_id: winnerId, loser_id: loserId };
-  if (extra) {
-    patch.winner2_id = extra.winner2Id ?? null;
-    patch.loser2_id = extra.loser2Id ?? null;
-    patch.winner_score = extra.winnerScore ?? null;
-    patch.loser_score = extra.loserScore ?? null;
-    patch.rp_delta_winner = extra.rpDeltaWinner ?? null;
-    patch.rp_delta_loser = extra.rpDeltaLoser ?? null;
-    patch.rp_delta_winner2 = extra.rpDeltaWinner2 ?? null;
-    patch.rp_delta_loser2 = extra.rpDeltaLoser2 ?? null;
-    // 영수증은 입력 당시 계산이다. 승패가 바뀐 뒤에도 남겨 두면 옛 승자가 이긴 것으로 보인다.
-    // 비우면 화면이 델타로 다시 구성한다(MatchesTab.buildResultFromMatch).
-    patch.rp_breakdown = null;
-  }
-  return supabase
-    .from("matches")
-    .update(patch)
-    .eq("id", matchId);
+  return supabase.rpc("edit_match", {
+    p_class_id: classId, p_match_id: matchId,
+    p_winner_id: p.winnerId, p_loser_id: p.loserId,
+    p_winner2_id: p.winner2Id, p_loser2_id: p.loser2Id,
+    p_winner_score: p.winnerScore, p_loser_score: p.loserScore,
+    p_rp_delta_winner: p.rpDeltaWinner, p_rp_delta_loser: p.rpDeltaLoser,
+    p_rp_delta_winner2: p.rpDeltaWinner2, p_rp_delta_loser2: p.rpDeltaLoser2,
+  });
 }
 
 // --- Players API ---
@@ -475,16 +470,6 @@ export async function apiUpdateStudentRp(studentId: string, rp: number) {
     .eq("id", studentId);
 }
 
-/**
- * 경기 수정 뒤 선수 캐시 갱신. rp만 고치면 공개 순위(PublicRanking)가 읽는 win_count·lose_count가
- * 수정 전 승패로 남는다 — 실제로 승패가 뒤집힌 경기의 네 명이 그렇게 어긋나 있었다.
- */
-export async function apiUpdateStudentStats(
-  studentId: string,
-  stats: { rp: number; win_count: number; lose_count: number },
-) {
-  return supabase.from("players").update(stats).eq("id", studentId);
-}
 
 // 휴면 감점 수동 실시 — 대상 entries를 RPC로 일괄 차감 + decay_log 기록. batch_id 반환.
 export async function apiApplyDormancyDecay(

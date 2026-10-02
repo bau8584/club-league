@@ -30,11 +30,10 @@ import {
   apiRecomputeLeagueRp,
   apiDeleteStudentMatches,
   apiInsertMatchesBulk,
-  apiUpdateMatchWinnerLoser,
+  apiEditMatch,
   apiFetchStudents,
   apiFetchStudentsPublic,
   apiUpdateStudentRp,
-  apiUpdateStudentStats,
   apiResetStudentRp,
   apiUpdateStudentFields,
   apiInsertStudent,
@@ -2486,24 +2485,19 @@ function useLeagueStoreInternal() {
         const deltaOf = (id: string | null | undefined) =>
           id ? (playerStats.find((p) => p.id === id)?.delta ?? null) : null;
 
-        const { error: updateErr } = await apiUpdateMatchWinnerLoser(matchId, winnerId, loserId, {
-          winner2Id, loser2Id, winnerScore, loserScore,
+        // 선수 rp·승·패는 서버가 "옛 결과 빼기 + 새 결과 더하기"로 고친다.
+        //   화면 값을 통째 저장하면 그사이 다른 기기에서 넣은 경기가 사라진다(2026-10-01 3곳 25명).
+        const { error: updateErr } = await apiEditMatch(currentClassId, matchId, {
+          winnerId, loserId, winner2Id, loser2Id, winnerScore, loserScore,
           rpDeltaWinner: deltaOf(winnerId),
           rpDeltaLoser: deltaOf(loserId),
           rpDeltaWinner2: deltaOf(winner2Id),
           rpDeltaLoser2: deltaOf(loser2Id)
         });
         if (updateErr) throw updateErr;
-
-        for (const s of nextStudentsList) {
-          if (activePlayerIds.includes(s.id)) {
-            const { error: studErr } = await apiUpdateStudentStats(s.id, {
-              rp: s.rp, win_count: s.wins, lose_count: s.losses,
-            });
-            if (studErr) throw studErr;
-          }
-        }
         toast.success("경기 결과가 수정 및 재계산되었습니다.");
+        // 화면의 rp·승패는 이 기기가 알던 값 기준이라, 서버 값으로 다시 불러온다.
+        loadClassDataRef.current?.(currentClassId, true);
       } catch (err: any) {
         console.error("Failed to update match score in Supabase:", err.message);
         toast.error("경기 수정에 실패했습니다: " + err.message);
