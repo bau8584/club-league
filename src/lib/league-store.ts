@@ -14,6 +14,7 @@ import {
 import { carriedPlayDebt } from "@/domain/play-debt";
 import { countByGender, genderGroupOf, separateRoundCount, type GenderMode } from "@/domain/gender-split";
 import { skillRating } from "@/domain/skill-rating";
+import { mapMatchRow, mapPlayerRows } from "@/domain/calc-context";
 import { getTodayPlayerIds } from "./today-players";
 import {
   apiGetUser,
@@ -372,24 +373,7 @@ function useLeagueStoreInternal() {
       if (matchesErr) throw matchesErr;
 
       // Map Supabase matches to frontend Match structure
-      const matchesList: Match[] = (dbMatches || []).map((m: any) => ({
-        id: m.id,
-        playerAId: m.winner_id,
-        playerBId: m.loser_id,
-        playerA2Id: m.winner2_id ?? undefined,
-        playerB2Id: m.loser2_id ?? undefined,
-        scoreA: m.winner_score ?? 21,
-        scoreB: m.loser_score ?? 19,
-        // playerA=winner_id 로 매핑되므로 승자 델타→A, 패자 델타→B 로 자동 정합.
-        // 과거(마이그레이션 이전) 경기는 NULL → undefined 로 두어 deleteMatch fallback 이 동작.
-        rpDeltaA: m.rp_delta_winner ?? undefined,
-        rpDeltaB: m.rp_delta_loser ?? undefined,
-        rpDeltaA2: m.rp_delta_winner2 ?? undefined,
-        rpDeltaB2: m.rp_delta_loser2 ?? undefined,
-        date: m.created_at || new Date().toISOString(),
-        matchType: m.winner2_id ? "double" : "single",
-        rpBreakdown: m.rp_breakdown ?? null
-      }));
+      const matchesList: Match[] = (dbMatches || []).map(mapMatchRow);
 
       // 3. Fetch students - 관리 권한자(소유자/공동관리자/기록원)는 실명 포함 조회
       const isTeacherSession = isManager;
@@ -402,79 +386,8 @@ function useLeagueStoreInternal() {
       const { data: dbStudents, error: studentsErr } = studentsFetchResult;
       if (studentsErr) throw studentsErr;
 
-      // Map Supabase students to frontend Student structure, computing stats on-the-fly
-      const studentsList: Student[] = (dbStudents || []).map((s: any) => {
-        const group = s.group_label ?? null;
-        // name(표시)은 본명/닉네임/레벨 순으로 fallback
-        const name = s.name || s.display_name || s.nickname || "이름없음";
-        const gender = (s.gender || "U") as Gender;
-
-        // Find matches for this student to compute derived stats
-        // 복식: 파트너(playerA2Id/playerB2Id)도 승/패에 포함해야 함.
-        const isWinnerSide = (m: Match) => m.playerAId === s.id || m.playerA2Id === s.id;
-        const isLoserSide = (m: Match) => m.playerBId === s.id || m.playerB2Id === s.id;
-        const studentMatches = matchesList
-          .filter((m) => isWinnerSide(m) || isLoserSide(m))
-          .sort((x, y) => new Date(y.date).getTime() - new Date(x.date).getTime());
-
-        const wins = studentMatches.filter(isWinnerSide).length;
-        const losses = studentMatches.filter(isLoserSide).length;
-
-        // Last 5 matches form (W or L)
-        const recent = studentMatches.slice(0, 5).map((m) => (isWinnerSide(m) ? "W" : "L"));
-
-        // 마지막 경기·마지막 승리일. 경기 하나가 저장될 때마다 이 목록이 다시 만들어지는데,
-        // 여기서 안 채우면 둘 다 undefined 로 돌아간다 — 그러면 "오늘 첫 승" 보너스가 매 승리마다
-        // 붙고(모멘턴 리그 실측: 승리 176건 중 166건), 휴면 감점은 아무에게도 안 걸린다.
-        // 날짜 키는 경기 기록 시 쓰는 것과 같은 로컬 YYYY-MM-DD 다.
-        const lastMatch = studentMatches[0];
-        const lastWin = studentMatches.find(isWinnerSide);
-        const localYmd = (iso: string) => {
-          const d = new Date(iso);
-          return new Date(d.getTime() - d.getTimezoneOffset() * 60 * 1000).toISOString().split("T")[0];
-        };
-
-        // Current streak
-        let currentStreak = 0;
-        for (const m of studentMatches) {
-          const won = isWinnerSide(m);
-          if (currentStreak === 0) {
-            currentStreak = won ? 1 : -1;
-          } else if (currentStreak > 0) {
-            if (won) currentStreak++;
-            else break;
-          } else {
-            if (!won) currentStreak--;
-            else break;
-          }
-        }
-
-        return {
-          id: s.id,
-          league_id: s.league_id,
-          userId: s.user_id ?? null,
-          name,
-          nickname: s.nickname ?? "",
-          group,
-          birthYear: s.birth_year ?? null,
-          grade: s.grade ?? null,
-          classNum: s.class_num ?? null,
-          studentNo: s.student_no ?? null,
-          displayName: s.display_name ?? null,
-          equippedTitle: s.equipped_title ?? null,
-          gender,
-          rp: s.rp || 1000,
-          wins,
-          losses,
-          recent,
-          currentStreak,
-          lastMatchDate: lastMatch?.date,
-          lastWinDate: lastWin ? localYmd(lastWin.date) : undefined,
-        };
-      });
-
-      // Sort students by RP descending
-      studentsList.sort((a, b) => b.rp - a.rp);
+      // 계산 재료 — 점수입력판 서버 함수와 같은 코드(src/domain/calc-context.ts)
+      const studentsList: Student[] = mapPlayerRows(dbStudents || [], matchesList);
 
       setStudents(studentsList);
 

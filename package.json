@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test": "bun test",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "build:fn": "esbuild supabase/functions/score-input/src.ts --bundle --format=esm --platform=neutral --target=es2022 --external:npm:* --tsconfig=tsconfig.json --banner:js=\"// 자동 생성 — 직접 고치지 말고 src.ts 를 고친 뒤 npm run build:fn\" --outfile=supabase/functions/score-input/index.ts"
   },
   "dependencies": {
     "@block65/webcrypto-web-push": "^1.0.2",

@@ -23,12 +23,12 @@ import { useCourtCallout } from "@/components/league/MatchQueue";
  * 물건이라, 스크롤해야 보이는 정보는 없는 것과 같다.
  */
 
-type QueueRow = { seq: number | null; court?: string | null; team_a: string[]; team_b: string[]; pool: string[] };
-type ViewPlayer = {
+export type QueueRow = { seq: number | null; court?: string | null; team_a: string[]; team_b: string[]; pool: string[] };
+export type ViewPlayer = {
   id: string; name: string | null; rp: number; wins: number; losses: number;
   grade: number | null; class_num: number | null; student_no: number | null; today_plays: number;
 };
-type ClassView = {
+export type ClassView = {
   state: "session" | "other_session" | "idle" | "need_input" | "not_found";
   league_name?: string;
   class_label?: string | null;
@@ -48,7 +48,7 @@ type ClassOption = { grade: number; class_num: number; player_count: number };
  * 반을 골라 고정해두면 태블릿이 다음 교시에 엉뚱한 반을 보여준다. 교실에 걸어두고
  * 잊는 물건이 되려면 따라가는 쪽이 기본이어야 한다.
  */
-type Pref = { follow: boolean; grade?: number; classNum?: number; studentNo?: number };
+export type Pref = { follow: boolean; grade?: number; classNum?: number; studentNo?: number };
 const prefKeyOf = (classId: string) => `classroom-pref:${classId}`;
 
 function readPref(classId: string): Pref | null {
@@ -232,7 +232,7 @@ export function ClassroomView({ classId, ownerId }: { classId: string; ownerId?:
 
 /* ── 뼈대 ────────────────────────────────────────────── */
 
-function Shell({ children, wide }: { children: React.ReactNode; wide?: boolean }) {
+export function Shell({ children, wide }: { children: React.ReactNode; wide?: boolean }) {
   return (
     <div className={cn(
       "mx-auto min-h-screen w-full px-4 py-5 lg:h-screen lg:overflow-hidden lg:px-8 lg:py-5",
@@ -243,18 +243,18 @@ function Shell({ children, wide }: { children: React.ReactNode; wide?: boolean }
   );
 }
 
-const Note = ({ children, tone }: { children: React.ReactNode; tone?: "bad" }) => (
+export const Note = ({ children, tone }: { children: React.ReactNode; tone?: "bad" }) => (
   <p className={cn("text-sm", tone === "bad" ? "text-destructive" : "text-muted-foreground")}>{children}</p>
 );
 
-const SectionTitle = ({ children, hint }: { children: React.ReactNode; hint?: string }) => (
+export const SectionTitle = ({ children, hint }: { children: React.ReactNode; hint?: string }) => (
   <div className="mb-2.5 flex items-baseline gap-2 lg:mb-3">
     <h2 className="text-sm font-black text-muted-foreground lg:text-base">{children}</h2>
     {hint && <span className="truncate text-[11px] text-muted-foreground/70 lg:text-xs">{hint}</span>}
   </div>
 );
 
-function IconBtn({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
+export function IconBtn({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
   return (
     <button type="button" onClick={onClick} aria-label={label}
       className="flex size-11 items-center justify-center rounded-xl border border-border/50 text-muted-foreground transition-colors hover:text-foreground lg:size-12">
@@ -267,7 +267,13 @@ function IconBtn({ label, onClick, children }: { label: string; onClick: () => v
 
 const EMPTY: QueueRow[] = [];
 
-function Queue({ rows, courts }: { rows: QueueRow[]; courts: boolean }) {
+/**
+ * `pickable`·`onPick` 은 점수입력판(ScoreInputView)만 쓴다 — 넣을 수 있는 줄을 눌러 점수를 넣는다.
+ * 교실 화면은 넘기지 않으므로 지금과 똑같다.
+ */
+export function Queue({ rows, courts, pickable, onPick }: {
+  rows: QueueRow[]; courts: boolean; pickable?: Set<number>; onPick?: (seq: number) => void;
+}) {
   // 코트가 방금 빈 줄 — 선생님이 부르지 않아도 아이들이 보고 들어가게 크게.
   const callout = useCourtCallout(courts ? rows : EMPTY);
   const who = (r: QueueRow) =>
@@ -297,11 +303,17 @@ function Queue({ rows, courts }: { rows: QueueRow[]; courts: boolean }) {
       {rows.map((r, i) => {
         const confirmed = r.team_a.length > 0 && r.team_b.length > 0;
         const court = courts ? r.court : null;
+        const canPick = !!onPick && r.seq != null && !!pickable?.has(r.seq);
         return (
           <div key={r.seq ?? `x${i}`}
+            role={canPick ? "button" : undefined}
+            tabIndex={canPick ? 0 : undefined}
+            onClick={canPick ? () => onPick!(r.seq!) : undefined}
+            onKeyDown={canPick ? (e) => { if (e.key === "Enter" || e.key === " ") onPick!(r.seq!); } : undefined}
             className={cn(
               "flex items-center gap-3 rounded-xl px-3 py-3 lg:px-3.5 lg:py-3 xl:px-4 xl:py-4",
               court ? "border-2 border-neon-green/70 bg-neon-green/5" : "border border-border/30 bg-input/40",
+              canPick && "cursor-pointer active:scale-[0.99] hover:border-neon-blue/60",
             )}>
             {/* 번호가 이 줄의 이름이다. 아이가 "우리 7번"만 기억하면 되므로 크게. */}
             <span className="w-11 shrink-0 text-center text-xl font-black tabular-nums text-neon-blue lg:w-14 lg:text-2xl xl:w-16 xl:text-3xl">
@@ -323,6 +335,11 @@ function Queue({ rows, courts }: { rows: QueueRow[]; courts: boolean }) {
                 r.pool.join(" · ")
               )}
             </span>
+            {canPick && (
+              <span className="shrink-0 rounded-lg bg-neon-blue px-3 py-2 text-sm font-black text-background lg:text-base xl:text-lg">
+                점수 넣기
+              </span>
+            )}
           </div>
         );
       })}
@@ -332,7 +349,7 @@ function Queue({ rows, courts }: { rows: QueueRow[]; courts: boolean }) {
 
 /* ── 등급 묶음 — 순위 숫자가 없다 ────────────────────── */
 
-function TierGroups({
+export function TierGroups({
   players, thresholds, placement, pref, wide,
 }: {
   players: ViewPlayer[];

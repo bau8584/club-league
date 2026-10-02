@@ -768,3 +768,28 @@ export async function apiUpdateClassName(classId: string, className: string) {
 export async function apiSoftDeleteStudents(studentIds: string[]) {
   return supabase.from("players").update({ is_deleted: true }).in("id", studentIds);
 }
+
+// --- 점수입력판(학생 QR 입력) — db/migrations/2026-10-02_score_input.sql ---
+/** 교사: 점수입력판 열기(또는 새 QR). 새 열쇠를 돌려준다 — 옛 열쇠는 바로 무효. */
+export async function apiOpenScoreInput(sessionId: string) {
+  return supabase.rpc("open_score_input", { p_session_id: sessionId });
+}
+/** 교사: 점수입력판 닫기. */
+export async function apiCloseScoreInput(sessionId: string) {
+  return supabase.rpc("close_score_input", { p_session_id: sessionId });
+}
+/** 학생: 열쇠로 대기열·등급 읽기. 실시간 연결 없이 부를 때만 한 번. */
+export async function apiFetchScoreInputView(key: string) {
+  return supabase.rpc("get_score_input_view", { p_key: key });
+}
+/** 학생: 점수만 보낸다. RP 계산·저장은 서버 함수(score-input)가 한다. scoreA = 줄의 앞 팀. */
+export async function apiSubmitScoreInput(payload: { key: string; scheduledId: string; scoreA: number; scoreB: number }) {
+  const { data, error } = await supabase.functions.invoke("score-input", { body: payload });
+  if (error) {
+    // 서버 함수가 400·409 로 돌려준 안내 문구를 꺼낸다.
+    let message = "저장하지 못했어요. 잠시 뒤 다시 눌러 주세요.";
+    try { const b = await (error as any).context?.json?.(); if (b?.message) message = b.message; } catch { /* 기본 문구 */ }
+    return { data: null, error: { message } };
+  }
+  return { data: data as { ok: true; aWon: boolean; deltaA: (number | null)[]; deltaB: (number | null)[] }, error: null };
+}

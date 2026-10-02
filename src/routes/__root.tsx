@@ -170,7 +170,7 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 // 로그인 없이 열람 가능한 공개 경로 (무인증 공개 순위표 등).
 // 이 경로들은 세션이 없어도 Login 게이트를 거치지 않고 그대로 라우팅된다.
-const PUBLIC_PATH_PREFIXES = ["/ranking/"];
+const PUBLIC_PATH_PREFIXES = ["/ranking/", "/input"];  // /input = 점수입력판(열쇠 링크)
 const isPublicPath = (pathname: string) => PUBLIC_PATH_PREFIXES.some((p) => pathname.startsWith(p));
 
 function RootComponent() {

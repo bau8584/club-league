@@ -16,8 +16,9 @@ import { SeasonSummary } from "@/components/league/SeasonSummary";
 import { Toaster } from "@/components/ui/sonner";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { Crown, Swords, Trophy, Users, User, Pencil, LogOut, School, ShieldAlert, BarChart3, ArrowLeft, Lock, LockOpen, MoreVertical, Palette, CalendarDays, RefreshCw, IdCard, QrCode } from "lucide-react";
+import { Crown, Swords, Trophy, Users, User, Pencil, LogOut, School, ShieldAlert, BarChart3, ArrowLeft, Lock, LockOpen, MoreVertical, Palette, CalendarDays, RefreshCw, IdCard, QrCode, ClipboardPen } from "lucide-react";
 import { InviteDialog, type ShareMode } from "@/components/league/InviteDialog";
+import { ScoreInputDialog, scoreInputEnabled } from "@/components/league/ScoreInputDialog";
 import { useDeviceLock, PinGate, SetPinDialog } from "@/components/league/DeviceLock";
 import { ThemePicker } from "@/components/ThemePicker";
 import { useTheme, isDarkTheme } from "@/lib/use-theme";
@@ -91,6 +92,7 @@ export function LeagueApp({ classId }: { classId: string }) {
     lockPin,
     lockEpoch,
     saveLockSettings,
+    assignmentSession,
   } = useLeagueStore();
 
   // 입력용 기기 잠금: 잠긴 기기에선 경기장(·내 카드) 밖 탭과 로그아웃·로비가 핀 뒤로 간다.
@@ -120,6 +122,10 @@ export function LeagueApp({ classId }: { classId: string }) {
   // 초대 QR / 공개 순위표 공유는 같은 다이얼로그를 탭만 바꿔 쓴다.
   const [shareMode, setShareMode] = useState<ShareMode>("invite");
   const openShare = (mode: ShareMode) => { setShareMode(mode); setInviteOpen(true); };
+  // 점수입력판(학생 QR 입력) — 시험 중이라 스위치 켠 기기에서만 보인다(scoreInputEnabled).
+  const [scoreInputOpen, setScoreInputOpen] = useState(false);
+  const [showScoreInput, setShowScoreInput] = useState(false);
+  useEffect(() => { setShowScoreInput(scoreInputEnabled()); }, []);
   // 결과 푸시(?match=<id>)로 진입하면 경기 탭에서 그 경기 결과 창을 연다
   const [openMatchId, setOpenMatchId] = useState<string | null>(
     () => (typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("match") : null)
@@ -338,6 +344,12 @@ export function LeagueApp({ classId }: { classId: string }) {
 
                 {/* 공유 — 학교는 공개 순위표, 동호회는 QR 초대. 케밥 메뉴가 모바일 전용이라
                     데스크톱에서는 이 버튼이 유일한 통로다. */}
+                {!gated && isSchool && isClassManager && showScoreInput && (
+                  <button onClick={() => setScoreInputOpen(true)} title="점수입력판 (학생 QR 입력)"
+                    className="flex size-9 items-center justify-center rounded-lg border border-border/60 bg-card/60 text-muted-foreground hover:text-neon-blue hover:border-neon-blue/40 active:scale-95 transition-all">
+                    <ClipboardPen className="size-4" />
+                  </button>
+                )}
                 {gated ? null : isSchool ? (
                   <button onClick={() => openShare("ranking")} title="공개 순위표 보기·공유"
                     className="flex size-9 items-center justify-center rounded-lg border border-border/60 bg-card/60 text-muted-foreground hover:text-neon-blue hover:border-neon-blue/40 active:scale-95 transition-all">
@@ -439,6 +451,11 @@ export function LeagueApp({ classId }: { classId: string }) {
                     </DropdownMenuItem>
                   )}
                   {/* 공개 순위표는 학교 리그 기능 — 동호회에서는 노출하지 않는다. */}
+                  {!gated && isSchool && isClassManager && showScoreInput && (
+                    <DropdownMenuItem onSelect={() => setScoreInputOpen(true)} className="gap-2 text-xs cursor-pointer">
+                      <ClipboardPen className="size-4 text-neon-blue" /> 점수입력판
+                    </DropdownMenuItem>
+                  )}
                   {!gated && isSchool && (
                     <DropdownMenuItem onSelect={() => openShare("ranking")} className="gap-2 text-xs cursor-pointer">
                       <Trophy className="size-4 text-neon-blue" /> 공개 순위표 보기·공유
@@ -593,6 +610,7 @@ export function LeagueApp({ classId }: { classId: string }) {
         />
 
         {/* 관리자 QR 초대 다이얼로그 */}
+        <ScoreInputDialog open={scoreInputOpen} onOpenChange={setScoreInputOpen} sessionId={assignmentSession?.id ?? null} />
         <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} classId={classId} leagueName={title} defaultMode={shareMode} allowRanking={isSchool} allowInvite={!isSchool} ownerId={isSchool ? myUid : null} />
 
         {/* 명단이 비어 있으면 첫 화면에서 바로 붙여넣기로. 개설 → 관리자 탭 → 학생 관리 → 붙여넣기까지
