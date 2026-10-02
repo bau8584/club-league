@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCw, Minus, Plus } from "lucide-react";
+import { RefreshCw } from "lucide-react";
+import { ScoreBoard } from "./ScoreBoard";
 import { apiFetchScoreInputView, apiSubmitScoreInput } from "@/services/league-api";
 import { cn } from "@/lib/utils";
 import {
@@ -11,6 +12,7 @@ import {
  * 점수입력판 — 학생이 QR(열쇠 링크)로 들어와 대기열 경기 결과를 넣는다.
  *
  * 교실 화면(ClassroomView)과 같은 대기열·등급을 쓰고, 넣을 수 있는 줄에 [점수 넣기]만 더한다.
+ * 줄을 누르면 점수판(ScoreBoard, 점수판 웹의 일반 모드)이 화면 가득 열리고, [경기 끝]으로 기록한다.
  * 실시간 연결도 자동 반복 조회도 없다 — 열 때·[새로고침]·입력 직후·화면으로 돌아올 때만 읽는다.
  * (수파베이스 동시 접속 한도. docs/PLAN-student-input.md)
  *
@@ -104,8 +106,11 @@ export function ScoreInputView({ inputKey }: { inputKey: string }) {
       </div>
 
       {picked && picked.seq != null && idBySeq.get(picked.seq) && (
-        <ScoreSheet
-          row={picked}
+        <ScoreBoard
+          rowId={idBySeq.get(picked.seq)!}
+          seq={picked.seq}
+          nameA={picked.team_a.join("·")}
+          nameB={picked.team_b.join("·")}
           onClose={() => setPicked(null)}
           onSubmit={async (scoreA, scoreB) => {
             const { data: r, error: e } = DEMO(inputKey)
@@ -124,74 +129,6 @@ export function ScoreInputView({ inputKey }: { inputKey: string }) {
       )}
       {done && <DoneCard done={done} onClose={() => setDone(null)} />}
     </Shell>
-  );
-}
-
-/* ── 점수 넣기 창 — 태블릿에서 손가락으로 누르기 좋게 크게 ── */
-
-function ScoreSheet({ row, onClose, onSubmit }: {
-  row: QueueRow;
-  onClose: () => void;
-  onSubmit: (a: number, b: number) => Promise<string | null>;
-}) {
-  const [a, setA] = useState(0);
-  const [b, setB] = useState(0);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
-  const tie = a === b;
-
-  const submit = async () => {
-    if (tie || busy) return;
-    setBusy(true);
-    setMsg(null);
-    const err = await onSubmit(a, b);
-    if (err) { setMsg(err); setBusy(false); }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-3 sm:items-center" onClick={busy ? undefined : onClose}>
-      <div className="w-full max-w-xl rounded-2xl border border-border/40 bg-background p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <p className="text-center text-lg font-black text-neon-blue">#{row.seq} 점수 넣기</p>
-        <div className="mt-4 grid grid-cols-2 gap-4">
-          <Side name={row.team_a.join("·")} value={a} onChange={setA} lead={a > b} />
-          <Side name={row.team_b.join("·")} value={b} onChange={setB} lead={b > a} />
-        </div>
-        {msg && <p className="mt-3 text-center text-sm font-bold text-destructive">{msg}</p>}
-        <div className="mt-5 flex gap-3">
-          <button type="button" onClick={onClose} disabled={busy}
-            className="flex-1 rounded-xl border border-border/50 py-4 text-lg font-black text-muted-foreground">
-            취소
-          </button>
-          <button type="button" onClick={submit} disabled={tie || busy}
-            className={cn("flex-[2] rounded-xl py-4 text-lg font-black",
-              tie || busy ? "bg-muted text-muted-foreground" : "bg-neon-blue text-background")}>
-            {busy ? "기록 중…" : tie ? "이긴 팀 점수가 더 커야 해요" : "저장"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Side({ name, value, onChange, lead }: { name: string; value: number; onChange: (n: number) => void; lead: boolean }) {
-  const step = (d: number) => onChange(Math.max(0, Math.min(999, value + d)));
-  return (
-    <div className={cn("rounded-xl border-2 p-3 text-center", lead ? "border-neon-green bg-neon-green/10" : "border-border/40")}>
-      <p className="truncate text-base font-black text-foreground lg:text-lg">{name}</p>
-      <input
-        inputMode="numeric"
-        value={String(value)}
-        onChange={(e) => { const n = parseInt(e.target.value.replace(/\D/g, "") || "0", 10); onChange(Math.min(999, n)); }}
-        className="mt-2 w-full bg-transparent text-center text-6xl font-black tabular-nums text-foreground outline-none"
-        aria-label={`${name} 점수`}
-      />
-      <div className="mt-2 flex gap-2">
-        <button type="button" onClick={() => step(-1)} aria-label="1점 빼기"
-          className="flex flex-1 items-center justify-center rounded-lg bg-input py-3"><Minus className="size-6" /></button>
-        <button type="button" onClick={() => step(1)} aria-label="1점 더하기"
-          className="flex flex-1 items-center justify-center rounded-lg bg-neon-blue/20 py-3 text-neon-blue"><Plus className="size-6" /></button>
-      </div>
-    </div>
   );
 }
 
