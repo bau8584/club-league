@@ -8,8 +8,8 @@ import { teamsOf, useQueueRows } from "@/lib/use-queue-rows";
 import { sortStudentsForRoster, type ScheduledMatch, type Student } from "@/lib/league-types";
 import { liveSession } from "@/lib/session-today";
 import type { AssignmentPreset } from "@/domain/assignment-calculator";
-import { REGROUP_NEEDS_CONFIRM, roundGamesKeepingOut } from "@/domain/round-size";
-import { countByGender, separateRoundBreakdown, separateRoundCount, type GenderCounts } from "@/domain/gender-split";
+import { REGROUP_NEEDS_CONFIRM, roundGamesKeepingOut, separateGamesKeepingOut } from "@/domain/round-size";
+import { countByGender, separateRoundBreakdown, type GenderCounts } from "@/domain/gender-split";
 
 const dn = (s?: Student | null) => (s ? s.nickname || s.name : "?");
 
@@ -63,9 +63,14 @@ function roundHint(free: number, perMatch: number, queued: number): string {
 }
 
 /** 남녀 따로일 때의 안내 — 남 몇 경기·여 몇 경기, 미지정은 자리 남는 쪽에. */
-function separateRoundHint(free: GenderCounts, perMatch: number): string {
-  const { m, f } = separateRoundBreakdown(free, perMatch);
-  if (m + f === 0) return "남녀 따로 · 남자도 여자도 한 경기 인원이 안 돼요. [+1]은 이미 줄에 선 사람으로 잡아요.";
+function separateRoundHint(free: GenderCounts, queued: { m: number; f: number }, perMatch: number): string {
+  const { m, f } = separateGamesKeepingOut(free, queued, perMatch);
+  if (m + f === 0) {
+    const all = separateRoundBreakdown(free, perMatch);
+    return all.m + all.f > 0
+      ? "남녀 따로 · 방금 끝난 친구들끼리만 남아 있어요. 다음 경기가 끝나면 섞어서 넣어요."
+      : "남녀 따로 · 남자도 여자도 한 경기 인원이 안 돼요. [+1]은 이미 줄에 선 사람으로 잡아요.";
+  }
   const u = free.u > 0 ? ` · 미지정 ${free.u}명은 자리 남는 쪽에` : "";
   return `남녀 따로 · 남 ${m}경기 · 여 ${f}경기${u}`;
 }
@@ -113,6 +118,7 @@ export function MatchQueue({
     assignmentSession: rawSession,
     fillAssignmentQueue,
     claimAutoRound,
+    releaseAutoRound,
     removeScheduledMatch,
     removeScheduledMatches,
     endClassQueue,
@@ -211,12 +217,20 @@ export function MatchQueue({
    * "한 사람 한 번"이고, 두 번 들어갈 사람을 고르는 규칙이 따로 필요해진다.
    * 남녀 따로면 남 바퀴 + 여 바퀴. 실제 경기 수는 스토어가 같은 계산으로 다시 센다.
    */
-  const roundCount = roundGamesKeepingOut(
-    separate ? separateRoundCount(freeByGender, perMatch) : Math.floor(free / perMatch),
-    free,
-    perMatch,
-    queue.length,
-  );
+  // 남녀 따로면 남녀를 따로 세어 각자 남긴다 — 스토어(fillAssignmentQueue)와 같은 규칙.
+  const queuedByGender = useMemo(() => {
+    const c = { m: 0, f: 0 };
+    for (const r of queue) {
+      const { teamA, teamB, pool } = teamsOf(r);
+      const g = [...teamA, ...teamB, ...pool].map((id) => byId.get(id)?.gender).find((x) => x === "M" || x === "F");
+      if (g !== "F") c.m++;
+      if (g !== "M") c.f++;
+    }
+    return c;
+  }, [queue, byId]);
+  const roundCount = separate
+    ? (({ m, f }) => m + f)(separateGamesKeepingOut(freeByGender, queuedByGender, perMatch))
+    : roundGamesKeepingOut(Math.floor(free / perMatch), free, perMatch, queue.length);
   // [+1경기]가 같은 친구들끼리 재대결이라 멈췄을 때 — 넣을지 한 번 묻는 줄.
   const [regroupAsk, setRegroupAsk] = useState(false);
   // 줄이 바뀌면(경기가 끝나거나 들어가면) 물음은 낡는다 — 다시 누르면 그때 새로 판단한다.
@@ -234,6 +248,7 @@ export function MatchQueue({
     );
     if (made === REGROUP_NEEDS_CONFIRM) setRegroupAsk(true);
     setFilling(false);
+    return made;
   };
 
   // 한 바퀴 자동 — 코트를 쓰고 스위치를 켰을 때만. 대기 줄(코트에 못 든 줄)이 코트 수 − 1 이
@@ -243,15 +258,27 @@ export function MatchQueue({
   const simul = assignmentSession?.queue_mode === "simultaneous";
   const autoRound = !simul && !!courtCount && assignmentSession?.auto_round === true;
   const waitingRows = courtCount ? Math.max(queue.length - courtCount, 0) : 0;
-  const autoDue = autoRound && canManage && !filling && roundCount > 0 && waitingRows <= courtCount! - 1;
+  // 허락을 받고도 0경기였던 줄 모양. 같은 모양이면 다시 묻지 않는다 — 안 그러면 0경기를 계속
+  // 되풀이한다. 줄이 바뀌면(경기가 끝나거나 들어오면) 다시 묻는다.
+  const queueSig = `${queue.length}:${queue.reduce((m, r) => Math.max(m, r.seq ?? 0), 0)}`;
+  const [autoStuckAt, setAutoStuckAt] = useState<string | null>(null);
+  const autoDue =
+    autoRound && canManage && !filling && roundCount > 0 && waitingRows <= courtCount! - 1 && autoStuckAt !== queueSig;
   useEffect(() => {
     if (!autoDue) return;
     let cancelled = false;
     (async () => {
       // 내가 본 줄의 마지막 번호를 같이 보낸다 — 다른 기기가 방금 붙인 줄을 못 봤으면 서버가 거절한다.
       const seenSeq = queue.reduce((m, r) => Math.max(m, r.seq ?? 0), 0);
-      if (!(await claimAutoRound(seenSeq)) || cancelled) return;
-      await fill("round");
+      if (!(await claimAutoRound(seenSeq))) return;
+      // 허락은 받았는데 그새 줄이 바뀌었거나 0경기면 허락 표시를 되돌린다. 안 되돌리면 서버가
+      // "이 번호에서는 이미 허락함"을 쥐고 있어 자동 채우기가 조용히 멈춘다.
+      if (cancelled) { await releaseAutoRound(); return; }
+      const made = await fill("round");
+      if (made <= 0) {
+        await releaseAutoRound();
+        setAutoStuckAt(queueSig);
+      }
     })();
     return () => { cancelled = true; };
     // fill 은 매 렌더 새로 만들어지지만 때(autoDue·줄 수)가 바뀔 때만 다시 묻는다.
@@ -614,7 +641,7 @@ export function MatchQueue({
               <span className="min-w-0 flex-1">
                 {simul
                   ? simulHint(queue.length, roundCount, free, perMatch)
-                  : separate ? separateRoundHint(freeByGender, perMatch) : roundHint(free, perMatch, queue.length)}
+                  : separate ? separateRoundHint(freeByGender, queuedByGender, perMatch) : roundHint(free, perMatch, queue.length)}
               </span>
             )}
           </div>

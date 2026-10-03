@@ -7,13 +7,14 @@ import { calculateMatchResult, mentoringBonusOf, rivalClashBonus } from "@/domai
 import {
   calculateAssignment,
   defaultPreset,
+  type AssignedMatch,
   type AssignmentHistoryMatch,
   type AssignmentPreset,
   type TeamSize,
 } from "@/domain/assignment-calculator";
 import { carriedPlayDebt } from "@/domain/play-debt";
 import { countByGender, genderGroupOf, separateRoundCount, type GenderMode } from "@/domain/gender-split";
-import { REGROUP_NEEDS_CONFIRM, roundGamesKeepingOut } from "@/domain/round-size";
+import { REGROUP_NEEDS_CONFIRM, roundGamesKeepingOut, separateGamesKeepingOut } from "@/domain/round-size";
 import { skillRating } from "@/domain/skill-rating";
 import { mapMatchRow, mapPlayerRows } from "@/domain/calc-context";
 import { getTodayPlayerIds } from "./today-players";
@@ -65,6 +66,8 @@ import {
   apiApplyDormancyDecay,
   apiFetchDecayLog,
   apiFetchScheduledMatches,
+  apiFetchMatchesSince,
+  apiReleaseAutoRound,
   apiCreateScheduledMatch,
   apiBulkCreateAssignedMatches,
   apiFetchAssignmentSession,
@@ -3243,8 +3246,25 @@ function useLeagueStoreInternal() {
       opts?.teamSize ?? (assignmentSessionRef.current?.match_type === "single" ? 1 : 2);
     const preset: AssignmentPreset = opts?.policy ?? defaultPreset(leagueTypeRef.current);
 
+    // 짜기 직전에 줄과 오늘 경기를 서버에서 새로 읽는다. 다른 기기·점수입력판(QR)이 결과를 넣으면
+    // 화면에는 "줄은 빠졌는데 경기 기록은 아직 안 온" 순간이 있다 — 그때 짜면 방금 끝난 넷이
+    // "오늘 덜 뛴 아이들"로 보여 1순위로 다시 묶인다(10-03 점검). 못 읽으면 화면 것으로 짠다.
+    const dayStart = new Date();
+    dayStart.setHours(0, 0, 0, 0);
+    const [freshQ, freshM] = await Promise.all([
+      apiFetchScheduledMatches(cid, assignmentSessionRef.current?.id ?? null),
+      apiFetchMatchesSince(cid, dayStart.toISOString()),
+    ]);
+    const rowsNow = freshQ.error ? scheduledMatches : ((freshQ.data || []) as ScheduledMatch[]);
+    if (!freshQ.error) setScheduledMatches(rowsNow);
+    const todayKey = new Date().toDateString();
+    const isTodayMatch = (m: Match) => new Date(m.date).toDateString() === todayKey;
+    const matchesNow: Match[] = freshM.error
+      ? matches
+      : [...matches.filter((m) => !isTodayMatch(m)), ...(freshM.data || []).map(mapMatchRow)];
+
     // 큐 = 아직 결과가 안 들어온 행.
-    const queue = scheduledMatches.filter((m) => m.status === "waiting" || m.status === "called");
+    const queue = rowsNow.filter((m) => m.status === "waiting" || m.status === "called");
     const queuedIds = new Set<string>();
     for (const m of queue) {
       for (const id of (m.player_ids?.length
@@ -3264,7 +3284,7 @@ function useLeagueStoreInternal() {
     }
     if (!participantIds.length) {
       // 세션이 아직 없는 리그(동호회 등) — 옛 규칙으로 떨어진다: 오늘 뛴 사람 + 큐에 든 사람.
-      const today = getTodayPlayerIds(matches);
+      const today = getTodayPlayerIds(matchesNow);
       participantIds = students
         .map((s) => s.id)
         .filter((id) => today.has(id) || queuedIds.has(id));
@@ -3288,7 +3308,28 @@ function useLeagueStoreInternal() {
       ? separateRoundCount(countByGender(freeIds, genderOf), teamSize * 2)
       : Math.floor(freeIds.length / (teamSize * 2));
     // 한 바퀴는 밖에 한 경기 분량을 남긴다(round-size.ts) — 끝난 넷끼리 다시 묶이는 것을 막는다.
-    const keptRound = roundGamesKeepingOut(roundCount, freeIds.length, teamSize * 2, queue.length);
+    // 남녀 따로면 남녀를 따로 세어 각자 남긴다(합쳐 세면 밖에 남는 4명이 한쪽 성별뿐일 수 있다).
+    const isRound = opts?.count == null && opts?.mode !== "one";
+    const rowGender = (m: ScheduledMatch): "M" | "F" | null => {
+      for (const id of [m.player_a_id, m.player_b_id, m.player_a2_id, m.player_b2_id, ...(m.player_ids ?? [])]) {
+        const g = id ? genderOf(id) : undefined;
+        if (g === "M" || g === "F") return g;
+      }
+      return null;
+    };
+    const splitPlan = separate && isRound
+      ? separateGamesKeepingOut(
+          countByGender(freeIds, genderOf),
+          {
+            m: queue.filter((m) => rowGender(m) !== "F").length,
+            f: queue.filter((m) => rowGender(m) !== "M").length,
+          },
+          teamSize * 2,
+        )
+      : null;
+    const keptRound = splitPlan
+      ? splitPlan.m + splitPlan.f
+      : roundGamesKeepingOut(roundCount, freeIds.length, teamSize * 2, queue.length);
     if (opts?.count == null && opts?.mode !== "one" && roundCount > 0 && keptRound === 0) {
       toast.info("방금 끝난 친구들끼리만 남아 있어요. 다음 경기가 끝나면 섞어서 넣을게요.");
       return 0;
@@ -3301,9 +3342,6 @@ function useLeagueStoreInternal() {
       .filter((m) => !m.player_a_id && m.player_ids?.length)
       .map((m) => ({ teamA: m.player_ids as string[], teamB: [] }));
 
-    const todayKey = new Date().toDateString();
-    const isTodayMatch = (m: Match) => new Date(m.date).toDateString() === todayKey;
-
     // 지난 출석일의 빚. 판 수는 오늘만 세지만, 지난 시간에 한 판밖에 못 뛴 아이가
     // 오늘 또 한 판만 뛰는 건 막아야 한다 — 그 손해만큼을 마이너스에서 출발시킨다.
     //
@@ -3313,7 +3351,7 @@ function useLeagueStoreInternal() {
     const playCountOffset: Record<string, number> = {};
     if (leagueTypeRef.current === "school") {
       const debt = carriedPlayDebt(
-        matches
+        matchesNow
           .filter((m) => !isTodayMatch(m))
           .map((m) => ({
             dayKey: new Date(m.date).toDateString(),
@@ -3325,28 +3363,44 @@ function useLeagueStoreInternal() {
     }
 
     const apart = await fetchApartPairs();
-    const out = calculateAssignment({
+    const calc = (pool: string[], busy: string[], n: number) => calculateAssignment({
       participants: students
-        .filter((s) => participantIds!.includes(s.id))
+        .filter((s) => pool.includes(s.id))
         .map((s) => ({ id: s.id, rating: ratingOf(s) })),
-      busyPlayerIds: [...queuedIds],
+      busyPlayerIds: busy,
       // 만남(커버리지)은 과거 기록까지 소급해서 본다.
-      history: [...matches.map(teamsOfMatch), ...queueHistory],
+      history: [...matchesNow.map(teamsOfMatch), ...queueHistory],
       // 판 수는 오늘 것만 센다 — "나만 덜 뛰었다"는 오늘 안에서의 불만이다.
       playHistory: [
-        ...matches.filter(isTodayMatch).map(teamsOfMatch),
+        ...matchesNow.filter(isTodayMatch).map(teamsOfMatch),
         ...queueHistory,
         ...queuePlayOnly,
       ],
       playCountOffset,
-      count,
+      count: n,
       teamSize,
       policy: preset,
       seed: opts?.seed,
       // 섞어서 모드(또는 성별 꺼짐)는 groupOf 자체를 안 넘긴다 — 계산기 경로가 전과 같다.
-      ...(separate ? { groupOf: genderGroupOf(participantIds, genderOf) } : {}),
+      ...(separate ? { groupOf: genderGroupOf(pool, genderOf) } : {}),
       ...(apart.length ? { apart } : {}),
     });
+
+    let out: { matches: AssignedMatch[]; shortfall: number };
+    if (splitPlan) {
+      // 남녀 따로 채우기: 남자 몇 경기·여자 몇 경기를 따로 뽑는다. 한 번에 뽑으면 계산기가
+      // 한쪽 성별에서 다 뽑아 그쪽 "밖에 남김"이 사라질 수 있다. 미지정은 남자 판에서 먼저 쓰고
+      // 남은 사람이 여자 판 후보가 된다.
+      const pids = participantIds;
+      const mPool = pids.filter((id) => genderOf(id) !== "F");
+      const fPool = pids.filter((id) => genderOf(id) !== "M");
+      const mOut = splitPlan.m > 0 ? calc(mPool, [...queuedIds], splitPlan.m) : { matches: [], shortfall: 0 };
+      const used = new Set(mOut.matches.flatMap((m) => [...m.teamA, ...m.teamB]));
+      const fOut = splitPlan.f > 0 ? calc(fPool, [...queuedIds, ...used], splitPlan.f) : { matches: [], shortfall: 0 };
+      out = { matches: [...mOut.matches, ...fOut.matches], shortfall: mOut.shortfall + fOut.shortfall };
+    } else {
+      out = calc(participantIds, [...queuedIds], count);
+    }
 
     if (out.matches.length === 0) {
       toast.error("인원이 모자라 대진을 뽑지 못했어요.");
@@ -3357,7 +3411,7 @@ function useLeagueStoreInternal() {
     if (opts?.count === 1 && !opts.allowRegroup) {
       const groupKey = (t: AssignmentHistoryMatch) => [...t.teamA, ...t.teamB].sort().join("|");
       const met = new Set(
-        [...matches.filter(isTodayMatch).map(teamsOfMatch), ...queueHistory].map(groupKey),
+        [...matchesNow.filter(isTodayMatch).map(teamsOfMatch), ...queueHistory].map(groupKey),
       );
       if (out.matches.some((m) => met.has(groupKey(m)))) return REGROUP_NEEDS_CONFIRM;
     }
@@ -3404,6 +3458,14 @@ function useLeagueStoreInternal() {
     if (error && seenSeq !== undefined) ({ data, error } = await apiClaimAutoRound(sid));
     if (error) { console.warn("한 바퀴 자동 확인 실패:", error.message); return false; }
     return data === true;
+  }, []);
+
+  // 자동 채우기 허락을 받고도 0경기였을 때 — 허락 표시를 되돌린다. 실패(마이그레이션 전)는 조용히.
+  const releaseAutoRound = useCallback(async (): Promise<void> => {
+    const sid = assignmentSessionRef.current?.id;
+    if (!sid) return;
+    const { error } = await apiReleaseAutoRound(sid);
+    if (error) console.warn("자동 채우기 되돌리기 실패:", error.message);
   }, []);
 
   // 예약할 수 있는 권한: 관리자 또는 (자율 입력 모드에서) 연동된 회원
@@ -3931,6 +3993,7 @@ function useLeagueStoreInternal() {
     updateAssignmentSession,
     fillAssignmentQueue,
     claimAutoRound,
+    releaseAutoRound,
     callScheduledMatch,
     removeScheduledMatch,
     removeScheduledMatches,

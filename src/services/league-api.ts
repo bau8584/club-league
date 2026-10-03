@@ -71,6 +71,16 @@ export async function apiFetchMatches(classId: string, season?: string) {
   return { data: all, error: null };
 }
 
+/** 어느 시각 이후의 경기만(대진 짜기 직전에 오늘 기록을 새로 읽을 때). */
+export async function apiFetchMatchesSince(classId: string, sinceIso: string) {
+  return supabase
+    .from("matches")
+    .select("*")
+    .eq("league_id", classId)
+    .gte("created_at", sinceIso)
+    .order("created_at", { ascending: true });
+}
+
 // --- 대진 호출(예정 경기) ---
 /**
  * 큐 읽기. `sessionId`를 주면 그 세션의 줄만 본다(학교 — 옆 반 수업이 섞이면 안 된다).
@@ -244,6 +254,11 @@ export async function apiUpsertAssignmentSession(payload: {
 export async function apiClaimAutoRound(sessionId: string, seenSeq?: number) {
   // seenSeq = 이 기기가 본 줄의 마지막 번호(없으면 0). 서버 것과 다르면 화면이 낡았다 → 거절.
   return supabase.rpc("claim_auto_round", { p_session_id: sessionId, ...(seenSeq !== undefined ? { p_seen_seq: seenSeq } : {}) });
+}
+
+/** 자동 채우기 허락을 받고도 0경기로 끝났을 때 허락 표시를 되돌린다(다음 기회에 다시 묻게). */
+export async function apiReleaseAutoRound(sessionId: string) {
+  return supabase.rpc("release_auto_round", { p_session_id: sessionId });
 }
 
 export async function apiAllocMatchSeq(sessionId: string, n: number) {

@@ -32,3 +32,27 @@ export function roundGamesKeepingOut(
 
 /** [+1경기]가 같은 넷(단식은 둘) 재대결이라 넣지 않고 선생님께 물어야 할 때 돌려주는 값. */
 export const REGROUP_NEEDS_CONFIRM = -1;
+
+/**
+ * 남녀 따로일 때의 [다음 경기 채우기] — 남녀를 따로 세어 각자 밖에 남긴다.
+ *
+ * 합쳐서 세면 "밖에 4명"이 전부 여자일 수 있다. 그러면 남자 경기가 끝났을 때 섞을 남자가
+ * 밖에 없어 방금 끝난 남자 넷이 그대로 다시 묶인다. 줄도 성별마다 따로 본다 — 여자 줄이
+ * 비었는데 남자 줄이 있다고 여자를 남겨 두면 여자 코트가 논다.
+ * 미지정(u)은 어느 쪽에든 붙을 수 있어 a명을 남자 쪽에 붙이는 모든 나누기 중 경기가 가장 많은 것.
+ */
+export function separateGamesKeepingOut(
+  free: { m: number; f: number; u: number },
+  queued: { m: number; f: number },
+  perMatch: number,
+): { m: number; f: number; uToM: number } {
+  let best = { m: 0, f: 0, uToM: 0 };
+  for (let a = 0; a <= free.u; a++) {
+    const mFree = free.m + a;
+    const fFree = free.f + free.u - a;
+    const m = roundGamesKeepingOut(Math.floor(mFree / perMatch), mFree, perMatch, queued.m);
+    const f = roundGamesKeepingOut(Math.floor(fFree / perMatch), fFree, perMatch, queued.f);
+    if (m + f > best.m + best.f) best = { m, f, uToM: a };
+  }
+  return best;
+}
