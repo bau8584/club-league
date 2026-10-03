@@ -10,10 +10,10 @@ import { Shell, Note, SectionTitle, Queue, TierGroups, type ClassView, type Queu
 /**
  * 점수입력판 — 학생이 QR(열쇠 링크)로 들어와 경기 결과를 넣는다. (docs/PLAN-student-input.md)
  *
- * 흐름: 점수판(팀 A·팀 B — 리그 입력 화면과 같은 이름·색)이 먼저 뜬다 → 경기 → [결과 등록] → 대기열에서 고르거나 반 명단에서 직접 고른다 → [기록].
- * (점수판 웹을 쓰던 순서 그대로. 대기열·출석을 안 쓰는 반도 쓸 수 있게 직접 고르기를 둔다.)
+ * 흐름: 누구 경기인지 먼저 고른다(대기열 줄 또는 반 명단에서 직접) → 그 이름이 붙은 점수판(0:0) → [경기 끝] → 확인 → [기록] → 다시 고르기.
+ * (실측 1차 2026-10-02: 점수판 먼저 → 나중에 고르기는 헷갈려서 버렸다. 대기열·출석을 안 쓰는 반도 쓸 수 있게 직접 고르기를 둔다.)
  *
- * 실시간 연결도 자동 반복 조회도 없다 — 열 때·[결과 등록]·입력 직후·화면으로 돌아올 때만 읽는다(동시 접속 한도).
+ * 실시간 연결도 자동 반복 조회도 없다 — 열 때·새로고침 버튼·입력 직후·화면으로 돌아올 때만 읽는다(동시 접속 한도).
  * 점수와 학생만 보낸다. RP 는 서버가 교사 태블릿과 같은 코드로 계산한다.
  */
 
@@ -24,28 +24,34 @@ type Done = { names: string; delta: number | null; won: boolean }[];
 /** 기록할 경기 — 팀 A·팀 B. 대기열 줄이면 scheduledId 가 있다. */
 type Pick = { scheduledId: string | null; seq: number | null; /** 대기열 줄과 팀 A·B가 뒤집혔나(화면 팀 A = 줄의 team_b) */ flip?: boolean; red: { ids?: string[]; names: string[] }; blue: { ids?: string[]; names: string[] } };
 
-const SAVE_KEY = "score-input:board";
-const readScore = (): [number, number] => {
+// 경기 중인 팀과 점수를 기기에 저장한다 — 태블릿이 잠들거나 새로고침돼도 그 경기로 돌아온다.
+// (옛 키 score-input:board 는 이름 없는 점수만 있어 읽지 않는다 → 새 흐름은 언제나 고르기부터.)
+const SAVE_KEY = "score-input:match";
+type Saved = { pick: Pick; score: [number, number] } | null;
+const readSaved = (): Saved => {
   try {
     const v = JSON.parse(localStorage.getItem(SAVE_KEY) || "null");
-    if (Array.isArray(v) && v.length === 2) return [Number(v[0]) || 0, Number(v[1]) || 0];
-  } catch { /* 없으면 0:0 */ }
-  return [0, 0];
+    if (v && v.pick && Array.isArray(v.score) && v.score.length === 2)
+      return { pick: v.pick as Pick, score: [Number(v.score[0]) || 0, Number(v.score[1]) || 0] };
+  } catch { /* 없으면 고르기부터 */ }
+  return null;
 };
 
 export function ScoreInputView({ inputKey }: { inputKey: string }) {
   const [data, setData] = useState<InputView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [[a, b], setScore] = useState<[number, number]>(readScore);
-  const [panel, setPanel] = useState<null | "register" | "queue">(null);
+  const [saved] = useState<Saved>(readSaved);
+  const [match, setMatch] = useState<Pick | null>(saved?.pick ?? null);
+  const [[a, b], setScore] = useState<[number, number]>(saved?.score ?? [0, 0]);
+  const [panel, setPanel] = useState<null | "end" | "queue">(null);
   const [done, setDone] = useState<Done | null>(null);
   // 교사 화면과 같은 결과 영수증 창. 서버가 영수증을 돌려주면 이걸, 아니면 간단한 창(DoneCard)을 띄운다.
   const [receipt, setReceipt] = useState<MatchResultData | null>(null);
 
   useEffect(() => {
-    try { localStorage.setItem(SAVE_KEY, JSON.stringify([a, b])); } catch { /* 무시 */ }
-  }, [a, b]);
+    try { localStorage.setItem(SAVE_KEY, JSON.stringify(match ? { pick: match, score: [a, b] } : null)); } catch { /* 무시 */ }
+  }, [match, a, b]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -74,6 +80,8 @@ export function ScoreInputView({ inputKey }: { inputKey: string }) {
     );
   }
 
+  const start = (p: Pick) => { setMatch(p); setScore([0, 0]); setPanel(null); };
+
   const submit = async (p: Pick): Promise<string | null> => {
     // 대기열 줄은 서버가 줄의 팀 순서(A = team_a)로 받는다. 화면 팀 A가 team_b 면 점수를 뒤집어 보낸다.
     const [sa, sb] = p.scheduledId && p.flip ? [b, a] : [a, b];
@@ -91,119 +99,103 @@ export function ScoreInputView({ inputKey }: { inputKey: string }) {
       { names: p.red.names.join("·"), delta: (flip ? r.deltaB : r.deltaA)[0], won: a > b },
       { names: p.blue.names.join("·"), delta: (flip ? r.deltaA : r.deltaB)[0], won: b > a },
     ]);
+    setMatch(null);
     setScore([0, 0]);
     setPanel(null);
     load();
     return null;
   };
 
+  const queuePanel = panel === "queue" && (
+    <Sheet title="대기열 · 오늘 등급" onClose={() => setPanel(null)}>
+      <SectionTitle>대기열</SectionTitle>
+      <Queue rows={data.view.queue ?? []} courts={!!data.view.court_count} />
+      <div className="mt-6">
+        <SectionTitle hint="막대가 차면 다음 등급">등급</SectionTitle>
+        <TierGroups players={data.view.players ?? []} thresholds={data.view.tier_thresholds ?? undefined}
+          placement={data.view.placement ?? undefined} pref={{ follow: true }} wide={false} />
+      </div>
+    </Sheet>
+  );
+  const result = receipt ? (
+    <MatchResultModal resultData={receipt} thresholds={data.view.tier_thresholds ?? undefined}
+      genderEnabled={false} closeLabel="확인" onClose={() => setReceipt(null)} />
+  ) : done && <DoneCard done={done} onClose={() => setDone(null)} />;
+
+  // 1단계 — 누구 경기예요?
+  if (!match) {
+    return (
+      <>
+        <PickScreen data={data} onPick={start} onRefresh={load} onShowQueue={() => { load(); setPanel("queue"); }} />
+        {queuePanel}
+        {result}
+      </>
+    );
+  }
+
+  // 2단계 — 이름이 붙은 점수판
   const pill = "rounded-full bg-black/35 px-4 py-3 text-base font-black text-white backdrop-blur active:scale-95";
   return (
     <>
       <ScoreBoard
-        a={a} b={b} nameA="팀 A" nameB="팀 B"
+        a={a} b={b} nameA={match.red.names.join("·")} nameB={match.blue.names.join("·")}
         onAdd={(team, d) => setScore(([x, y]) => {
           const c = (n: number) => Math.max(0, Math.min(999, n));
           return team === 0 ? [c(x + d), y] : [x, c(y + d)];
         })}
         top={<>
-          <button type="button" className={cn(pill, "flex items-center gap-1.5")} onClick={() => { load(); setPanel("queue"); }}>
-            <ListOrdered className="size-5" /> 대기열
+          <button type="button" aria-label="다시 고르기" className={cn(pill, "px-3")}
+            onClick={() => { if (a + b === 0 || confirm("이 경기를 지우고 다시 고를까요?")) { setMatch(null); setScore([0, 0]); } }}>
+            <X className="size-5" />
+          </button>
+          <button type="button" aria-label="양쪽 자리 바꾸기" className={cn(pill, "px-3")}
+            onClick={() => { setMatch({ ...match, red: match.blue, blue: match.red, flip: !match.flip }); setScore(([x, y]) => [y, x]); }}>
+            <ArrowLeftRight className="size-5" />
           </button>
           <button type="button" aria-label="점수 0으로" className={cn(pill, "px-3")}
             onClick={() => { if (confirm("점수를 0:0으로 되돌릴까요?")) setScore([0, 0]); }}>
             <RotateCcw className="size-5" />
           </button>
-          <button type="button" onClick={() => { load(); setPanel("register"); }}
+          <button type="button" onClick={() => setPanel("end")}
             className="rounded-full bg-white px-5 py-3 text-base font-black text-black shadow-lg active:scale-95">
-            결과 등록
+            경기 끝
           </button>
         </>}
       />
-
-      {panel === "queue" && (
-        <Sheet title="대기열 · 오늘 등급" onClose={() => setPanel(null)}>
-          <SectionTitle>대기열</SectionTitle>
-          <Queue rows={data.view.queue ?? []} courts={!!data.view.court_count} />
-          <div className="mt-6">
-            <SectionTitle hint="막대가 차면 다음 등급">등급</SectionTitle>
-            <TierGroups players={data.view.players ?? []} thresholds={data.view.tier_thresholds ?? undefined}
-              placement={data.view.placement ?? undefined} pref={{ follow: true }} wide={false} />
-          </div>
-        </Sheet>
-      )}
-
-      {panel === "register" && (
-        <Register a={a} b={b} data={data} onClose={() => setPanel(null)} onSubmit={submit} />
-      )}
-
-      {receipt ? (
-        <MatchResultModal resultData={receipt} thresholds={data.view.tier_thresholds ?? undefined}
-          genderEnabled={false} closeLabel="확인" onClose={() => setReceipt(null)} />
-      ) : done && <DoneCard done={done} onClose={() => setDone(null)} />}
+      {panel === "end" && <ConfirmEnd a={a} b={b} pick={match} onClose={() => setPanel(null)} onSubmit={submit} />}
+      {result}
     </>
   );
 }
 
-/* ── 결과 등록 — 어느 경기였나요? ───────────────────────── */
+/* ── 1단계: 누구 경기예요? — 대기열 줄 누르기 또는 직접 고르기 ───── */
 
-function Register({ a, b, data, onClose, onSubmit }: {
-  a: number; b: number;
+function PickScreen({ data, onPick, onRefresh, onShowQueue }: {
   data: Extract<InputView, { state: "open" }>;
-  onClose: () => void;
-  onSubmit: (p: Pick) => Promise<string | null>;
+  onPick: (p: Pick) => void;
+  onRefresh: () => void;
+  onShowQueue: () => void;
 }) {
   const [mode, setMode] = useState<"queue" | "direct">((data.rows.length ? "queue" : "direct"));
-  const [pick, setPick] = useState<Pick | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
-
   const queueBySeq = useMemo(() => {
     const m = new Map<number, QueueRow>();
     for (const r of data.view.queue ?? []) if (r.seq != null) m.set(r.seq, r);
     return m;
   }, [data]);
 
-  if (a === b) {
-    return (
-      <Sheet title="결과 등록" onClose={onClose}>
-        <Note tone="bad">비긴 점수는 등록할 수 없어요. 점수판에서 점수를 고쳐 주세요.</Note>
-      </Sheet>
-    );
-  }
-
-  // 확인 단계: 팀 A = ?, 팀 B = ? — 바꾸기 가능
-  if (pick) {
-    const swap = () => setPick({ ...pick, red: pick.blue, blue: pick.red, flip: !pick.flip });
-    const save = async () => {
-      setBusy(true); setMsg(null);
-      const err = await onSubmit(pick);
-      if (err) { setMsg(err); setBusy(false); }
-    };
-    return (
-      <Sheet title="이 경기로 기록할까요?" onClose={busy ? undefined : () => setPick(null)} back>
-        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 text-center">
-          <TeamCard color={TEAM_A} label="팀 A" names={pick.red.names} score={a} />
-          <button type="button" onClick={swap} disabled={busy} aria-label="팀 A·B 바꾸기"
-            className="flex flex-col items-center gap-1 rounded-xl border border-border/50 px-3 py-3 text-xs font-bold text-muted-foreground">
-            <ArrowLeftRight className="size-5" /> 바꾸기
-          </button>
-          <TeamCard color={TEAM_B} label="팀 B" names={pick.blue.names} score={b} />
-        </div>
-        {msg && <p className="mt-4 text-center text-sm font-bold text-destructive">{msg}</p>}
-        <button type="button" onClick={save} disabled={busy}
-          className={cn("mt-6 w-full rounded-xl py-4 text-lg font-black", busy ? "bg-muted text-muted-foreground" : "bg-neon-blue text-background")}>
-          {busy ? "기록 중…" : "기록"}
-        </button>
-      </Sheet>
-    );
-  }
-
   return (
-    <Sheet title="어느 경기였나요?" onClose={onClose}>
-      <p className="mb-3 text-center text-2xl font-black tabular-nums">
-        <span style={{ color: TEAM_A }}>팀 A {a}</span><span className="mx-2 text-muted-foreground">:</span><span style={{ color: TEAM_B }}>{b} 팀 B</span>
-      </p>
+    <Shell>
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <h1 className="text-2xl font-black text-foreground">누구 경기예요?</h1>
+        <div className="flex gap-2">
+          <button type="button" onClick={onRefresh} aria-label="새로고침"
+            className="rounded-full border border-border/50 p-2.5 text-muted-foreground active:scale-95"><RotateCcw className="size-5" /></button>
+          <button type="button" onClick={onShowQueue}
+            className="flex items-center gap-1.5 rounded-full border border-border/50 px-3 py-2 text-sm font-bold text-muted-foreground active:scale-95">
+            <ListOrdered className="size-4" /> 대기열·등급
+          </button>
+        </div>
+      </div>
       <div className="mb-4 grid grid-cols-2 gap-2 rounded-xl bg-input/50 p-1">
         {(["queue", "direct"] as const).map((m) => (
           <button key={m} type="button" onClick={() => setMode(m)}
@@ -223,18 +215,56 @@ function Register({ a, b, data, onClose, onSubmit }: {
               if (!q) return null;
               return (
                 <button key={r.id} type="button"
-                  onClick={() => setPick({ scheduledId: r.id, seq: r.seq, red: { names: q.team_a }, blue: { names: q.team_b } })}
-                  className="flex w-full items-center gap-3 rounded-xl border border-border/40 bg-input/40 px-3 py-3 text-left active:scale-[0.99]">
+                  onClick={() => onPick({ scheduledId: r.id, seq: r.seq, red: { names: q.team_a }, blue: { names: q.team_b } })}
+                  className="flex w-full items-center gap-3 rounded-xl border border-border/40 bg-input/40 px-3 py-4 text-left active:scale-[0.99]">
                   <span className="w-12 text-center text-xl font-black text-neon-blue">#{r.seq}</span>
-                  <span className="flex-1 text-base font-bold">{q.team_a.join("·")} <span className="mx-1 text-xs text-muted-foreground">vs</span> {q.team_b.join("·")}</span>
+                  <span className="flex-1 text-lg font-bold">{q.team_a.join("·")} <span className="mx-1 text-xs text-muted-foreground">vs</span> {q.team_b.join("·")}</span>
                 </button>
               );
             })}
           </div>
         )
       ) : (
-        <DirectPick roster={data.roster ?? []} onDone={(red, blue) => setPick({ scheduledId: null, seq: null, red, blue })} />
+        <DirectPick roster={data.roster ?? []} onDone={(red, blue) => onPick({ scheduledId: null, seq: null, red, blue })} />
       )}
+    </Shell>
+  );
+}
+
+/* ── 3단계: 경기 끝 → 확인 → 기록 ─────────────────────────── */
+
+function ConfirmEnd({ a, b, pick, onClose, onSubmit }: {
+  a: number; b: number; pick: Pick;
+  onClose: () => void;
+  onSubmit: (p: Pick) => Promise<string | null>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  if (a === b) {
+    return (
+      <Sheet title="경기 끝" onClose={onClose}>
+        <Note tone="bad">비긴 점수는 기록할 수 없어요. 점수판에서 점수를 고쳐 주세요.</Note>
+      </Sheet>
+    );
+  }
+
+  const save = async () => {
+    setBusy(true); setMsg(null);
+    const err = await onSubmit(pick);
+    if (err) { setMsg(err); setBusy(false); }
+  };
+  return (
+    <Sheet title="이대로 기록할까요?" onClose={busy ? undefined : onClose} back>
+      <div className="grid grid-cols-2 items-center gap-3 text-center">
+        <TeamCard color={TEAM_A} label={a > b ? "승" : "패"} names={pick.red.names} score={a} />
+        <TeamCard color={TEAM_B} label={b > a ? "승" : "패"} names={pick.blue.names} score={b} />
+      </div>
+      {msg && <p className="mt-4 text-center text-sm font-bold text-destructive">{msg}</p>}
+      <button type="button" onClick={save} disabled={busy}
+        className={cn("mt-6 w-full rounded-xl py-4 text-lg font-black", busy ? "bg-muted text-muted-foreground" : "bg-neon-blue text-background")}>
+        {busy ? "기록 중…" : "기록"}
+      </button>
     </Sheet>
   );
 }
