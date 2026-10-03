@@ -1482,19 +1482,20 @@ export function AdminSettings({
                   <div className="flex justify-between items-center p-3.5 rounded-xl border border-rose-500/30 bg-rose-500/[0.06] md:col-span-2">
                     <div>
                       <span className="text-xs font-bold text-foreground text-[11px]">🚨 스포츠맨십 위반 (레드카드 감점)</span>
-                      <span className="text-[9px] text-muted-foreground block">행동 징계 시 차감할 벌점선</span>
+                      <span className="text-[9px] text-muted-foreground block">선수 관리에서 🟥 버튼으로 줄 때 깎이는 양 (기본 50, 줄 때 바꿀 수도 있어요)</span>
                     </div>
                     <div className="flex items-center gap-1">
                       <Input
                         type="number"
-                        value={localDynamicPenalties.redCardPenalty}
+                        min={1}
+                        value={localDynamicPenalties.redCardRp ?? 50}
                         onChange={(e) => {
                           const val = parseInt(e.target.value, 10);
-                          setLocalDynamicPenalties(prev => ({ ...prev, redCardPenalty: isNaN(val) ? 0 : val }));
+                          setLocalDynamicPenalties(prev => ({ ...prev, redCardRp: isNaN(val) || val < 1 ? 1 : val }));
                         }}
                         className="w-16 h-7 text-center font-mono font-bold bg-input border-border/30 text-rose-500 p-0"
                       />
-                      <span className="text-[9px] text-rose-500 font-bold">RP</span>
+                      <span className="text-[9px] text-rose-500 font-bold">RP 감점</span>
                     </div>
                   </div>
 

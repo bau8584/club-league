@@ -513,6 +513,16 @@ export async function apiFetchDecayLog(classId: string) {
     .limit(300);
 }
 
+// 레드카드 — 한 명에게 감점 + decay_log(kind='redcard') 기록. 재계산 뒤에도 남는다.
+export async function apiGiveRedCard(playerId: string, amount: number, note: string | null) {
+  return supabase.rpc("give_red_card", { p_player_id: playerId, p_amount: amount, p_note: note });
+}
+
+// 레드카드 취소 — 기록을 지우고 깎은 만큼 되돌린다(현 시즌만).
+export async function apiCancelRedCard(logId: string) {
+  return supabase.rpc("cancel_red_card", { p_log_id: logId });
+}
+
 export async function apiResetStudentRp(studentId: string) {
   return supabase
     .from("players")

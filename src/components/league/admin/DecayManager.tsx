@@ -244,6 +244,8 @@ export function DecayManager() {
   const batches = useMemo(() => {
     const map = new Map<string, DecayLogRow[]>();
     for (const r of log) {
+      if (r.kind === "redcard") continue; // 레드카드는 선수 관리 화면에서 따로 본다
+
       const arr = map.get(r.batch_id) ?? [];
       arr.push(r);
       map.set(r.batch_id, arr);

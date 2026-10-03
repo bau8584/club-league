@@ -521,7 +521,10 @@ export type DynamicPenalties = {
   swampPlatinum3: number;
   swampDiamond2: number;
   swampDiamond3: number;
+  /** 옛 칸(기본 10). 쓰인 적 없어 저장값을 그대로 두고 읽지 않는다 — 실제 값은 redCardRp. */
   redCardPenalty: number;
+  /** 레드카드 감점(RP). 값 없음 = 50. 관리자가 선수 관리에서 줄 때 깎이는 양. */
+  redCardRp?: number;
 };
 
 export type Achievement = {

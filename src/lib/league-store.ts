@@ -65,6 +65,8 @@ import {
   apiDeleteSeason,
   apiApplyDormancyDecay,
   apiFetchDecayLog,
+  apiGiveRedCard,
+  apiCancelRedCard,
   apiFetchScheduledMatches,
   apiFetchMatchesSince,
   apiReleaseAutoRound,
@@ -133,6 +135,8 @@ export type DecayLogRow = {
   decay_rp: number | null;
   season: string | null;
   applied_at: string;
+  kind?: "decay" | "redcard"; // 열 추가 전 행은 없음 = 휴면 감점
+  note?: string | null;
 };
 
 const TIER_RANKING: Record<TierName, number> = {
@@ -2949,6 +2953,27 @@ function useLeagueStoreInternal() {
     return (data || []) as DecayLogRow[];
   }, [currentClassId]);
 
+  // 레드카드 — 감점은 서버가 하고, 화면 RP는 서버가 돌려준 값으로 맞춘다.
+  const giveRedCard = useCallback(async (studentId: string, amount: number, note: string): Promise<boolean> => {
+    if (currentViewSeasonRef.current !== "현재 시즌") { toast.error("현재 시즌에서만 줄 수 있습니다."); return false; }
+    if (!isClassManagerRef.current) { toast.error("권한이 없습니다."); return false; }
+    const { data, error } = await apiGiveRedCard(studentId, amount, note.trim() || null);
+    if (error) { toast.error("레드카드 실패: " + error.message); return false; }
+    const r = (data ?? {}) as { rp?: number; amount?: number };
+    if (typeof r.rp === "number") setStudents((prev) => prev.map((s) => s.id === studentId ? { ...s, rp: r.rp! } : s));
+    toast.success(`🟥 레드카드 −${r.amount ?? amount} RP`);
+    return true;
+  }, []);
+
+  const cancelRedCard = useCallback(async (logId: string, studentId: string): Promise<boolean> => {
+    const { data, error } = await apiCancelRedCard(logId);
+    if (error) { toast.error("취소 실패: " + error.message); return false; }
+    const r = (data ?? {}) as { rp?: number };
+    if (typeof r.rp === "number") setStudents((prev) => prev.map((s) => s.id === studentId ? { ...s, rp: r.rp! } : s));
+    toast.success("레드카드를 취소했습니다.");
+    return true;
+  }, []);
+
   // ── 대진 호출(예정 경기) ──────────────────────────────
   // 큐는 내 세션의 것만 읽는다. 실시간 구독은 league_id 로 그대로 받고, 걸러내는 일은 여기서 한다.
   const loadScheduled = useCallback(async (classId: string) => {
@@ -3986,6 +4011,8 @@ function useLeagueStoreInternal() {
     previewDormancyDecay,
     applyDormancyDecay,
     fetchDecayLog,
+    giveRedCard,
+    cancelRedCard,
     scheduledMatches,
     createScheduledMatch,
     assignmentSession,

@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Users, Save, Trash2, ShieldAlert, HelpCircle, RotateCcw, ChevronDown, ClipboardPaste, UserPlus, Link2, Link2Off, ShieldCheck, Crown, Copy, Check, X, Mail } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useLeagueStore } from "@/lib/league-store";
+import { useLeagueStore, type DecayLogRow } from "@/lib/league-store";
 import { useLeagueTerms, useIsSchoolLeague, useGenderEnabled } from "@/lib/league-terms";
 import { parseRosterDetailed } from "@/domain/roster-parser";
 import {
@@ -46,7 +46,35 @@ export function AdminStudentManage({ students, onDeleteStudent, onDeleteStudents
   const terms = useLeagueTerms();
   const isSchool = useIsSchoolLeague();
   const genderEnabled = useGenderEnabled();
-  const { upsertStudents, updateStudentInfo, bulkUpdateStudents, fetchDeletedStudents, restoreDeletedStudent, hardDeleteStudent, levelMode, levels, ownerUid, adminUids, setMemberAdmin, transferOwnership, setCoOwner, coOwnerUids, isClassPrimaryOwner, isClassOwner, fetchLeagueMembers, unlinkPlayer } = useLeagueStore();
+  const { upsertStudents, updateStudentInfo, bulkUpdateStudents, fetchDeletedStudents, restoreDeletedStudent, hardDeleteStudent, levelMode, levels, ownerUid, adminUids, setMemberAdmin, transferOwnership, setCoOwner, coOwnerUids, isClassPrimaryOwner, isClassOwner, fetchLeagueMembers, unlinkPlayer, isClassManager, dynamicPenalties, fetchDecayLog, giveRedCard, cancelRedCard, currentSeason } = useLeagueStore();
+
+  // ── 레드카드 ── 감점값은 글로벌 설정(패널티)에서, 줄 때 그 자리에서 바꿀 수도 있다.
+  const redCardDefault = dynamicPenalties?.redCardRp ?? 50;
+  const [redLog, setRedLog] = useState<DecayLogRow[]>([]);
+  const [redTarget, setRedTarget] = useState<Student | null>(null);
+  const [redAmount, setRedAmount] = useState(redCardDefault);
+  const [redNote, setRedNote] = useState("");
+  const [redBusy, setRedBusy] = useState(false);
+  const loadRedLog = async () => {
+    const all = await fetchDecayLog();
+    setRedLog(all.filter((r) => r.kind === "redcard" && r.season === currentSeason));
+  };
+  useEffect(() => { if (isClassManager) loadRedLog(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [isClassManager, currentSeason]);
+  const redCountOf = (id: string) => redLog.filter((r) => r.player_id === id).length;
+  const openRed = (s: Student) => { setRedTarget(s); setRedAmount(redCardDefault); setRedNote(""); };
+  const runGiveRed = async () => {
+    if (!redTarget || redBusy) return;
+    setRedBusy(true);
+    try {
+      if (await giveRedCard(redTarget.id, Math.max(1, redAmount || 0), redNote)) { await loadRedLog(); setRedTarget(null); }
+    } finally { setRedBusy(false); }
+  };
+  const runCancelRed = async (row: DecayLogRow) => {
+    if (!row.player_id || redBusy) return;
+    if (!window.confirm(`이 레드카드를 취소할까요? −${row.decay_rp ?? 0} RP가 되돌아갑니다.`)) return;
+    setRedBusy(true);
+    try { if (await cancelRedCard(row.id, row.player_id)) await loadRedLog(); } finally { setRedBusy(false); }
+  };
 
   // 최고관리자(원조 방장) 위임 — 되돌리기 어려우므로 2단계 확인
   const handleTransferOwnership = (uid: string, label: string) => {
@@ -599,7 +627,15 @@ export function AdminStudentManage({ students, onDeleteStudent, onDeleteStudents
                     </td>
                     )}
                     <td className="px-2 py-1.5 text-center"><TierBadge rp={r.rp} thresholds={thresholds} /></td>
-                    <td className="px-2 py-1.5 text-center font-mono font-bold text-neon-blue">{r.rp}</td>
+                    <td className="px-2 py-1.5 text-center whitespace-nowrap">
+                      <span className="font-mono font-bold text-neon-blue">{r.rp}</span>
+                      {isClassManager && (
+                        <button type="button" onClick={() => openRed(s)} title="레드카드 (스포츠맨십 위반 감점)"
+                          className="ml-1.5 inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] font-black text-rose-500 border border-rose-500/30 hover:bg-rose-500/10 active:scale-95 align-middle">
+                          🟥{redCountOf(s.id) > 0 && <span>{redCountOf(s.id)}</span>}
+                        </button>
+                      )}
+                    </td>
                     <td className="px-2 py-1.5 text-center">
                       <button type="button" disabled={!dirty}
                         onClick={async () => {
@@ -787,6 +823,55 @@ export function AdminStudentManage({ students, onDeleteStudent, onDeleteStudents
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* 레드카드 팝업 */}
+      {redTarget && (() => {
+        const mine = redLog.filter((x) => x.player_id === redTarget.id);
+        return (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" onClick={() => setRedTarget(null)}>
+          <div className="relative w-full max-w-sm rounded-2xl border border-rose-500/40 bg-background p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <button onClick={() => setRedTarget(null)} title="닫기"
+              className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"><X className="size-5" /></button>
+            <h3 className="mb-1 text-base font-black text-rose-500">🟥 레드카드 — {redTarget.nickname || redTarget.name}</h3>
+            <p className="mb-4 text-[11px] text-muted-foreground">지금 {redTarget.rp} RP · 스포츠맨십 위반 감점. RP 재계산을 해도 남고, 아래에서 취소할 수 있어요.</p>
+            <div className="space-y-3">
+              <label className="flex items-center justify-between gap-2 text-xs font-bold">
+                감점
+                <span className="flex items-center gap-1">
+                  <span className="text-rose-500">−</span>
+                  <Input type="number" min={1} value={redAmount}
+                    onChange={(e) => { const v = parseInt(e.target.value, 10); setRedAmount(isNaN(v) ? 0 : v); }}
+                    className="h-8 w-20 text-center font-mono font-bold text-rose-500 bg-input border-border/30 p-0" />
+                  <span className="text-rose-500">RP</span>
+                </span>
+              </label>
+              <Input value={redNote} maxLength={100} onChange={(e) => setRedNote(e.target.value)}
+                placeholder="사유 (안 적어도 됨 · 관리자만 봄)" className="h-9 bg-input border-border/30 text-xs" />
+              <button onClick={runGiveRed} disabled={redBusy || redAmount < 1}
+                className="flex w-full items-center justify-center rounded-xl bg-rose-500 py-2.5 text-sm font-black text-white transition-all hover:bg-rose-500/85 active:scale-[0.98] disabled:opacity-50">
+                {redBusy ? "처리 중..." : `레드카드 주기 (−${Math.max(1, redAmount || 0)} RP)`}
+              </button>
+            </div>
+            {mine.length > 0 && (
+              <div className="mt-4 border-t border-border/30 pt-3 space-y-1.5">
+                <p className="text-[10px] font-bold text-muted-foreground">이번 시즌 레드카드 {mine.length}장</p>
+                {mine.map((x) => (
+                  <div key={x.id} className="flex items-center justify-between gap-2 rounded-lg bg-muted/20 px-2.5 py-1.5 text-[11px]">
+                    <span className="min-w-0 truncate">
+                      <b className="text-rose-500">−{x.decay_rp ?? 0}</b>
+                      <span className="ml-1.5 text-muted-foreground">{new Date(x.applied_at).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" })}</span>
+                      {x.note && <span className="ml-1.5">{x.note}</span>}
+                    </span>
+                    <button onClick={() => runCancelRed(x)} disabled={redBusy}
+                      className="shrink-0 text-[10px] font-bold text-muted-foreground underline-offset-2 hover:text-foreground hover:underline disabled:opacity-50">취소</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        );
+      })()}
 
       {/* 계정 연동 정보 팝업 */}
       {linkStudent && (
