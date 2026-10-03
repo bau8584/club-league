@@ -3099,8 +3099,23 @@ function useLeagueStoreInternal() {
     if (!isClassManagerRef.current) { toast.error("권한이 없습니다."); return false; }
     const cid = currentClassIdRef.current;
     if (!cid) return false;
-    const sid = assignmentSessionRef.current?.id ?? null;
+    const base = assignmentSessionRef.current;
+    const sid = base?.id ?? null;
     if (!sid) return true;
+    // 자동 채우기를 먼저 끈다. 켜 둔 채 줄만 비우면 빈 줄을 보고 바로 다시 채운다(10-03 실측).
+    if (base?.auto_round) {
+      const { data, error: offError } = await apiUpsertAssignmentSession({
+        classId: cid,
+        ownerId: sessionOwnerId(),
+        playerIds: base.player_ids,
+        matchType: base.match_type,
+        autoRound: false,
+      });
+      if (offError) { toast.error("자동 채우기 끄기 실패: " + offError.message); return false; }
+      const off = (data as AssignmentSession) ?? null;
+      setAssignmentSession(off);
+      assignmentSessionRef.current = off;
+    }
     const { error } = await apiClearQueue(cid, {
       sessionId: sid,
       myUid: leagueTypeRef.current === "school" ? myUidRef.current : null,
@@ -3113,7 +3128,7 @@ function useLeagueStoreInternal() {
     }
     await loadScheduled(cid);
     return true;
-  }, [loadScheduled, loadAssignmentSession]);
+  }, [loadScheduled, loadAssignmentSession, sessionOwnerId]);
 
   /**
    * 명단·종목만 고친다(세션 경계 아님). 지각·조퇴가 여기로 들어온다 —
