@@ -120,6 +120,11 @@ export interface AssignmentInput {
    * 못 붙이면 그 경기를 안 뽑는다. 생략하면 지금과 같다.
    */
   apart?: Array<[string, string]>;
+  /**
+   * 피하고 싶은 넷(단식은 둘) — 선생님이 방금 지운 대진. 금지가 아니라 "같은 넷이 다시 모임"
+   * 한 번만큼의 감점이다. 다른 길이 있으면 피하고, 인원이 적어 그것뿐이면 그대로 뽑는다.
+   */
+  avoidGroups?: string[][];
 }
 
 export interface AssignedMatch {
@@ -223,10 +228,18 @@ export interface HistoryStats {
    * ㄱㄴ/ㄷㄹ → ㄱㄷ/ㄴㄹ → ㄱㄹ/ㄴㄷ 처럼 편만 바꾼 재대결이 거의 공짜가 된다.
    */
   group: Map<string, number>;
+  /**
+   * 같은 세 명이 한 경기에 다시 모인 횟수(복식만). 넷이 통째로 같지 않아도 셋이 계속 같이
+   * 묶이면 아이들 눈엔 "또 쟤네랑"이다(10-06 컬링: 같은 셋이 두 번씩).
+   */
+  trio: Map<string, number>;
 }
 
+/** 같은 셋이 다시 모일 때의 감점(다양성 항목 안). 파트너 반복 한 번과 같은 무게. */
+const TRIO_PENALTY = 60;
+
 function emptyStats(): HistoryStats {
-  return { playCount: new Map(), partner: new Map(), opponent: new Map(), group: new Map() };
+  return { playCount: new Map(), partner: new Map(), opponent: new Map(), group: new Map(), trio: new Map() };
 }
 
 function groupKey(ids: string[]): string {
@@ -248,7 +261,14 @@ function applyMatch(stats: HistoryStats, teamA: string[], teamB: string[]) {
   for (const a of teamA) {
     for (const b of teamB) bump(stats.opponent, pairKey(a, b));
   }
-  if (teamA.length && teamB.length) bump(stats.group, groupKey([...teamA, ...teamB]));
+  const all = [...teamA, ...teamB];
+  if (teamA.length && teamB.length) bump(stats.group, groupKey(all));
+  if (all.length === 4) for (const t of trios(all)) bump(stats.trio, t);
+}
+
+/** 넷 중 셋을 고르는 네 가지 키. */
+function trios(four: string[]): string[] {
+  return four.map((_, skip) => groupKey(four.filter((__, i) => i !== skip)));
 }
 
 /**
@@ -303,6 +323,7 @@ function costParts(
   relaxed: Set<string>,
   jitter: Map<string, number>,
   groupOf: Map<string, string>,
+  avoid: Set<string>,
 ): CostParts {
   let diversity = 0;
   for (const team of [teamA, teamB]) {
@@ -316,6 +337,11 @@ function costParts(
     for (const b of teamB) {
       diversity += w.opponentRepeat * (stats.opponent.get(pairKey(a, b)) ?? 0);
     }
+  }
+
+  const everyone = [...teamA, ...teamB];
+  if (everyone.length === 4) {
+    for (const t of trios(everyone)) diversity += TRIO_PENALTY * (stats.trio.get(t) ?? 0);
   }
 
   let balance = 0;
@@ -354,7 +380,7 @@ function costParts(
     homogeneity: gap + spreadSum,
     relax,
     ungrouped,
-    regroup: stats.group.get(groupKey(members)) ?? 0,
+    regroup: (stats.group.get(groupKey(members)) ?? 0) + (avoid.has(groupKey(members)) ? 1 : 0),
     jitter: jit,
   };
 }
@@ -522,6 +548,8 @@ export function calculateAssignment(input: AssignmentInput): AssignmentOutput {
     return false;
   };
 
+  const avoid = new Set((input.avoidGroups ?? []).filter((g) => g.length > 0).map(groupKey));
+
   // 떼어 놓을 짝. 명단에 없는 사람이 낀 짝은 볼 필요가 없다.
   const apartOf = new Map<string, Set<string>>();
   for (const [a, b] of input.apart ?? []) {
@@ -600,7 +628,7 @@ export function calculateAssignment(input: AssignmentInput): AssignmentOutput {
           if (groupOf.size > 0 && mixesGroups(group)) continue;
           if (apartOf.size > 0 && hasApart(group)) continue;
           for (const [teamA, teamB] of splitsOf(group, teamSize)) {
-            const parts = costParts(teamA, teamB, stats, ratings, w, relaxed, jitter, groupOf);
+            const parts = costParts(teamA, teamB, stats, ratings, w, relaxed, jitter, groupOf, avoid);
             const key = sortKey(parts, preset, balanceLimit, skillGranularity);
             if (!found || compareKeys(key, found.key) < 0) {
               found = {

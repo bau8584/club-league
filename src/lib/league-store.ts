@@ -3024,25 +3024,41 @@ function useLeagueStoreInternal() {
     return true;
   }, [loadScheduled, scheduledMatches]);
 
+  // 선생님이 방금 지운 대진(이 기기에서). 다음 채우기에서 같은 넷을 감점한다 — 금지는 아니다.
+  // 섞는 값만 바꿔서는 인원이 같으면 또 같은 넷이 나올 수 있다(10-06 컬링, PLAN-대기열-수정 6번).
+  const removedGroupsRef = useRef<string[][]>([]);
+  const rememberRemoved = (rows: ScheduledMatch[]) => {
+    for (const m of rows) {
+      const ids = (m.player_ids?.length
+        ? m.player_ids
+        : [m.player_a_id, m.player_b_id, m.player_a2_id, m.player_b2_id]).filter(Boolean) as string[];
+      if (ids.length) removedGroupsRef.current.push(ids);
+    }
+    removedGroupsRef.current = removedGroupsRef.current.slice(-20);
+  };
+
   // 대진 제거 (완료/취소) — 행 삭제
   const removeScheduledMatch = useCallback(async (id: string): Promise<boolean> => {
     if (!isClassManagerRef.current) { toast.error("권한이 없습니다."); return false; }
     const cid = currentClassIdRef.current;
+    rememberRemoved(scheduledMatches.filter((m) => m.id === id && (m.status === "waiting" || m.status === "called")));
     const { error } = await apiDeleteScheduledMatch(id);
     if (error) { toast.error("삭제 실패: " + error.message); return false; }
     if (cid) await loadScheduled(cid);
     return true;
-  }, [loadScheduled]);
+  }, [loadScheduled, scheduledMatches]);
 
   /** 여러 줄을 한 번에 뺀다. 한 줄씩 지우면 폰에서 N번 확인해야 한다. */
   const removeScheduledMatches = useCallback(async (ids: string[]): Promise<boolean> => {
     if (!isClassManagerRef.current) { toast.error("권한이 없습니다."); return false; }
     const cid = currentClassIdRef.current;
+    const idSet = new Set(ids);
+    rememberRemoved(scheduledMatches.filter((m) => idSet.has(m.id) && (m.status === "waiting" || m.status === "called")));
     const { error } = await apiDeleteScheduledMatches(ids);
     if (error) { toast.error("삭제 실패: " + error.message); return false; }
     if (cid) await loadScheduled(cid);
     return true;
-  }, [loadScheduled]);
+  }, [loadScheduled, scheduledMatches]);
 
   /**
    * 대기열 한 줄에서 한 사람을 다른 사람으로 바꾼다. 자리는 그대로(팀·짝 유지).
@@ -3407,7 +3423,9 @@ function useLeagueStoreInternal() {
       count: n,
       teamSize,
       policy: preset,
-      seed: opts?.seed,
+      // 누를 때마다 섞는 값을 바꾼다. 늘 0이면 같은 상황에서 다시 뽑을 때 똑같은 대진이 나온다.
+      seed: opts?.seed ?? Math.floor(Math.random() * 2 ** 31),
+      ...(removedGroupsRef.current.length ? { avoidGroups: removedGroupsRef.current } : {}),
       // 섞어서 모드(또는 성별 꺼짐)는 groupOf 자체를 안 넘긴다 — 계산기 경로가 전과 같다.
       ...(separate ? { groupOf: genderGroupOf(pool, genderOf) } : {}),
       ...(apart.length ? { apart } : {}),
@@ -3416,15 +3434,39 @@ function useLeagueStoreInternal() {
     let out: { matches: AssignedMatch[]; shortfall: number };
     if (splitPlan) {
       // 남녀 따로 채우기: 남자 몇 경기·여자 몇 경기를 따로 뽑는다. 한 번에 뽑으면 계산기가
-      // 한쪽 성별에서 다 뽑아 그쪽 "밖에 남김"이 사라질 수 있다. 미지정은 남자 판에서 먼저 쓰고
-      // 남은 사람이 여자 판 후보가 된다.
+      // 한쪽 성별에서 다 뽑아 그쪽 "밖에 남김"이 사라질 수 있다.
+      // 오늘(줄 포함) 1인당 덜 뛴 성별을 먼저 뽑고 줄에도 먼저 세운다 — 늘 남자가 앞 번호를 받던 것
+      // (10-06 컬링: 남 7경기·여 2경기). 미지정은 먼저 뽑는 쪽이 먼저 쓴다. 그 뒤로는 남녀를 번갈아 세운다.
       const pids = participantIds;
-      const mPool = pids.filter((id) => genderOf(id) !== "F");
-      const fPool = pids.filter((id) => genderOf(id) !== "M");
-      const mOut = splitPlan.m > 0 ? calc(mPool, [...queuedIds], splitPlan.m) : { matches: [], shortfall: 0 };
-      const used = new Set(mOut.matches.flatMap((m) => [...m.teamA, ...m.teamB]));
-      const fOut = splitPlan.f > 0 ? calc(fPool, [...queuedIds, ...used], splitPlan.f) : { matches: [], shortfall: 0 };
-      out = { matches: [...mOut.matches, ...fOut.matches], shortfall: mOut.shortfall + fOut.shortfall };
+      const perHead = (g: "M" | "F") => {
+        const heads = pids.filter((id) => genderOf(id) === g).length;
+        if (!heads) return Infinity;
+        let plays = 0;
+        for (const t of [...matchesNow.filter(isTodayMatch).map(teamsOfMatch), ...queueHistory, ...queuePlayOnly]) {
+          for (const id of [...t.teamA, ...t.teamB]) if (genderOf(id) === g) plays++;
+        }
+        return plays / heads;
+      };
+      const femaleFirst = perHead("F") < perHead("M");
+      const order: Array<{ g: "M" | "F"; n: number }> = femaleFirst
+        ? [{ g: "F", n: splitPlan.f }, { g: "M", n: splitPlan.m }]
+        : [{ g: "M", n: splitPlan.m }, { g: "F", n: splitPlan.f }];
+      const used = new Set<string>();
+      const outs: AssignedMatch[][] = [];
+      let shortfall = 0;
+      for (const { g, n } of order) {
+        const pool = pids.filter((id) => genderOf(id) !== (g === "M" ? "F" : "M"));
+        const o = n > 0 ? calc(pool, [...queuedIds, ...used], n) : { matches: [], shortfall: 0 };
+        for (const m of o.matches) for (const id of [...m.teamA, ...m.teamB]) used.add(id);
+        outs.push(o.matches);
+        shortfall += o.shortfall;
+      }
+      const woven: AssignedMatch[] = [];
+      for (let i = 0; i < Math.max(outs[0].length, outs[1].length); i++) {
+        if (outs[0][i]) woven.push(outs[0][i]);
+        if (outs[1][i]) woven.push(outs[1][i]);
+      }
+      out = { matches: woven, shortfall };
     } else {
       out = calc(participantIds, [...queuedIds], count);
     }

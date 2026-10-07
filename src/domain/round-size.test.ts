@@ -21,3 +21,14 @@ describe("separateGamesKeepingOut", () => {
     expect(separateGamesKeepingOut({ m: 6, f: 0, u: 2 }, { m: 0, f: 0 }, 4)).toMatchObject({ m: 2, f: 0, uToM: 2 });
   });
 });
+
+describe("separateGamesKeepingOut — 성별 인원에 비례해 남김", () => {
+  it("남 12·여 8 둘 다 줄이 있어도 여자 경기가 0이 안 된다", () => {
+    const r = separateGamesKeepingOut({ m: 12, f: 8, u: 0 }, { m: 1, f: 1 }, 4);
+    expect(r.f).toBeGreaterThan(0);
+    expect(r.m).toBeGreaterThan(0);
+  });
+  it("여 7명(한 경기 분량보다 많음)이면 최소 1경기", () => {
+    expect(separateGamesKeepingOut({ m: 12, f: 7, u: 0 }, { m: 1, f: 1 }, 4).f).toBe(1);
+  });
+});
