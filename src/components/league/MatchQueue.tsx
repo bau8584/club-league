@@ -238,17 +238,25 @@ export function MatchQueue({
   // [한 바퀴] 옆 물음표를 누르면 뜨는 말풍선.
   const [helpOpen, setHelpOpen] = useState(false);
 
+  // 버튼 잠금은 ref로 — filling(상태)은 다음 그림 때야 버튼을 막아서, 빠른 두 번 누름이 둘 다 들어갔다.
+  const fillLock = useRef(false);
   const fill = async (n: number | "round", allowRegroup = false) => {
+    if (fillLock.current) return 0;
+    fillLock.current = true;
     setFilling(true);
     setRegroupAsk(false);
-    // 종목·남녀는 세션 설정이다. 여기서는 경기 수만 정한다 — 한 바퀴는 스토어가 센다
-    // (남녀 따로일 때 남 바퀴 + 여 바퀴를 여기와 같은 규칙으로 세므로 어긋날 일이 없다).
-    const made = await fillAssignmentQueue(
-      n === "round" ? { mode: "round", policy: preset } : { count: n, policy: preset, allowRegroup },
-    );
-    if (made === REGROUP_NEEDS_CONFIRM) setRegroupAsk(true);
-    setFilling(false);
-    return made;
+    try {
+      // 종목·남녀는 세션 설정이다. 여기서는 경기 수만 정한다 — 한 바퀴는 스토어가 센다
+      // (남녀 따로일 때 남 바퀴 + 여 바퀴를 여기와 같은 규칙으로 세므로 어긋날 일이 없다).
+      const made = await fillAssignmentQueue(
+        n === "round" ? { mode: "round", policy: preset } : { count: n, policy: preset, allowRegroup },
+      );
+      if (made === REGROUP_NEEDS_CONFIRM) setRegroupAsk(true);
+      return made;
+    } finally {
+      fillLock.current = false;
+      setFilling(false);
+    }
   };
 
   // 한 바퀴 자동 — 코트를 쓰고 스위치를 켰을 때만. 대기 줄(코트에 못 든 줄)이 코트 수 − 1 이

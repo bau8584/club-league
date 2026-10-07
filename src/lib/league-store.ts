@@ -3129,15 +3129,17 @@ function useLeagueStoreInternal() {
     if (!cid) return false;
     const base = assignmentSessionRef.current;
     const sid = base?.id ?? null;
-    if (!sid) return true;
+    if (!base || !sid) return true;
     // 자동 채우기를 먼저 끈다. 켜 둔 채 줄만 비우면 빈 줄을 보고 바로 다시 채운다(10-03 실측).
-    if (base?.auto_round) {
+    // 번호도 여기서 1번으로 되돌린다 — 다음 수업이 #1부터 시작하게(2026-10-07).
+    {
       const { data, error: offError } = await apiUpsertAssignmentSession({
         classId: cid,
         ownerId: sessionOwnerId(),
         playerIds: base.player_ids,
         matchType: base.match_type,
-        autoRound: false,
+        ...(base.auto_round ? { autoRound: false } : {}),
+        resetSeq: true,
       });
       if (offError) { toast.error("자동 채우기 끄기 실패: " + offError.message); return false; }
       const off = (data as AssignmentSession) ?? null;
