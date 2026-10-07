@@ -27,6 +27,9 @@ export function roundGamesKeepingOut(
   if (queued === 0) return games;
   let n = games;
   while (n > 0 && free - n * perMatch < keep) n--;
+  // 인원이 적으면(5명·코트 2 단식, 10명·코트 3 복식) 남길 몫을 다 채우면 0경기가 되어 자동
+  // 채우기가 멈춘다. 방금 끝난 사람 말고 한 명이라도 더 놀고 있으면 한 경기는 넣는다.
+  if (n === 0 && games > 0 && free > perMatch) n = 1;
   return n;
 }
 

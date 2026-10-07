@@ -205,6 +205,12 @@ export function MatchQueue({
     return (assignmentSession?.player_ids ?? []).filter((id) => alive.has(id) && !busy.has(id));
   }, [queue, assignmentSession?.player_ids, students]);
   const free = freeIds.length;
+  // 오늘 명단이 코트를 다 못 채우면 몇 개만 쓰는지 알려 준다(예: 10명·복식·코트 3 → 2개만).
+  const rosterCount = useMemo(() => {
+    const alive = new Set(students.map((s) => s.id));
+    return (assignmentSession?.player_ids ?? []).filter((id) => alive.has(id)).length;
+  }, [assignmentSession?.player_ids, students]);
+  const usableCourts = Math.floor(rosterCount / perMatch);
   // 남녀 따로 — 세션 설정이 "따로"이고 이 리그가 성별을 쓸 때만(스토어와 같은 조건).
   const separate = assignmentSession?.gender_mode === "separate" && genderEnabled;
   const freeByGender = useMemo(
@@ -303,6 +309,11 @@ export function MatchQueue({
 
   return (
     <div>
+      {courtCount != null && courtCount > 0 && rosterCount > 0 && usableCourts < courtCount && (
+        <div className="mb-2 rounded-xl border border-neon-blue/40 bg-neon-blue/10 px-3 py-2 text-sm font-bold text-neon-blue">
+          학생 {rosterCount}명 → 코트 {courtCount}개 중 {usableCourts}개만 써요
+        </div>
+      )}
       {/* 방금 코트가 빈 줄 — 선생님 화면에서는 확인용 한 줄. 크게는 교실 화면이 띄운다. */}
       {callout.length > 0 && (
         <div className="mb-2 rounded-xl border border-neon-green/50 bg-neon-green/10 px-3 py-2 text-sm font-black text-neon-green animate-in fade-in duration-200">
