@@ -418,6 +418,32 @@ export function MatchResultModal({ resultData, thresholds, genderEnabled, closeL
     }
   }, [resultData]);
 
+  // 10초 뒤 자동으로 확인(닫기). 버튼 글자에 남은 초를 보여 준다.
+  const [autoCloseLeft, setAutoCloseLeft] = useState(10);
+  const onCloseRef = React.useRef(onClose);
+  onCloseRef.current = onClose;
+  const closedRef = React.useRef(false);
+  const handleClose = () => {
+    if (closedRef.current) return;
+    closedRef.current = true;
+    onCloseRef.current();
+  };
+  useEffect(() => {
+    closedRef.current = false;
+    setAutoCloseLeft(10);
+    const t = setInterval(() => {
+      setAutoCloseLeft((s) => {
+        if (s <= 1) {
+          clearInterval(t);
+          setTimeout(handleClose, 0);
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+    return () => clearInterval(t);
+  }, [resultData]);
+
   // Player Receipt Component (defined inside RecordMatch to access animationStep, countUpProgress, etc. easily)
   const renderPlayerReceipt = (p: PlayerResult, rewards: ReturnType<typeof getRewardItems>) => {
     const isPromoted = p.promoted;
@@ -1047,7 +1073,7 @@ export function MatchResultModal({ resultData, thresholds, genderEnabled, closeL
           {/* Confirmation Close Button */}
           <div className="relative z-10 w-full mt-6 flex justify-center shrink-0">
             <Button
-              onClick={onClose}
+              onClick={handleClose}
               className={cn(
                 "result-close-btn h-12 px-12 text-foreground font-black uppercase tracking-widest active:scale-95 transition-all w-full sm:w-auto rounded-lg border",
                 isRankUp
@@ -1055,7 +1081,7 @@ export function MatchResultModal({ resultData, thresholds, genderEnabled, closeL
                   : "bg-gradient-to-r from-neon-blue via-neon-blue to-neon-blue hover:from-neon-blue hover:to-neon-blue border-neon-blue/40 glow-primary"
               )}
             >
-              {closeLabel}
+              {closeLabel}({autoCloseLeft})
             </Button>
           </div>
 
