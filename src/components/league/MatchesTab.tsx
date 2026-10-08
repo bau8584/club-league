@@ -7,6 +7,7 @@ import { X, Trophy, ChevronRight, ClipboardList } from "lucide-react";
 import { useLeagueStore } from "@/lib/league-store";
 import { RecordMatch, type MatchResultData, type PlayerResult } from "./RecordMatch";
 import { SessionCard } from "./SessionCard";
+import { RedCardQuick } from "./RedCardQuick";
 import { getTier, type Match, type Student } from "@/lib/league-types";
 import { useLeagueTerms, useIsSchoolLeague } from "@/lib/league-terms";
 
@@ -376,6 +377,9 @@ export function MatchesTab({
           />
         </Card>
       )}
+
+      {/* ── 레드카드 (관리자) ── 수업 중이면 참석자, 아니면 전체 명단에서 고른다 */}
+      {isClassManager && !readOnly && <RedCardQuick />}
 
       {/* ── 대기열 (동호회) ── 회원 예약·운영진 소집·뽑힌 대진이 한 목록. 학교는 위에서 그렸다. */}
       {!isSchool && !readOnly && (
