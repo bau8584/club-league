@@ -383,7 +383,7 @@ export function MatchesTab({
 
       {/* ── 대기열 (동호회) ── 회원 예약·운영진 소집·뽑힌 대진이 한 목록. 학교는 위에서 그렸다. */}
       {!isSchool && !readOnly && (
-        <SessionCard canManage={isClassManager} onRecordRow={openQueueRow} />
+        <SessionCard canManage={isClassManager} canRecord={canRecord && (matchInputMode === "free" ? "mine" : "all")} onRecordRow={openQueueRow} />
       )}
 
       {canRecord && !isSchool && (

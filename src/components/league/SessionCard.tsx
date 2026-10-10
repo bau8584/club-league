@@ -22,9 +22,11 @@ import { MatchQueue } from "./MatchQueue";
  */
 export function SessionCard({
   canManage,
+  canRecord = false,
   onRecordRow,
 }: {
   canManage: boolean;
+  canRecord?: "all" | "mine" | false;
   onRecordRow: (row: ScheduledMatch) => void;
 }) {
   const { students, assignmentSession: rawSession, matches, leagueType } = useLeagueStore();
@@ -94,7 +96,7 @@ export function SessionCard({
             </p>
           </div>
         </div>
-        <MatchQueue canManage={false} onRecordRow={onRecordRow} />
+        <MatchQueue canManage={false} canRecord={canRecord} onRecordRow={onRecordRow} />
       </Card>
     );
   }

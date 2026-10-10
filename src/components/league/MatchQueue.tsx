@@ -101,9 +101,12 @@ const ROUND_HELP =
  */
 export function MatchQueue({
   canManage,
+  canRecord = false,
   onRecordRow,
 }: {
   canManage: boolean;
+  /** 회원 줄의 [점수 넣기]. "all" = 모든 줄, "mine" = 내가 낀 줄만(자율 모드), false = 없음(관리자만 입력). */
+  canRecord?: "all" | "mine" | false;
   /** 줄의 [결과 입력] — 4명이 확정이므로 선수 선택 없이 바로 점수판으로 간다. */
   onRecordRow: (row: ScheduledMatch) => void;
 }) {
@@ -402,6 +405,16 @@ export function MatchQueue({
               return (
                 <div key={r.id} className={cn(rowStyle, isClub && (!confirmed || mine) ? "pr-1" : "pr-3")}>
                   {names}
+                  {isClub && confirmed && (canRecord === "all" || (canRecord === "mine" && mine)) && (
+                    <button
+                      type="button"
+                      onClick={() => onRecordRow(r)}
+                      className="flex h-8 shrink-0 items-center gap-0.5 rounded-lg bg-neon-blue px-2.5 text-[11px] font-black text-primary-foreground hover:bg-neon-blue/90"
+                    >
+                      점수 넣기
+                      <ChevronRight className="size-3.5" />
+                    </button>
+                  )}
                   {canJoin && (
                     <button
                       type="button"
