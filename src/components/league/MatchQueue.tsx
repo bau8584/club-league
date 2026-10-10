@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { BellRing, Check, ChevronDown, ChevronRight, CircleHelp, ListChecks, Pencil, Plus, UserPlus, X } from "lucide-react";
@@ -126,6 +127,7 @@ export function MatchQueue({
     removeScheduledMatches,
     endClassQueue,
     replaceQueuePlayer,
+    matches,
     joinReservation,
     leaveReservation,
     notifyReservation,
@@ -208,6 +210,30 @@ export function MatchQueue({
     return (assignmentSession?.player_ids ?? []).filter((id) => alive.has(id) && !busy.has(id));
   }, [queue, assignmentSession?.player_ids, students]);
   const free = freeIds.length;
+
+  // 이름 옆 × — 그 사람을 빼고 놀고 있는 사람 중 오늘 가장 덜 뛴 사람을 자동으로 넣는다.
+  // 남녀 따로면 같은 성별에서 고른다. 동점이면 무작위.
+  const [subBusy, setSubBusy] = useState(false);
+  const autoSubstitute = async (row: ScheduledMatch, outId: string) => {
+    if (subBusy) return;
+    const today = new Date().toDateString();
+    const played = new Map<string, number>();
+    for (const m of matches) {
+      if (new Date(m.date).toDateString() !== today) continue;
+      for (const id of [m.playerAId, m.playerBId, m.playerA2Id, m.playerB2Id]) if (id) played.set(id, (played.get(id) ?? 0) + 1);
+    }
+    const g = byId.get(outId)?.gender;
+    let pool = freeIds;
+    if (separate && (g === "M" || g === "F")) pool = pool.filter((id) => byId.get(id)?.gender === g);
+    if (pool.length === 0) { toast.error("들어갈 사람이 없어요. 모두 줄에 서 있어요."); return; }
+    const pick = [...pool]
+      .map((id) => ({ id, n: played.get(id) ?? 0, r: Math.random() }))
+      .sort((a, b) => a.n - b.n || a.r - b.r)[0]!.id;
+    setSubBusy(true);
+    try {
+      if (await replaceQueuePlayer(row.id, outId, pick)) toast.success(`${dn(byId.get(outId))} → ${dn(byId.get(pick))}`);
+    } finally { setSubBusy(false); }
+  };
   // 오늘 명단이 코트를 다 못 채우면 몇 개만 쓰는지 알려 준다(예: 10명·복식·코트 3 → 2개만).
   const rosterCount = useMemo(() => {
     const alive = new Set(students.map((s) => s.id));
@@ -345,6 +371,27 @@ export function MatchQueue({
             const mine = !!myPlayerId && [...teamA, ...teamB, ...pool].includes(myPlayerId);
             const nameOf = (id: string) => dn(byId.get(id));
             const court = courtCount ? r.court : null;
+            // 관리자 화면의 팀 확정 줄은 이름마다 × (빼고 자동으로 다른 사람).
+            const subbable = canManage && confirmed && !picking;
+            const nameNode = (id: string) =>
+              subbable ? (
+                <span key={id} className="inline-flex items-center">
+                  {nameOf(id)}
+                  <button
+                    type="button"
+                    disabled={subBusy}
+                    onClick={(e) => { e.stopPropagation(); autoSubstitute(r, id); }}
+                    aria-label={`${nameOf(id)} 빼고 다른 사람 넣기`}
+                    className="ml-0.5 flex size-6 items-center justify-center rounded-md text-muted-foreground/60 hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
+                  >
+                    <X className="size-3" />
+                  </button>
+                </span>
+              ) : (
+                <span key={id}>{nameOf(id)}</span>
+              );
+            const joinNodes = (ids: string[]) =>
+              ids.flatMap((id, i) => (i === 0 ? [nameNode(id)] : [<span key={`d${id}`}>·</span>, nameNode(id)]));
             const names = (
               <>
                 {/* 번호가 아이들이 부르는 이름이다. 목록에서 제일 먼저 눈에 띄어야 한다. */}
@@ -359,11 +406,11 @@ export function MatchQueue({
                 <span className="min-w-0 flex-1 truncate text-left text-sm font-bold text-foreground">
                   {confirmed ? (
                     <>
-                      {teamA.map(nameOf).join("·")}
+                      {joinNodes(teamA)}
                       <span className="mx-1.5 text-[11px] font-black text-muted-foreground">
                         vs
                       </span>
-                      {teamB.map(nameOf).join("·")}
+                      {joinNodes(teamB)}
                     </>
                   ) : (
                     pool.map(nameOf).join(" · ")
@@ -481,13 +528,16 @@ export function MatchQueue({
             return (
               // 폰에서는 두 줄: 윗줄 이름 전체, 아랫줄 버튼들. 한 줄에 버튼 4개면 × 가 카드 밖으로 밀리고 이름이 잘렸다(2026-10-10).
               <div key={r.id} className={cn(rowStyle, "flex-wrap gap-y-1 py-1 pr-1 sm:flex-nowrap sm:py-0")}>
-                <button
-                  type="button"
+                {/* 이름 옆 × 버튼이 안에 들어가므로 button 이 아니라 div(버튼 안 버튼 금지). */}
+                <div
+                  role="button"
+                  tabIndex={0}
                   onClick={() => onRecordRow(r)}
-                  className="flex min-h-9 min-w-0 basis-full items-center gap-2 text-left sm:min-h-11 sm:flex-1 sm:basis-auto"
+                  onKeyDown={(e) => { if (e.key === "Enter") onRecordRow(r); }}
+                  className="flex min-h-9 min-w-0 basis-full cursor-pointer items-center gap-2 text-left sm:min-h-11 sm:flex-1 sm:basis-auto"
                 >
                   {names}
-                </button>
+                </div>
                 {/* 화살표만으로는 아이들이 "누르면 한 번에 채워진다"를 몰랐다(2026-10-01) → 버튼처럼 보이게. */}
                 <button
                   type="button"
