@@ -466,18 +466,23 @@ export function MatchQueue({
             }
 
             return (
-              <div key={r.id} className={cn(rowStyle, "pr-1")}>
+              // 폰에서는 두 줄: 윗줄 이름 전체, 아랫줄 버튼들. 한 줄에 버튼 4개면 × 가 카드 밖으로 밀리고 이름이 잘렸다(2026-10-10).
+              <div key={r.id} className={cn(rowStyle, "flex-wrap gap-y-1 py-1 pr-1 sm:flex-nowrap sm:py-0")}>
                 <button
                   type="button"
                   onClick={() => onRecordRow(r)}
-                  className="group flex min-h-11 min-w-0 flex-1 items-center gap-2 text-left"
+                  className="flex min-h-9 min-w-0 basis-full items-center gap-2 text-left sm:min-h-11 sm:flex-1 sm:basis-auto"
                 >
                   {names}
-                  {/* 화살표만으로는 아이들이 "누르면 한 번에 채워진다"를 몰랐다(2026-10-01) → 버튼처럼 보이게. */}
-                  <span className="flex h-8 shrink-0 items-center gap-0.5 rounded-lg bg-neon-blue px-2.5 text-[11px] font-black text-primary-foreground group-hover:bg-neon-blue/90">
-                    점수 넣기
-                    <ChevronRight className="size-3.5" />
-                  </span>
+                </button>
+                {/* 화살표만으로는 아이들이 "누르면 한 번에 채워진다"를 몰랐다(2026-10-01) → 버튼처럼 보이게. */}
+                <button
+                  type="button"
+                  onClick={() => onRecordRow(r)}
+                  className="flex h-8 flex-1 items-center justify-center gap-0.5 rounded-lg bg-neon-blue px-2.5 text-[11px] font-black text-primary-foreground hover:bg-neon-blue/90 sm:flex-none"
+                >
+                  점수 넣기
+                  <ChevronRight className="size-3.5" />
                 </button>
                 {/* 사람 바꾸기는 연필로. 이름을 눌러 바꾸게 하면 폰에서 이름이 행 대부분이라
                     결과 입력하려다 바꾸기 창이 뜬다 — 행 누르기의 뜻은 하나여야 한다. */}
