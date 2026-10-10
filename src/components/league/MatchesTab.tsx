@@ -510,7 +510,7 @@ export function MatchesTab({
                 <X className="size-5" />
               </button>
             </div>
-            {activeReservation && (
+            {activeReservation && isReservation(activeReservation) && (
               <p className="mb-3 rounded-lg border border-border/40 bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">
                 예약 참가자:{" "}
                 {(activeReservation.player_ids || []).map((id) => dn(byId.get(id))).join(" · ")} —
@@ -528,6 +528,11 @@ export function MatchesTab({
               onUpdateGender={updateStudentGender}
               lockedPlayerId={lockedPlayerId}
               defaultPlayerId={defaultPlayerId}
+              teamsLocked={
+                !!activeReservation && !isReservation(activeReservation) &&
+                !!activeReservation.player_a_id && !!activeReservation.player_b_id &&
+                !!activeReservation.player_a2_id === !!activeReservation.player_b2_id
+              }
               onCloseResult={() => {
                 setRecordOpen(false);
                 setActiveReservation(null);

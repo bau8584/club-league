@@ -48,7 +48,10 @@ export function RecordMatch({
   onCloseResult,
   onDirtyChange,
   queueHint,
+  teamsLocked,
 }: {
+  /** 팀이 정해진 대진(대기열·운영진 대진)의 결과 입력 — 선수·경기 방식을 못 바꾼다. 바꾸기는 대기열에서. */
+  teamsLocked?: boolean;
   students: Student[];
   /** 대기열에 줄이 있으면 빈 칸 안내가 대기열 [점수 넣기]를 가리킨다(직접 고르기는 대기열 밖 경기용). */
   queueHint?: boolean;
@@ -606,7 +609,7 @@ export function RecordMatch({
           ]).map(({ type, icon: Icon, label }) => {
             const selected = matchType === type;
             // 잠긴 방식이 아닌 쪽은 흐리게 + 비활성 — 무엇이 고정됐는지 그대로 보이게 둔다.
-            const disabled = !!lockedMatchType && !selected;
+            const disabled = (!!lockedMatchType || !!teamsLocked) && !selected;
             return (
               <button
                 key={type}
@@ -655,12 +658,12 @@ export function RecordMatch({
         const act = activeSlot ? slots[activeSlot] : null;
         const renderSlot = (key: "A" | "A2" | "B" | "B2", label: string) => {
           const sl = slots[key];
-          const locked = !!lockedPlayerId && key === "A";
+          const locked = !!teamsLocked || (!!lockedPlayerId && key === "A");
           const isDefaultMe = key === "A" && !!defaultPlayerId && sl.value.studentId === defaultPlayerId;
           return (
             <Slot
               accent={sl.accent}
-              label={locked ? "나" : isDefaultMe ? `${label} · 나` : label}
+              label={locked && !teamsLocked ? "나" : isDefaultMe ? `${label} · 나` : label}
               player={sl.player}
               active={activeSlot === key}
               locked={locked}
@@ -691,7 +694,7 @@ export function RecordMatch({
             .filter((k) => k.startsWith(team))
             .map((k) => ({
               name: slots[k].player ? playerLabel(slots[k].player!) : "?",
-              onEdit: () => setActiveSlot(k),
+              onEdit: () => { if (!teamsLocked) setActiveSlot(k); },
             }));
         // 명단에서 "이 선수 어디 있지?"를 답하는 데 쓰는 짧은 이름.
         const shortSlot = (k: "A" | "A2" | "B" | "B2") => {
@@ -740,6 +743,9 @@ export function RecordMatch({
         // 눈에 잘 띄지 않는다.
         return (
           <div className="space-y-3">
+          {teamsLocked && (
+            <p className="text-center text-[11px] font-bold text-muted-foreground">정해진 팀이에요. 선수를 바꾸려면 대기열에서 고치세요.</p>
+          )}
           <div
             ref={matchupRef}
             className={cn(
