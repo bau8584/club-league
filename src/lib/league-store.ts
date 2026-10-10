@@ -3063,12 +3063,13 @@ function useLeagueStoreInternal() {
   /**
    * 대기열 한 줄에서 한 사람을 다른 사람으로 바꾼다. 자리는 그대로(팀·짝 유지).
    * 다른 줄에 이미 선 사람도 넣을 수 있다 — 막지 않고 화면에서 표시만 한다.
+   * 같은 줄 사람끼리면 서로 자리를 맞바꾼다.
    */
   const replaceQueuePlayer = useCallback(async (rowId: string, fromId: string, toId: string): Promise<boolean> => {
     if (!isClassManagerRef.current) { toast.error("권한이 없습니다."); return false; }
     const row = scheduledMatches.find((m) => m.id === rowId);
     if (!row) return false;
-    const swap = (id: string | null | undefined) => (id === fromId ? toId : id);
+    const swap = (id: string | null | undefined) => (id === fromId ? toId : id === toId ? fromId : id);
     const teamA = [swap(row.player_a_id), swap(row.player_a2_id)].filter(Boolean) as string[];
     const teamB = [swap(row.player_b_id), swap(row.player_b2_id)].filter(Boolean) as string[];
     const { error } = await apiUpdateScheduledTeams(rowId, teamA, teamB);

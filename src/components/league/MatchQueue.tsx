@@ -972,6 +972,7 @@ export function MatchQueue({
  *
  * 위에 그 줄의 네 사람(단식이면 둘), 아래에 오늘 명단. 위에서 누구를 뺄지 누르고 아래에서
  * 누구를 넣을지 누르면 끝이다 — 저장 버튼이 없다. 자리(팀·짝)는 그대로다.
+ * 위에서 두 사람을 차례로 누르면 둘이 자리를 맞바꾼다(팀원 바꾸기).
  *
  * 명단에 없는 사람은 선택지에 없다(참석한 사람만 대진에 들어간다는 규칙). 다른 줄에 이미 선
  * 사람은 막지 않고 "#n" 표시만 한다 — 두 줄에 서는 것이 미리 잡기의 정의라서다.
@@ -1019,7 +1020,7 @@ function QueueEditDialog({
   const Slot = ({ id }: { id: string }) => (
     <button
       type="button"
-      onClick={() => setFromId((v) => (v === id ? null : id))}
+      onClick={() => (fromId && fromId !== id ? pick(id) : setFromId((v) => (v === id ? null : id)))}
       className={cn(
         "h-10 flex-1 rounded-lg border text-sm font-bold transition-all",
         fromId === id
@@ -1049,7 +1050,7 @@ function QueueEditDialog({
               {seqMark(row.seq) ? `${seqMark(row.seq)} 사람 바꾸기` : "사람 바꾸기"}
             </h3>
             <p className="text-[11px] text-muted-foreground">
-              {fromId ? `${nameOf(fromId)} 대신 들어갈 사람을 고르세요.` : "먼저 뺄 사람을 누르세요."}
+              {fromId ? `${nameOf(fromId)} 대신 들어갈 사람을 고르세요. 위에서 고르면 서로 자리를 바꿔요.` : "먼저 뺄 사람을 누르세요."}
             </p>
           </div>
           <button
