@@ -989,8 +989,17 @@ const ACCENT = {
     band: "border-violet-500/40 bg-violet-500/15 text-violet-400",
     ring: "ring-violet-500/70",
   },
+  // 레드카드에서 같은 선수판을 쓸 때.
+  rose: {
+    text: "text-rose-500",
+    border: "border-rose-500/60",
+    soft: "border-rose-500/30 bg-rose-500/[0.06]",
+    fill: "border-rose-500/60 bg-rose-500/10",
+    band: "border-rose-500/40 bg-rose-500/15 text-rose-500",
+    ring: "ring-rose-500/70",
+  },
 } as const;
-type Accent = keyof typeof ACCENT;
+export type Accent = keyof typeof ACCENT;
 const ALL_GROUP = "__ALL__";
 
 type MatchType = "single" | "double";
@@ -1168,8 +1177,8 @@ function Slot({ accent, label, player, active, locked, onOpen, onClear, threshol
   );
 }
 
-// 선수 선택 picker: 검색 → 레벨 칩 → 선수 목록 (한 번에 1개만 펼쳐짐)
-function PlayerPicker({ students, accent, group, onPick, thresholds, placementEnabled, placementGames, canAddMember, filter, onFilterChange, title, onBack, onClear, taken, onTakenTap, presentIds }: {
+// 선수 선택 picker: 검색 → 레벨 칩 → 선수 목록 (한 번에 1개만 펼쳐짐). 레드카드도 같은 걸 쓴다.
+export function PlayerPicker({ students, accent, group, onPick, thresholds, placementEnabled, placementGames, canAddMember, filter, onFilterChange, title, onBack, onClear, taken, onTakenTap, presentIds }: {
   students: Student[]; accent: Accent; group: string | null;
   onPick: (group: string, studentId: string) => void; thresholds?: Record<string, number>;
   placementEnabled: boolean; placementGames: number; canAddMember?: boolean;
@@ -1451,9 +1460,11 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
   );
 }
 
-function Chip({ active, accent, onClick, children, size = "md" }: { active: boolean; accent: "amber" | "violet"; onClick: () => void; children: React.ReactNode; size?: "md" | "sm" }) {
+function Chip({ active, accent, onClick, children, size = "md" }: { active: boolean; accent: Accent; onClick: () => void; children: React.ReactNode; size?: "md" | "sm" }) {
   const activeCls = accent === "amber"
     ? "border-amber-500 bg-amber-500/20 text-amber-400 shadow-[0_0_18px_rgba(245,158,11,0.35)]"
+    : accent === "rose"
+    ? "border-rose-500 bg-rose-500/20 text-rose-500 shadow-[0_0_18px_rgba(244,63,94,0.35)]"
     : "border-violet-500 bg-violet-500/20 text-violet-400 shadow-[0_0_18px_rgba(139,92,246,0.35)]";
   return (
     <button
