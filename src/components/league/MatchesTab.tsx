@@ -244,9 +244,8 @@ export function MatchesTab({
     return m;
   };
 
-  // ── 경기 결과 보기 (맨 아래 버튼 → 팝업) ──
-  const [resultsOpen, setResultsOpen] = useState(false); // 팝업 열림 여부
-  const [mineOnly, setMineOnly] = useState(true); // 기본: 내 경기만
+  // ── 최근 경기 결과 (동호회 경기장에 바로) ──
+    const [mineOnly, setMineOnly] = useState(true); // 기본: 내 경기만
   const [recentVisible, setRecentVisible] = useState(5);
   const [presetResult, setPresetResult] = useState<MatchResultData | null>(null);
 
@@ -395,99 +394,81 @@ export function MatchesTab({
         </Button>
       )}
 
-      {/* ── 경기 결과 보기 (맨 아래 · 입력 버튼과 수미상관) ── 클릭 시 팝업. 학교 리그는 잠시 숨김 */}
+      {/* ── 최근 경기 결과 (동호회) ── 버튼→팝업이면 잘 안 열어 봐서 경기장에 바로 깐다. 한 줄을 누르면 영수증. */}
       {!isSchool && (
-        <Button
-          onClick={() => setResultsOpen(true)}
-          className="h-14 w-full rounded-2xl bg-gradient-to-r from-tier-diamond to-neon-blue text-base font-black text-primary-foreground glow-primary transition-all hover:opacity-90 active:scale-[0.99]"
-        >
-          <ClipboardList className="mr-2 size-5" /> 경기 결과 보기
-        </Button>
-      )}
-
-      {/* 경기 결과 보기 모달 */}
-      {resultsOpen && (
-        <div className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-black/70 p-4 backdrop-blur-sm">
-          <div className="relative my-8 w-full max-w-lg rounded-2xl border border-border/50 bg-background p-4 shadow-2xl sm:p-6">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <h3 className="flex items-center gap-2 text-base font-black text-foreground">
-                <ClipboardList className="size-5 text-neon-blue" /> 경기 결과 보기
-              </h3>
-              <div className="flex items-center gap-3">
-                {myPlayerId && (
-                  <label className="flex cursor-pointer items-center gap-1.5 text-[11px] font-bold text-muted-foreground select-none">
-                    <input
-                      type="checkbox"
-                      checked={mineOnly}
-                      onChange={(e) => {
-                        setMineOnly(e.target.checked);
-                        setRecentVisible(5);
-                      }}
-                      className="size-3.5 accent-neon-blue"
-                    />
-                    내 기록
-                  </label>
-                )}
-                <button
-                  onClick={() => setResultsOpen(false)}
-                  className="text-muted-foreground hover:text-foreground"
-                  title="닫기"
-                >
-                  <X className="size-5" />
-                </button>
-              </div>
-            </div>
-            {recent.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-border/30 py-8 text-center text-[11px] text-muted-foreground">
-                {mineOnly && myPlayerId
-                  ? "아직 내 경기 기록이 없습니다. ‘내 기록’을 해제하면 전체를 볼 수 있어요."
-                  : "아직 기록된 경기가 없습니다."}
-              </p>
-            ) : (
-              <div className="space-y-1.5">
-                {recent.slice(0, recentVisible).map((m) => {
-                  const winners = [m.playerAId, m.playerA2Id]
-                    .filter(Boolean)
-                    .map((id) => dn(byId.get(id as string)))
-                    .join("·");
-                  const losers = [m.playerBId, m.playerB2Id]
-                    .filter(Boolean)
-                    .map((id) => dn(byId.get(id as string)))
-                    .join("·");
-                  return (
-                    <button
-                      key={m.id}
-                      onClick={() => openMatch(m)}
-                      className="flex w-full items-center gap-2 rounded-xl border border-border/30 bg-input/40 px-3 py-2 text-left transition-all hover:border-neon-blue/40 active:scale-[0.99]"
-                    >
-                      <span className="text-[10px] text-muted-foreground shrink-0 w-16">
-                        {fmtWhen(m.date)}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate text-right text-xs font-bold text-win">
-                        {winners}
-                      </span>
-                      <span className="shrink-0 text-[11px] font-black tabular-nums text-muted-foreground">
-                        {m.scoreA}:{m.scoreB}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate text-left text-xs font-bold text-loss">
-                        {losers}
-                      </span>
-                      <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-                    </button>
-                  );
-                })}
-                {recent.length > recentVisible && (
-                  <button
-                    onClick={() => setRecentVisible((c) => c + 5)}
-                    className="mt-1 w-full rounded-lg border border-border/40 py-2 text-xs font-bold text-muted-foreground hover:text-foreground"
-                  >
-                    더보기 ({recent.length - recentVisible})
-                  </button>
-                )}
-              </div>
+        <Card className="border border-border/40 bg-card/50 p-4 shadow-lg backdrop-blur sm:p-5">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h3 className="flex items-center gap-2 text-base font-black text-foreground">
+              <ClipboardList className="size-5 text-neon-blue" /> 최근 경기 결과
+            </h3>
+            {myPlayerId && (
+              <button
+                onClick={() => {
+                  setMineOnly((v) => !v);
+                  setRecentVisible(5);
+                }}
+                aria-pressed={mineOnly}
+                className={
+                  "rounded-full border px-3 py-1 text-xs font-bold transition-all " +
+                  (mineOnly
+                    ? "border-neon-blue bg-neon-blue/15 text-neon-blue"
+                    : "border-border/40 text-muted-foreground hover:text-foreground")
+                }
+              >
+                내 경기만
+              </button>
             )}
           </div>
-        </div>
+          {recent.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-border/30 py-8 text-center text-[11px] text-muted-foreground">
+              {mineOnly && myPlayerId
+                ? "아직 내 경기 기록이 없습니다. ‘내 경기만’을 끄면 전체를 볼 수 있어요."
+                : "아직 기록된 경기가 없습니다."}
+            </p>
+          ) : (
+            <div className="space-y-1.5">
+              {recent.slice(0, recentVisible).map((m) => {
+                const winners = [m.playerAId, m.playerA2Id]
+                  .filter(Boolean)
+                  .map((id) => dn(byId.get(id as string)))
+                  .join("·");
+                const losers = [m.playerBId, m.playerB2Id]
+                  .filter(Boolean)
+                  .map((id) => dn(byId.get(id as string)))
+                  .join("·");
+                return (
+                  <button
+                    key={m.id}
+                    onClick={() => openMatch(m)}
+                    className="flex w-full items-center gap-2 rounded-xl border border-border/30 bg-input/40 px-3 py-2 text-left transition-all hover:border-neon-blue/40 active:scale-[0.99]"
+                  >
+                    <span className="text-[10px] text-muted-foreground shrink-0 w-16">
+                      {fmtWhen(m.date)}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-right text-xs font-bold text-win">
+                      {winners}
+                    </span>
+                    <span className="shrink-0 text-[11px] font-black tabular-nums text-muted-foreground">
+                      {m.scoreA}:{m.scoreB}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-left text-xs font-bold text-loss">
+                      {losers}
+                    </span>
+                    <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                  </button>
+                );
+              })}
+              {recent.length > recentVisible && (
+                <button
+                  onClick={() => setRecentVisible((c) => c + 5)}
+                  className="mt-1 w-full rounded-lg border border-border/40 py-2 text-xs font-bold text-muted-foreground hover:text-foreground"
+                >
+                  더보기 ({recent.length - recentVisible})
+                </button>
+              )}
+            </div>
+          )}
+        </Card>
       )}
 
       {/* 결과 입력 모달 */}
