@@ -722,7 +722,8 @@ function TabButton({ active, onClick, icon, children }: { active: boolean; onCli
     <button
       onClick={onClick}
       className={cn(
-        "flex items-center gap-2 whitespace-nowrap rounded-t-lg border-b-2 px-4 py-2.5 text-sm font-semibold transition-all",
+        // 폰(375px)에서 탭 4개가 한 화면에 들어가게 여백·글자를 줄인다 — 넷째 탭이 잘렸다(2026-10-10).
+        "flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-t-lg border-b-2 px-2 py-2.5 text-[13px] font-semibold transition-all sm:gap-2 sm:px-4 sm:text-sm",
         active
           ? "border-neon-blue bg-neon-blue/10 text-neon-blue text-glow-blue"
           : "border-transparent text-muted-foreground hover:bg-accent/30 hover:text-foreground",

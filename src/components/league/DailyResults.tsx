@@ -535,9 +535,10 @@ function AwardCard({ name, emoji, label, detail, about }: { name: string; emoji:
   return (
     <div className="flex flex-col items-start gap-1.5 rounded-xl border border-border/40 bg-card/50 px-3 py-2.5">
       {/* 상 이름표(누르면 규칙) + 닉네임을 한 줄에. 이름표가 왼쪽, 사람이 오른쪽. */}
-      <div className="flex w-full items-center gap-2">
+      {/* 이름이 길면(임시게스트, 복식 짝) 자르지 않고 다음 줄로 — "엠보(…"로 잘렸다(2026-10-10). */}
+      <div className="flex w-full flex-wrap items-center gap-x-2 gap-y-1">
         <AwardLabel emoji={emoji} label={label} about={about} />
-        <span className="min-w-0 flex-1 truncate text-right text-lg font-black leading-tight text-foreground" title={name}>{name}</span>
+        <span className="min-w-0 flex-1 break-keep text-right text-lg font-black leading-tight text-foreground [overflow-wrap:anywhere]" title={name}>{name}</span>
       </div>
       {/* 오늘 무슨 일이 있었나 */}
       <span className="text-[11px] leading-snug text-muted-foreground">{detail}</span>
