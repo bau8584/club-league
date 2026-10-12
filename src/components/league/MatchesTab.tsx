@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { X, Trophy, ChevronRight, ClipboardList } from "lucide-react";
 import { useLeagueStore } from "@/lib/league-store";
 import { RecordMatch, type MatchResultData, type PlayerResult } from "./RecordMatch";
+import { getRewardItems } from "./MatchResultModal";
 import { SessionCard } from "./SessionCard";
 import { RedCardQuick } from "./RedCardQuick";
 import { getTier, type Match, type Student } from "@/lib/league-types";
@@ -245,7 +246,9 @@ export function MatchesTab({
   };
 
   // ── 최근 경기 결과 (동호회 경기장에 바로) ──
-    const [mineOnly, setMineOnly] = useState(true); // 기본: 내 경기만
+  // 회원은 늘 내 경기만(남의 보너스 내역이 뜨면 헷갈림). 관리자만 [전체 보기]로 모든 경기(점수 검사용).
+  const [showAll, setShowAll] = useState(false);
+  const mineOnly = !!myPlayerId && !(isClassManager && showAll);
   const [recentVisible, setRecentVisible] = useState(5);
   const [presetResult, setPresetResult] = useState<MatchResultData | null>(null);
 
@@ -332,8 +335,25 @@ export function MatchesTab({
         [m.playerAId, m.playerA2Id, m.playerBId, m.playerB2Id].includes(myPlayerId),
       );
     }
-    return all;
-  }, [matches, mineOnly, myPlayerId]);
+    // 내 선수가 없는 회원(계정 미연결)은 볼 게 없다. 관리자는 전체.
+    return isClassManager ? all : [];
+  }, [matches, mineOnly, myPlayerId, isClassManager]);
+
+  // 이 경기에서 나의 결과(RP 변동·보너스). 저장된 영수증이 없으면 RP 변동만 재구성된다.
+  // 영수증의 winner/winner2/loser/loser2 = 경기의 playerA/A2/B/B2(승자가 A).
+  const myResultOf = (m: Match): PlayerResult | null => {
+    if (!myPlayerId) return null;
+    const data = m.rpBreakdown ? (m.rpBreakdown as MatchResultData) : buildResultFromMatch(m);
+    if (m.playerAId === myPlayerId) return data.winner;
+    if (m.playerA2Id === myPlayerId) return data.winner2 ?? null;
+    if (m.playerBId === myPlayerId) return data.loser;
+    if (m.playerB2Id === myPlayerId) return data.loser2 ?? null;
+    return null;
+  };
+  // 목록에서 내 가장 최근 경기 하나만 펼친다(맨 위가 남의 경기일 수 있으므로 '맨 위'가 아니라 '내 것').
+  const myLatestId = myPlayerId
+    ? recent.find((m) => [m.playerAId, m.playerA2Id, m.playerBId, m.playerB2Id].includes(myPlayerId))?.id
+    : undefined;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
@@ -401,29 +421,33 @@ export function MatchesTab({
             <h3 className="flex items-center gap-2 text-base font-black text-foreground">
               <ClipboardList className="size-5 text-neon-blue" /> 최근 경기 결과
             </h3>
-            {myPlayerId && (
+            {isClassManager && myPlayerId && (
               <button
                 onClick={() => {
-                  setMineOnly((v) => !v);
+                  setShowAll((v) => !v);
                   setRecentVisible(5);
                 }}
-                aria-pressed={mineOnly}
+                aria-pressed={showAll}
                 className={
                   "rounded-full border px-3 py-1 text-xs font-bold transition-all " +
-                  (mineOnly
+                  (showAll
                     ? "border-neon-blue bg-neon-blue/15 text-neon-blue"
                     : "border-border/40 text-muted-foreground hover:text-foreground")
                 }
               >
-                내 경기만
+                전체 보기
               </button>
             )}
           </div>
           {recent.length === 0 ? (
             <p className="rounded-xl border border-dashed border-border/30 py-8 text-center text-[11px] text-muted-foreground">
-              {mineOnly && myPlayerId
-                ? "아직 내 경기 기록이 없습니다. ‘내 경기만’을 끄면 전체를 볼 수 있어요."
-                : "아직 기록된 경기가 없습니다."}
+              {mineOnly
+                ? isClassManager
+                  ? "아직 내 경기 기록이 없습니다. ‘전체 보기’를 켜면 모든 경기를 볼 수 있어요."
+                  : "아직 내 경기 기록이 없습니다."
+                : isClassManager
+                  ? "아직 기록된 경기가 없습니다."
+                  : "내 선수와 연결되면 내 경기 기록이 여기에 보여요."}
             </p>
           ) : (
             <div className="space-y-1.5">
@@ -436,7 +460,9 @@ export function MatchesTab({
                   .filter(Boolean)
                   .map((id) => dn(byId.get(id as string)))
                   .join("·");
-                return (
+                const mine = myResultOf(m);
+                const rewards = m.id === myLatestId && mine ? getRewardItems(mine) : null;
+                const row = (
                   <button
                     key={m.id}
                     onClick={() => openMatch(m)}
@@ -454,8 +480,38 @@ export function MatchesTab({
                     <span className="min-w-0 flex-1 truncate text-left text-xs font-bold text-loss">
                       {losers}
                     </span>
+                    {mine && (
+                      <span className={"shrink-0 text-[11px] font-black tabular-nums " + (mine.rpDelta >= 0 ? "text-win" : "text-loss")}>
+                        {mine.rpDelta >= 0 ? "+" : ""}{mine.rpDelta}
+                      </span>
+                    )}
                     <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
                   </button>
+                );
+                if (!rewards || !mine) return row;
+                // 내 최근 경기 — 누르지 않아도 RP 변화와 받은 보너스가 보인다.
+                return (
+                  <div key={m.id} className="space-y-1.5 rounded-xl border border-neon-blue/30 bg-neon-blue/5 p-1.5">
+                    {row}
+                    <div className="px-2 pb-1">
+                      <p className="mb-1 text-xs font-bold text-foreground tabular-nums">
+                        {mine.prevRp} → {mine.finalRp} RP{" "}
+                        <span className={mine.rpDelta >= 0 ? "text-win" : "text-loss"}>
+                          ({mine.rpDelta >= 0 ? "+" : ""}{mine.rpDelta})
+                        </span>
+                      </p>
+                      <div className="flex flex-wrap gap-1">
+                        {rewards.map((it) => (
+                          <span key={it.id} className="rounded-md bg-background/70 px-1.5 py-0.5 text-[11px] font-bold text-foreground">
+                            {it.label}{" "}
+                            <span className={it.value >= 0 ? "text-win" : "text-loss"}>
+                              {it.value >= 0 ? "+" : ""}{it.value}
+                            </span>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
                 );
               })}
               {recent.length > recentVisible && (
