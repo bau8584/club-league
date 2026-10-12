@@ -2459,7 +2459,8 @@ function useLeagueStoreInternal() {
   const saveLockSettings = useCallback(async (patch: { lockPin?: string; bumpEpoch?: boolean }): Promise<boolean> => {
     const cid = currentClassIdRef.current;
     if (!cid) return false;
-    if (!isClassOwnerRef.current) { toast.error("권한이 없습니다. 방장만 잠금 핀을 바꿀 수 있습니다."); return false; }
+    // 관리자 선생님도 정한다(서버도 관리자 수정을 허락함). 전에는 방장만이라 공동 관리자가 잠그지 못했다.
+    if (!isClassManagerRef.current) { toast.error("권한이 없습니다. 관리자만 잠금 핀을 바꿀 수 있습니다."); return false; }
     try {
       const { data: currentClass } = await apiFetchClassSettings(cid);
       const cur = currentClass?.settings || {};

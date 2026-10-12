@@ -79,7 +79,9 @@ function PinInput({ value, onChange, onEnter, error, autoFocus }: {
 }
 
 /** 잠긴 탭 자리에 뜨는 핀 입력 화면 */
-export function PinGate({ expected, onUnlock }: { expected: string; onUnlock: () => void }) {
+export function PinGate({ expected, onUnlock, title = "이 기기는 입력용으로 잠겨 있어요", desc }: {
+  expected: string; onUnlock: () => void; title?: string; desc?: React.ReactNode;
+}) {
   const [input, setInput] = useState("");
   const [error, setError] = useState(false);
   const submit = () => {
@@ -92,9 +94,9 @@ export function PinGate({ expected, onUnlock }: { expected: string; onUnlock: ()
         <Lock className="size-8 text-amber-500" />
       </div>
       <div className="space-y-1.5">
-        <h3 className="text-lg font-black tracking-tight text-foreground">이 기기는 입력용으로 잠겨 있어요</h3>
+        <h3 className="text-lg font-black tracking-tight text-foreground">{title}</h3>
         <p className="text-xs text-muted-foreground leading-relaxed max-w-xs">
-          경기장에서 결과를 입력할 수 있어요. 이 화면을 보려면 <b>핀 4자리</b>를 넣으세요.
+          {desc ?? <>경기장에서 결과를 입력할 수 있어요. 이 화면을 보려면 <b>핀 4자리</b>를 넣으세요.</>}
         </p>
       </div>
       <div className="flex flex-col items-center gap-2 w-full max-w-[220px]">
@@ -162,7 +164,7 @@ export function SetPinDialog({ open, onOpenChange, onSave, title = "잠금 핀 �
 
 /** 관리자 → 설정의 '기기 잠금' 카드. 핀 잊었을 때 다른 기기에서 여기로 온다. */
 export function DeviceLockSettings() {
-  const { lockPin, saveLockSettings, isClassOwner } = useLeagueStore();
+  const { lockPin, saveLockSettings, isClassManager } = useLeagueStore();
   const [show, setShow] = useState(false);
   const [pinOpen, setPinOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -192,7 +194,7 @@ export function DeviceLockSettings() {
             <button type="button" onClick={() => setShow(!show)} className="text-[11px] font-bold text-neon-blue hover:underline">
               {show ? "숨기기" : "핀 보기"}
             </button>
-            {isClassOwner && (
+            {isClassManager && (
               <>
                 <Button onClick={() => setPinOpen(true)} variant="outline" className="h-9 rounded-xl text-[11px] font-bold">핀 바꾸기</Button>
                 <Button onClick={releaseAll} disabled={busy} variant="outline" className="h-9 rounded-xl text-[11px] font-bold text-amber-500 border-amber-500/40">

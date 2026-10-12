@@ -179,7 +179,6 @@ export function LeagueApp({ classId }: { classId: string }) {
 
   const lockThisDevice = () => {
     if (!lockPin) {
-      if (!isClassOwner) { toast.error("방장이 먼저 잠금 핀을 정해야 해요."); return; }
       setSetPinOpen(true);
       return;
     }

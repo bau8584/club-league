@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { useLeagueStore } from "@/lib/league-store";
 import { type Student } from "@/lib/league-types";
 import { demoteAmount } from "@/domain/demote";
+import { PinGate, useDeviceLock } from "@/components/league/DeviceLock";
 
 /**
  * 경기장에서 바로 주는 레드카드(관리자만).
@@ -12,7 +13,10 @@ import { demoteAmount } from "@/domain/demote";
  * 취소·기록 보기는 선수 관리 화면에 그대로 둔다.
  */
 export function RedCardQuick() {
-  const { students, assignmentSession, dynamicPenalties, giveRedCard, tierThresholds, placementEnabled, placementGames } = useLeagueStore();
+  const { students, assignmentSession, dynamicPenalties, giveRedCard, tierThresholds, placementEnabled, placementGames, currentClassId, lockPin, lockEpoch } = useLeagueStore();
+  // 입력용으로 잠긴 태블릿이면 핀을 물어본다 — 아이들이 맘대로 못 주게. 잠그지 않은 기기는 그대로.
+  const { locked } = useDeviceLock(currentClassId ?? "", lockPin, lockEpoch);
+  const [pinOk, setPinOk] = useState(false);
   const redCardDefault = dynamicPenalties?.redCardRp ?? 50;
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState<PickerFilter>({ grade: null, classNum: null });
@@ -24,7 +28,7 @@ export function RedCardQuick() {
   const sessionIds = assignmentSession?.player_ids ?? [];
   const presentIds = useMemo(() => new Set(sessionIds), [sessionIds]);
 
-  const close = () => { setOpen(false); setTarget(null); };
+  const close = () => { setOpen(false); setTarget(null); setPinOk(false); };
   const pick = (s: Student) => { setTarget(s); setAmount(redCardDefault); setNote(""); };
   const give = async () => {
     if (!target || busy) return;
@@ -46,7 +50,10 @@ export function RedCardQuick() {
           <div className={`relative flex max-h-[90vh] w-full flex-col ${target ? "max-w-sm" : "max-w-3xl"} rounded-2xl border border-rose-500/40 bg-background p-5 shadow-2xl`} onClick={(e) => e.stopPropagation()}>
             <button onClick={close} title="닫기" className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"><X className="size-5" /></button>
 
-            {!target ? (
+            {locked && !pinOk ? (
+              <PinGate expected={lockPin} onUnlock={() => setPinOk(true)} title="레드카드는 선생님만"
+                desc={<>입력용으로 잠긴 기기예요. <b>핀 4자리</b>를 넣으면 레드카드를 줄 수 있어요.</>} />
+            ) : !target ? (
               <>
                 <h3 className="mb-2 pr-8 text-base font-black text-rose-500">🟥 레드카드 — 누구에게?</h3>
                 <div className="min-h-0 flex-1">
