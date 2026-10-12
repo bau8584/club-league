@@ -214,6 +214,7 @@ export function MatchQueue({
   // 이름 옆 × — 그 사람을 빼고 놀고 있는 사람 중 오늘 가장 덜 뛴 사람을 자동으로 넣는다.
   // 남녀 따로면 같은 성별에서 고른다. 동점이면 무작위.
   const [subBusy, setSubBusy] = useState(false);
+  const [confirmSub, setConfirmSub] = useState<{ row: ScheduledMatch; id: string } | null>(null);
   const autoSubstitute = async (row: ScheduledMatch, outId: string) => {
     if (subBusy) return;
     const today = new Date().toDateString();
@@ -375,16 +376,17 @@ export function MatchQueue({
             const subbable = canManage && confirmed && !picking;
             const nameNode = (id: string) =>
               subbable ? (
-                <span key={id} className="inline-flex items-center">
+                // 이름 오른쪽 위에 작게. 크면 줄 빼기 × 와 헷갈리고 너무 쉽게 눌렸다 → 확인 창을 거친다(2026-10-12).
+                <span key={id} className="relative inline-block pr-2.5">
                   {nameOf(id)}
                   <button
                     type="button"
                     disabled={subBusy}
-                    onClick={(e) => { e.stopPropagation(); autoSubstitute(r, id); }}
+                    onClick={(e) => { e.stopPropagation(); setConfirmSub({ row: r, id }); }}
                     aria-label={`${nameOf(id)} 빼고 다른 사람 넣기`}
-                    className="ml-0.5 flex size-6 items-center justify-center rounded-md text-muted-foreground/60 hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
+                    className="absolute top-0 right-0 flex size-3.5 items-center justify-center rounded-full bg-muted text-muted-foreground/80 hover:bg-destructive hover:text-white disabled:opacity-40"
                   >
-                    <X className="size-3" />
+                    <X className="size-2.5" strokeWidth={3} />
                   </button>
                 </span>
               ) : (
@@ -892,6 +894,46 @@ export function MatchQueue({
           onAdd={(id) => joinReservation(addRow.id, id)}
           onClose={() => setAddRow(null)}
         />,
+        document.body,
+      )}
+
+      {confirmSub && createPortal(
+        <div
+          className="fixed inset-0 z-[85] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-in fade-in duration-150"
+          onClick={() => setConfirmSub(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl border border-border/50 bg-background p-5 shadow-2xl animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-black text-foreground">
+              {dn(byId.get(confirmSub.id))} 빼기
+            </h3>
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+              이 사람을 빼고 기다리던 다른 사람을 자동으로 넣어요.
+            </p>
+            <div className="mt-4 flex flex-col gap-2">
+              <Button
+                disabled={subBusy}
+                onClick={async () => {
+                  const { row, id } = confirmSub;
+                  setConfirmSub(null);
+                  await autoSubstitute(row, id);
+                }}
+                className="h-10 rounded-xl bg-destructive text-sm font-black text-white hover:bg-destructive/90"
+              >
+                빼고 바꿀게요
+              </Button>
+              <button
+                type="button"
+                onClick={() => setConfirmSub(null)}
+                className="mt-0.5 rounded-lg py-2 text-xs font-bold text-muted-foreground hover:text-foreground"
+              >
+                그대로 둘게요
+              </button>
+            </div>
+          </div>
+        </div>,
         document.body,
       )}
 
