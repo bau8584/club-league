@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useLeagueStore } from "@/lib/league-store";
 import { type Student } from "@/lib/league-types";
+import { demoteAmount } from "@/domain/demote";
 
 /**
  * 경기장에서 바로 주는 레드카드(관리자만).
@@ -78,6 +79,19 @@ export function RedCardQuick() {
                       <span className="text-rose-500">RP</span>
                     </span>
                   </label>
+                  {/* 강등 — 누르면 그만큼 깎을 점수를 감점 칸에 채운다. 주기는 아래 버튼으로. */}
+                  <div className="grid grid-cols-2 gap-2">
+                    {([["step", "한 단계 아래로"], ["tier", "한 티어 아래로"]] as const).map(([kind, label]) => {
+                      const d = demoteAmount(target.rp, kind, tierThresholds);
+                      return (
+                        <button key={kind} type="button" disabled={d == null} onClick={() => d != null && setAmount(d)}
+                          className={`rounded-lg border px-2 py-2 text-xs font-bold transition-all active:scale-95 disabled:opacity-40 ${d != null && amount === d ? "border-rose-500 bg-rose-500/20 text-rose-500" : "border-rose-500/40 text-rose-500 hover:bg-rose-500/10"}`}>
+                          {label}
+                          <span className="block text-[10px] font-normal opacity-80">{d == null ? "더 내려갈 곳 없음" : `−${d} RP`}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                   <Input value={note} maxLength={100} onChange={(e) => setNote(e.target.value)}
                     placeholder="사유 (안 적어도 됨 · 관리자만 봄)" className="h-9 bg-input border-border/30 text-xs" />
                   <button onClick={give} disabled={busy || amount < 1}
