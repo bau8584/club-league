@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeftRight, ListOrdered, RotateCcw, X } from "lucide-react";
+import { ArrowLeftRight, ChevronRight, ListOrdered, RotateCcw, X } from "lucide-react";
 import { ScoreBoard, TEAM_A, TEAM_B } from "./ScoreBoard";
 import { apiFetchScoreInputView, apiSubmitScoreInput } from "@/services/league-api";
 import { cn } from "@/lib/utils";
@@ -19,7 +19,9 @@ import { Shell, Note, SectionTitle, Queue, TierGroups, type ClassView, type Queu
 
 type RosterP = { id: string; name: string; grade: number | null; class_num: number | null; student_no: number | null };
 type Row = { id: string; seq: number };
-type InputView = { state: "closed" } | { state: "open"; view: ClassView; rows: Row[]; roster?: RosterP[] };
+/** 오늘 이 수업 경기(서버가 최근 20개). receipt 는 교사 화면과 같은 영수증 — 옛 경기는 없을 수 있다. */
+type Recent = { id: string; at: string; win: string[]; lose: string[]; ws: number; ls: number; receipt: MatchResultData | null };
+type InputView = { state: "closed" } | { state: "open"; view: ClassView; rows: Row[]; roster?: RosterP[]; recent?: Recent[] };
 type Done = { names: string; delta: number | null; won: boolean }[];
 /** 기록할 경기 — 팀 A·팀 B. 대기열 줄이면 scheduledId 가 있다. */
 type Pick = { scheduledId: string | null; seq: number | null; /** 대기열 줄과 팀 A·B가 뒤집혔나(화면 팀 A = 줄의 team_b) */ flip?: boolean; red: { ids?: string[]; names: string[] }; blue: { ids?: string[]; names: string[] } };
@@ -126,7 +128,7 @@ export function ScoreInputView({ inputKey }: { inputKey: string }) {
   if (!match) {
     return (
       <>
-        <PickScreen data={data} onPick={start} onRefresh={load} onShowQueue={() => { load(); setPanel("queue"); }} />
+        <PickScreen data={data} onPick={start} onOpenReceipt={setReceipt} onRefresh={load} onShowQueue={() => { load(); setPanel("queue"); }} />
         {queuePanel}
         {result}
       </>
@@ -170,8 +172,9 @@ export function ScoreInputView({ inputKey }: { inputKey: string }) {
 
 /* ── 1단계: 누구 경기예요? — 대기열 줄 누르기 또는 직접 고르기 ───── */
 
-function PickScreen({ data, onPick, onRefresh, onShowQueue }: {
+function PickScreen({ data, onPick, onRefresh, onShowQueue, onOpenReceipt }: {
   data: Extract<InputView, { state: "open" }>;
+  onOpenReceipt: (r: MatchResultData) => void;
   onPick: (p: Pick) => void;
   onRefresh: () => void;
   onShowQueue: () => void;
@@ -227,7 +230,39 @@ function PickScreen({ data, onPick, onRefresh, onShowQueue }: {
       ) : (
         <DirectPick roster={data.roster ?? []} onDone={(red, blue) => onPick({ scheduledId: null, seq: null, red, blue })} />
       )}
+      <RecentList rows={data.recent ?? []} onOpen={onOpenReceipt} />
     </Shell>
+  );
+}
+
+/* ── 오늘 경기 결과 — 동호회 경기장의 "최근 경기 결과"와 같은 줄 모양. 누르면 영수증. ── */
+
+function RecentList({ rows, onOpen }: { rows: Recent[]; onOpen: (r: MatchResultData) => void }) {
+  const [visible, setVisible] = useState(5);
+  if (rows.length === 0) return null;
+  const when = (iso: string) => new Date(iso).toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" });
+  return (
+    <div className="mt-8">
+      <SectionTitle>오늘 경기 결과</SectionTitle>
+      <div className="space-y-1.5">
+        {rows.slice(0, visible).map((m) => (
+          <button key={m.id} type="button" disabled={!m.receipt} onClick={() => m.receipt && onOpen(m.receipt)}
+            className="flex w-full items-center gap-2 rounded-xl border border-border/30 bg-input/40 px-3 py-2.5 text-left active:scale-[0.99] disabled:active:scale-100">
+            <span className="w-16 shrink-0 text-[11px] text-muted-foreground">{when(m.at)}</span>
+            <span className="min-w-0 flex-1 truncate text-right text-sm font-bold text-win">{m.win.join("·")}</span>
+            <span className="shrink-0 text-sm font-black tabular-nums text-muted-foreground">{m.ws}:{m.ls}</span>
+            <span className="min-w-0 flex-1 truncate text-left text-sm font-bold text-loss">{m.lose.join("·")}</span>
+            {m.receipt && <ChevronRight className="size-4 shrink-0 text-muted-foreground" />}
+          </button>
+        ))}
+        {rows.length > visible && (
+          <button type="button" onClick={() => setVisible((v) => v + 5)}
+            className="mt-1 w-full rounded-lg border border-border/40 py-2 text-xs font-bold text-muted-foreground">
+            더보기 ({rows.length - visible})
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -421,6 +456,11 @@ function demoView(): InputView {
     state: "open",
     rows: [{ id: "r7", seq: 7 }, { id: "r8", seq: 8 }],
     roster: names.map((n, i) => ({ id: `p${i}`, name: n, grade: 5, class_num: i < 6 ? 1 : 2, student_no: i + 1 })),
+    recent: [6, 5, 4, 3, 2, 1].map((i) => ({
+      id: `m${i}`, at: new Date(Date.now() - (7 - i) * 6 * 60000).toISOString(),
+      win: [names[i]], lose: [names[i - 1]], ws: 5, ls: i % 4,
+      receipt: i % 2 ? demoReceipt(true, 5, i % 4) as MatchResultData : null,
+    })),
     view: {
       state: "session", league_name: "데모 리그", class_label: "5학년 1반", court_count: 2,
       tier_thresholds: { Bronze: 0, Silver: 1000, Gold: 1200, Platinum: 1400, Diamond: 1600 },
