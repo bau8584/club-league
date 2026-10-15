@@ -377,14 +377,14 @@ export function MatchQueue({
             const nameNode = (id: string) =>
               subbable ? (
                 // 이름 오른쪽 위에 작게. 크면 줄 빼기 × 와 헷갈리고 너무 쉽게 눌렸다 → 확인 창을 거친다(2026-10-12).
-                <span key={id} className="relative inline-block pr-2.5">
+                <span key={id} className="relative inline-block pr-3.5">
                   {nameOf(id)}
                   <button
                     type="button"
                     disabled={subBusy}
                     onClick={(e) => { e.stopPropagation(); setConfirmSub({ row: r, id }); }}
                     aria-label={`${nameOf(id)} 빼고 다른 사람 넣기`}
-                    className="absolute top-0 right-0 flex size-3.5 items-center justify-center rounded-full bg-muted text-muted-foreground/80 hover:bg-destructive hover:text-white disabled:opacity-40"
+                    className="absolute -top-1.5 right-0 flex size-3.5 items-center justify-center rounded-full bg-muted text-muted-foreground/80 hover:bg-destructive hover:text-white disabled:opacity-40"
                   >
                     <X className="size-2.5" strokeWidth={3} />
                   </button>
@@ -393,7 +393,7 @@ export function MatchQueue({
                 <span key={id}>{nameOf(id)}</span>
               );
             const joinNodes = (ids: string[]) =>
-              ids.flatMap((id, i) => (i === 0 ? [nameNode(id)] : [<span key={`d${id}`}>·</span>, nameNode(id)]));
+              ids.flatMap((id, i) => (i === 0 ? [nameNode(id)] : [<span key={`d${id}`} className="mx-0.5">·</span>, nameNode(id)]));
             const names = (
               <>
                 {/* 번호가 아이들이 부르는 이름이다. 목록에서 제일 먼저 눈에 띄어야 한다. */}
@@ -405,7 +405,7 @@ export function MatchQueue({
                     경기 중
                   </span>
                 )}
-                <span className="min-w-0 flex-1 truncate text-left text-sm font-bold text-foreground">
+                <span className="min-w-0 flex-1 break-keep py-1 text-left text-sm font-bold leading-snug text-foreground">
                   {confirmed ? (
                     <>
                       {joinNodes(teamA)}
