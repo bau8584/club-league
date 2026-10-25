@@ -94,7 +94,6 @@ export function ClassroomView({ classId, ownerId }: { classId: string; ownerId?:
 
   const load = useCallback(async ({ quiet = false }: { quiet?: boolean } = {}) => {
     if (!quiet) setLoading(true);
-    setError(null);
     try {
       const { data, error: err } = await apiFetchClassViewPublic({
         classId, ownerId, grade: askGrade, classNum: askClass,
@@ -103,8 +102,12 @@ export function ClassroomView({ classId, ownerId }: { classId: string; ownerId?:
       const sig = JSON.stringify(data);
       if (sig !== lastSigRef.current) { lastSigRef.current = sig; lastChangeRef.current = Date.now(); }
       setView(data as ClassView);
+      setError(null);
     } catch (e: any) {
-      setError(e?.message || "불러오지 못했어요.");
+      // 와이파이가 잠깐 끊긴 것일 수 있다. 화면은 마지막 것을 그대로 두고 "연결 중"만 띄운다 —
+      // 다음 주기에 저절로 다시 묻는다. 영어 오류 문장은 화면에 내지 않는다.
+      console.warn("classroom view load failed:", e?.message);
+      setError("연결이 끊겼어요");
     } finally {
       setLoading(false);
     }
@@ -144,8 +147,52 @@ export function ClassroomView({ classId, ownerId }: { classId: string; ownerId?:
   const savePref = (next: Pref) => { setPref(next); writePref(classId, next); setPickerOpen(false); };
 
   if (loading && !view) return <Shell><Note>불러오는 중…</Note></Shell>;
-  if (error) return <Shell><Note tone="bad">{error}</Note></Shell>;
+  // 처음부터 못 불러왔을 때만 화면 전체로 알린다. 이미 그린 화면이 있으면 그대로 둔다.
+  if (error && !view) {
+    return (
+      <Shell>
+        <Note tone="bad">인터넷 연결이 안 돼요. 와이파이를 확인해 주세요.</Note>
+        <button type="button" onClick={() => load()}
+          className="mt-4 h-12 rounded-xl border border-border/50 px-5 text-sm font-black text-foreground">
+          다시 시도
+        </button>
+      </Shell>
+    );
+  }
   if (!view || view.state === "not_found") return <Shell><Note>리그를 찾을 수 없어요.</Note></Shell>;
+
+  // 따라가기 중인데 지금 수업이 없을 때: 고르기 화면을 띄우지 않고 기다린다.
+  // 고르기 화면을 띄우면 지나가던 아이가 아무 반이나 눌러 태블릿이 그 반에 고정돼 버린다(2026-10-25).
+  if (view.state === "need_input" && pref.follow && ownerId && !pickerOpen) {
+    return (
+      <Shell>
+        <header className="mb-4 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h1 className="truncate text-2xl font-black tracking-tight text-foreground lg:text-3xl">
+                {view.league_name}
+              </h1>
+              <span className="flex shrink-0 items-center gap-1 rounded-full bg-neon-blue/15 px-2 py-0.5 text-[10px] font-black text-neon-blue lg:text-xs">
+                <Radio className="size-3" /> 수업 따라가는 중
+              </span>
+            </div>
+            <p className="mt-1 text-sm font-bold text-muted-foreground lg:text-base">
+              지금은 수업이 없어요. 수업이 시작되면 이 화면에 저절로 떠요.
+            </p>
+            {error && <OfflineBadge />}
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <IconBtn label="새로고침" onClick={() => load()}>
+              <RefreshCw className={cn("size-5", loading && "animate-spin")} />
+            </IconBtn>
+            <IconBtn label="무엇을 볼지 고르기" onClick={() => setPickerOpen(true)}>
+              <SlidersHorizontal className="size-5" />
+            </IconBtn>
+          </div>
+        </header>
+      </Shell>
+    );
+  }
 
   if (view.state === "need_input" || pickerOpen) {
     return (
@@ -155,7 +202,7 @@ export function ClassroomView({ classId, ownerId }: { classId: string; ownerId?:
           pref={pref}
           canFollow={!!ownerId}
           onSave={savePref}
-          onCancel={view.state === "need_input" ? undefined : () => setPickerOpen(false)}
+          onCancel={view.state === "need_input" && !(pref.follow && ownerId) ? undefined : () => setPickerOpen(false)}
         />
       </Shell>
     );
@@ -187,6 +234,7 @@ export function ClassroomView({ classId, ownerId }: { classId: string; ownerId?:
                 ? "수업 진행 중이에요"
                 : "오늘 수업은 끝났어요"}
           </p>
+          {error && <OfflineBadge />}
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <IconBtn label="새로고침" onClick={() => load()}>
@@ -245,6 +293,13 @@ export function Shell({ children, wide }: { children: React.ReactNode; wide?: bo
 
 export const Note = ({ children, tone }: { children: React.ReactNode; tone?: "bad" }) => (
   <p className={cn("text-sm", tone === "bad" ? "text-destructive" : "text-muted-foreground")}>{children}</p>
+);
+
+/** 잠깐 끊겼을 때 머리말 아래 작게. 화면 내용은 마지막 것 그대로다. */
+const OfflineBadge = () => (
+  <span className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-foreground/10 px-2.5 py-0.5 text-[11px] font-black text-foreground lg:text-xs">
+    <RefreshCw className="size-3 animate-spin" /> 연결 중… 화면은 조금 전 모습이에요
+  </span>
 );
 
 export const SectionTitle = ({ children, hint }: { children: React.ReactNode; hint?: string }) => (

@@ -47,6 +47,9 @@ import { RpRecoveryPanel } from "./admin/RpRecoveryPanel";
 
 type Row = { grade: number; classNum: number; number: number; name: string; gender?: Gender };
 
+// 백업 파일 올려 되돌리기(복원) 버튼. 서버 쪽 복원이 깨져 있어 다시 만들 때까지 끈다(2026-10-25).
+const RESTORE_ENABLED = false;
+
 // 관리자 패널의 하위 탭 목록 — PC 사이드바와 모바일 드롭다운이 공유한다.
 // 리그 유형(club/school)에 따라 "회원"/"학생" 용어가 갈리므로 terms를 받아 구성한다.
 const buildAdminMenuItems = (terms: LeagueTerms) => [
@@ -196,6 +199,10 @@ export function AdminPanel({
     const backupObj = {
       students: sortedStudents.map((s) => ({
         id: s.id,
+        grade: s.grade ?? null,
+        classNum: s.classNum ?? null,
+        studentNo: s.studentNo ?? null,
+        birthYear: s.birthYear ?? null,
         name: s.name,
         group: s.group ?? null,
         nickname: s.nickname ?? null,
@@ -468,8 +475,10 @@ export function AdminPanel({
               </Button>
             </Card>
 
-            {/* JSON Restore / Rollback Card */}
-            <Card className="border-border/60 bg-card/60 p-5 backdrop-blur shadow-lg flex flex-col justify-between">
+            {/* JSON Restore / Rollback Card — 숨김(2026-10-25).
+                서버 restore_class_data 가 칸 이름(league_id·created_at 등)을 못 맞춰 늘 실패하고,
+                고쳐도 다른 시즌 경기까지 지우는 구조라 다시 설계하기 전까지 버튼을 내놓지 않는다. */}
+            {RESTORE_ENABLED && <Card className="border-border/60 bg-card/60 p-5 backdrop-blur shadow-lg flex flex-col justify-between">
               <div>
                 <div className="flex items-center gap-2 text-destructive">
                   <RotateCcw className="size-5" />
@@ -496,7 +505,7 @@ export function AdminPanel({
                   <RotateCcw className="mr-2 size-4" /> JSON 데이터 롤백 복원
                 </Button>
               </div>
-            </Card>
+            </Card>}
 
           </div>
         )}

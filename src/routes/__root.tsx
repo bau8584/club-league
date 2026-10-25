@@ -170,7 +170,8 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 // 로그인 없이 열람 가능한 공개 경로 (무인증 공개 순위표 등).
 // 이 경로들은 세션이 없어도 Login 게이트를 거치지 않고 그대로 라우팅된다.
-const PUBLIC_PATH_PREFIXES = ["/ranking/", "/input"];  // /input = 점수입력판(열쇠 링크)
+// /join = 초대 링크. 로그인 전에도 어느 리그의 초대인지 보여 주고, 로그인은 그 화면이 직접 띄운다.
+const PUBLIC_PATH_PREFIXES = ["/ranking/", "/input", "/join"];  // /input = 점수입력판(열쇠 링크)
 const isPublicPath = (pathname: string) => PUBLIC_PATH_PREFIXES.some((p) => pathname.startsWith(p));
 
 function RootComponent() {
