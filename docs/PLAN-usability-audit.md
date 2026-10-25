@@ -62,10 +62,29 @@
 - 초대받은 선생님은 잠금 핀 메뉴 자체에 못 들어감 (AdminPanel.tsx:156). 학교 리그는 주인 넘기기 길 없음(전근 때 묶임).
 - 학생 삭제 확인창 문구가 실제 동작(휴지통·기록 남음)과 다름.
 
-### 묶음 6. 문서·잔재 정리 — 하
-- PLAN-match-assignment·PLAN-session-scope·PLAN-bug-audit 머리 상태가 실제와 다름. GUIDE의 예약·매치 추천·랭킹 필터 설명 낡음.
-- 회원 예약을 뺀 뒤 남은 코드(입장 배너·참가/나가기 등).
-- `report` 스킬이 옛 OneDrive 경로를 봄 → `C:\code\club-league`로.
+### 묶음 6. 문서·잔재 정리 — 하 ✅ 문서·경로 정리 끝 (2026-10-25), 코드 지우기는 소유자 결정 대기
+- [x] PLAN 머리 상태 맞춤: match-assignment·session-scope(구현·배포됨), bug-audit(끝남), class-end·court·court-callout·device-lock·auto-round(배포됨 표시), rp(일부만 구현), red-card·경기결과-보기·club-queue(낡은 설명 표시), first-match·PROMPT-winloss-mode(미착수 표시). 나머지는 점검 때 이미 맞았음. 완료된 PLAN은 지우지 않고 표시만.
+- [x] `GUIDE-school-league.md`: 예약 대기 목록·매치 추천 파일·"랭킹 학년/반 필터 없음"·PIN 폐기·무인증 순위표 설명을 지금 모습(번호순 대기열, 교실 화면, 기기 잠금, 필터 있음)으로 고침.
+- [x] `report` 스킬 경로를 `C:/code/club-league`로 고침. 읽기 전용 조회(`node scripts/db-query.mjs scripts/report-launch.sql`)가 새 위치에서 돈다(계정 `claude_ro`). 참고: `report-launch.sql`은 9/14 이후 개설 리그만 뽑는 옛 질문이라, 스킬 절차의 "추가 조회(유지율 등)"는 그때그때 SQL로 해야 함.
+- [ ] **아래 잔재 코드 지우기** — 지울지는 소유자가 정함. 이 세션은 지우지 않았다.
+
+#### 잔재 코드 목록 (회원 예약·소집을 2026-09-30에 뺀 뒤 남은 것, 코드는 2026-10-25 grep으로 확인)
+근거(읽기 전용 DB, 줄 표 `scheduled_matches`): `called` 상태 0건, 팀 미정 줄(player_ids 있음) 20건 전부 `done`·마지막 8/8, 도전장(`challenge`) 1건(7/25). 즉 지금 이 화면들로 갈 데이터가 없다. 만드는 함수 `createReservation`·`createScheduledMatch`를 부르는 곳이 한 군데도 없어 새로 생길 길도 없다.
+
+| # | 잔재 | 어디 | 지웠을 때 | 비고 |
+|---|---|---|---|---|
+| 1 | 입장 배너 (호출되면 뜨는 "코트로 오세요") | `ScheduledMatchBanner.tsx`(전체), `class.$classId.tsx:9, 597` | 화면 변화 없음(원래 안 뜸) | `called` 상태가 안 생겨 영영 안 뜸 |
+| 2 | 팀 미정 줄의 [참가]·[나가기]·[사람 더하기] 팝업 | `MatchQueue.tsx:451-486, 554-563, 954, 1237-1280`, `league-api.ts:324`(`apiUpdateReservationPlayers`) | 변화 없음 | 팀 미정 옛 줄이 없음 |
+| 3 | 결과 창의 "예약 참가자" 안내 | `MatchesTab.tsx:550-556` | 변화 없음 | 같은 이유 |
+| 4 | "매치 추천에서 넘어온 값" (`incomingInitials`·`onConsumeInitials`) | `MatchesTab.tsx:31-37, 99-100, 130-143, 180-190` | 변화 없음 | 매치 추천 화면은 이미 삭제됨 |
+| 5 | 줄 만드는 함수 3개 (`createReservation`·`createScheduledMatch`·`callScheduledMatch`) | `league-store.ts:2989, 3007, 3554`, 내보내기 4063·4070·4076 | 변화 없음 | `callScheduledMatch`는 PLAN-match-assignment가 "되살릴 수 있게 남김"이라 했음 → 그 함수만 두고 나머지 지우는 안 |
+| 6 | (지우지 말 것) 줄 알림 "지금 코트로" | `league-store.ts:3657` 부근, `MatchQueue.tsx:430-448` | — | 주석은 "예약 참가자"라 옛말이지만 동호회 [알림] 버튼이 지금도 씀. 목록에서 헷갈리지 않게 적어 둠 |
+| 7 | 승급 축하 화면 | `PromotionCelebration.tsx`(212줄), `MatchDetailSheet.tsx`(110줄, 어디서도 안 씀), 스토어 `promotionQueue`·`promotionEvent`(`league-store.ts:596-603, 741, 2272, 3738, 4036`), `class.$classId.tsx:86-87` | 변화 없음(지금도 안 뜸) | **소유자 결정**: 되살리기(학생 즐거움) 또는 지우기 |
+| 8 | 관리자 패널의 옛 명단 붙여넣기 상태(`text/parsed/commit`)와 옛 휴면 일괄 감점(`onBulkDecay`→`bulkDecayRP`) | `AdminPanel.tsx:112-143, 180-191`, `class.$classId.tsx:82, 689` | 변화 없음 | `bulkDecayRP`는 승패 덮어쓰기와 같은 위험 방식이라 두면 오히려 위험 |
+| 9 | 스토어 setter 9개 (`setLevels`, `titleIndex`, `setDecay*`, `setTierSettings`, `setDynamic*`)가 밖에서 안 쓰임 | `league-store.ts` | 변화 없음 | |
+| 10 | 도전장 1건·팀 미정 옛 줄 20건·`called` 코드 경로 | DB `scheduled_matches` | | 지울 필요 없음(기록). 코드만 정리 |
+
+권장 순서(코드 지울 때): 화면 쪽(1·2·3·4)부터 → 함수(5·6) → 8·9. 7은 소유자 결정 후. 지운 뒤에는 `npx tsc --noEmit`과 학교·동호회 경기장 화면이 전과 같은지 눈으로 확인.
 
 ## 소유자가 정할 것 (Claude 단독 결정 금지)
 1. 진 학생 결과 창 문구("굴욕적 완패", "오만함의 대가", "연패의 늪") — 바꿀지, 어떤 톤으로.
@@ -80,4 +99,4 @@
 
 ## 진행
 - [x] 점검 (2026-10-24)
-- [ ] 묶음 1 / [ ] 묶음 2 / [ ] 묶음 3 / [ ] 묶음 4 / [ ] 묶음 5 / [ ] 묶음 6
+- [ ] 묶음 1 / [ ] 묶음 2 / [ ] 묶음 3 / [ ] 묶음 4 / [ ] 묶음 5 / [x] 묶음 6 (문서·경로 정리, 잔재 목록 작성. 코드 지우기는 소유자 결정 대기)

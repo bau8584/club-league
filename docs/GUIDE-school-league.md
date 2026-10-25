@@ -10,7 +10,7 @@
 작업 전에 이 규칙을 적용한다. 지키지 않으면 탐색만으로 토큰이 크게 샌다.
 
 - **파일 전체를 읽지 않는다.** `grep -n`으로 해당 함수·문자열만 발췌하고, 필요한 줄 범위만 `sed -n 'A,Bp'`로 본다.
-  - 특히 대용량 파일: `league-store.ts`(3400줄), `RecordMatch.tsx`(2100줄), `MatchRecommend.tsx`(1400줄), `Lobby.tsx`(1000줄), `AdminStudentManage.tsx`(650줄)
+  - 특히 대용량 파일: `league-store.ts`(4100줄), `RecordMatch.tsx`(1700줄), `MatchQueue.tsx`(1350줄), `Lobby.tsx`(1170줄), `AdminStudentManage.tsx`(930줄) — 줄 수는 2026-10-24 기준
 - **독립적인 조사는 한 번에 묶어 보낸다.** (토큰보다 시간 절감 효과가 크다)
 - **UI 컴포넌트 라이브러리(`src/components/ui/`)는 열지 않는다.** 수정 대상이 아니다.
 - **검증은 가벼운 것부터**: `npx tsc --noEmit` → 필요할 때만 `npx vite build`
@@ -31,15 +31,15 @@
 | **선수 계정** | `players.user_id` 연결 | `user_id` 영구히 null. **선수 연동 UI 없음** |
 | **초대 참가 등급** | `member_uids` (멤버) | `admin_uids` (공동 관리자) |
 | **경기 입력** | `matchInputMode` 선택 가능 | 개설 시 `admin-only` 고정. **설정 카드도 숨김** |
-| **경기 예약** | 참가자 모집 + 알림 | 교사용 **대기 목록** (알림·참가 없음) |
+| **경기장 줄(대기열)** | 번호순 대기열(오늘 참석 → 대진 뽑기 → 줄 → 결과). 줄 알림은 참가자에게 푸시 | 번호순 대기열(출석 정하기 → 대진 뽑기 → 줄 → 결과). 알림 없음 |
 | **분류 축** | `group_label` (레벨: 초심~A급) | `grade` / `class_num` / `student_no` |
 | **레벨 체계 UI** | 개설 시 선택 + 관리자 탭에서 관리 | **숨김** (LevelManager 미노출) |
 | **용어** | 회원 / 방장 / 공동방장 / 닉네임 | 학생 / 선생님 / 공동 담당 선생님 / 이름 |
-| **학생 열람** | 회원이 로그인해서 봄 | **무인증 공개 순위표** `/ranking/$classId` |
+| **학생 열람** | 회원이 로그인해서 봄. 무인증 공개 순위표 `/ranking/$classId`(PublicRanking)는 있으나 공유 버튼이 없어 사실상 못 엶 | **무인증 교실 화면** `/ranking/$classId/$ownerId`(ClassroomView) + 학생 점수입력판 `/input?k=` |
 
 **공유하는 것**: RP 계산, 보너스·패널티, 티어, 시즌, 호칭(`title-calculator.ts`), 휴면 감점, 배치고사(언랭크).
 
-**school에서 폐기한 것**: PIN 인증(LockGate), 뱃지형 업적(`achievement-calculator.ts`) — 이식하지 않았다.
+**school에서 폐기한 것**: 뱃지형 업적(`achievement-calculator.ts`) — 이식하지 않았다. (옛 PIN 인증 LockGate도 폐기했지만, 2026-09-28부터 **기기 잠금(핀)** 이 새로 생겨 양쪽 모두 쓴다: `DeviceLock.tsx`, `PLAN-device-lock.md`.)
 
 ---
 
@@ -74,12 +74,14 @@ src/routes/index.tsx          → Lobby (club)
 src/routes/school.index.tsx   → Lobby schoolMode (school 입구)
 src/routes/class.$classId.tsx → LeagueApp  ← 본체가 여기 있다
 src/routes/school.$classId.tsx→ LeagueApp 재사용 (얇은 껍데기)
-src/routes/ranking.$classId.tsx → PublicRanking (무인증)
+src/routes/ranking.$classId.tsx → RankingEntry (무인증): club=PublicRanking, school=ClassroomView
+src/routes/ranking.$classId_.$ownerId.tsx → 교실 화면 (선생님별 주소)
+src/routes/input.tsx          → 학생 점수입력판 (무인증, 열쇠 링크)
 src/routes/__root.tsx         → 로그인 게이트 + 공개 경로 예외
 ```
 
 `__root.tsx`는 세션이 없으면 경로와 무관하게 `<Login />`만 렌더한다.
-- 공개 경로는 `PUBLIC_PATH_PREFIXES`(`/ranking/`)로 예외 처리
+- 공개 경로는 `PUBLIC_PATH_PREFIXES`(`/ranking/`, `/input`)로 예외 처리
 - `/school` 계열이면 `Login`에 `schoolMode` 전달해 학교용 문구 표시
 
 ### 학년/반 축의 "자동 적응"
@@ -95,7 +97,7 @@ src/routes/__root.tsx         → 로그인 게이트 + 공개 경로 예외
 | 학년 (3학년) | 반 칩만 | `2반 15번` |
 | 전교 | 학년 + 반 칩 | `3학년 2반 15번` |
 
-적용 위치: `RecordMatch.tsx`(PlayerPicker), `MatchRecommend.tsx`, `PublicRanking.tsx`
+적용 위치: `RecordMatch.tsx`(PlayerPicker), `Leaderboard.tsx`(랭킹 탭 학년/반 필터), `DailyResults.tsx`(하이라이트 반 필터), `PublicRanking.tsx`(동호회 공개 순위표에 남은 코드, 사실상 안 쓰임)
 **예외**: `AdminStudentManage.tsx`의 학년/반/번호 컬럼은 **값이 균일해도 항상 노출**한다. 거기가 값을 입력·수정하는 창구라, 숨기면 나중에 다른 반을 추가할 수 없다.
 
 ---
@@ -114,9 +116,12 @@ src/routes/__root.tsx         → 로그인 게이트 + 공개 경로 예외
 | 선수 추가 폼 (이름/학년/반/번호) | `src/components/league/AddMemberForm.tsx` |
 | 명단 관리 표, 붙여넣기 파서 | `src/components/league/admin/AdminStudentManage.tsx` |
 | 경기 기록 시 선수 선택·필터 | `src/components/league/RecordMatch.tsx` (PlayerPicker) |
-| 매치 추천 대상 선택·필터 | `src/components/league/MatchRecommend.tsx` |
+| 대기열(줄·대진 뽑기·코트·수업 종료) | `src/components/league/MatchQueue.tsx`, 출석 명단 `SessionRoster.tsx` (학교) / `ClubRoster.tsx` (동호회) |
+| 랭킹 탭(학년/반 필터 포함) | `src/features/leaderboard/Leaderboard.tsx` |
 | 관리자 메뉴, 레벨 관리 노출 | `src/components/league/AdminPanel.tsx` |
-| 무인증 공개 순위표 | `src/features/leaderboard/PublicRanking.tsx` |
+| 학교 교실 화면 (무인증) | `src/features/classroom/ClassroomView.tsx` (입구 `RankingEntry.tsx`) |
+| 학생 점수입력판 (무인증) | `src/features/classroom/ScoreInputView.tsx`, 서버 함수 `supabase/functions/score-input/` |
+| 동호회 무인증 공개 순위표 (공유 버튼 없음) | `src/features/leaderboard/PublicRanking.tsx` |
 | 학년/반 표기·축 계산 | `src/lib/league-types.ts` |
 
 그 외 용어만 분기된 파일: `MatchesTab.tsx`, `MyRecord.tsx`, `AdminMatchRecords.tsx`, `AdminSettings.tsx`, `DecayManager.tsx`, `RpRecoveryPanel.tsx`
@@ -165,32 +170,28 @@ school 라우트에서 그대로 실행되면 학교 사용자가 클럽 로비�
 멤버로 들어가면 경기를 기록할 수 없어 초대 기능이 무의미해진다.
 ⚠️ 링크를 가진 사람은 누구나 공동 관리자가 된다(방장 권한은 아님).
 
-### school에서 예약(경기장 탭)이 다르게 동작하는 이유
+### 경기장 탭의 줄(대기열) — 예약은 없어졌다
 
-푸시 구독(`push_subscriptions.user_id`)이 `auth.users` 참조라 **학생에게는 알림을 보낼 수 없다.**
-학생 로그인이 없으니 예약 참가/나가기, 도전장, 입장 호출 배너도 받을 사람이 없다.
+옛 "경기 예약·매치 추천·도전장·입장 호출" 흐름은 **2026-09-30에 회원 예약·소집과 함께 없앴다.**
+지금 경기장은 학교·동호회 모두 **번호순 대기열**이다: 출석(동호회는 오늘 참석) → 대진 뽑기(한 바퀴 / +1경기 / 자동 채우기) → 줄 → 결과 입력.
+설계는 `PLAN-match-assignment.md`·`PLAN-session-scope.md`(둘 다 구현됨), 화면별 기능 지도는 `audit-2026-10-24/audit-features.md` A-3.
 
-다만 **교사가 다음 경기를 미리 담아두는 "대기 목록"으로는 그대로 쓸 수 있다.**
-매치 추천 → 예약 폼 담기 → 코트가 비면 호출 → 결과 입력 시 자동 종료 흐름이 살아 있다.
-
-그래서 school에서는 죽은 것만 걷어냈다.
+푸시 구독(`push_subscriptions.user_id`)이 `auth.users` 참조라 **학생에게는 알림을 보낼 수 없다.** school의 학생은 로그인이 없다.
 
 | | school |
 |---|---|
-| "알림" 버튼 | **숨김** (`canNotify`에 `!isSchool`) — 받을 사람이 없다 |
-| 참가 / 나만 빠질게요 | `myPlayerId` 가드로 **자연히 안 뜸** (별도 분기 불필요) |
-| 도전장 (`PlayerDetailSheet`) | `canChallenge = !!myPlayerId && …` 로 **자연히 안 뜸** |
-| 입장 배너 (`ScheduledMatchBanner`) | `myPlayerId` 없으면 `return null` — **자연히 안 뜸** |
-| 예약 만들기 / 목록 / 관리자 "추가" | **유지** — 교사의 대기 목록 |
-| 문구 | `MatchesTab`의 `q` 객체로 교사 어휘 전환 (예약 → 다음 경기 담기 / 대기 중인 경기) |
+| 줄 "알림" 버튼 | 숨김 (`canNotify`에 `!isSchool`) |
+| 머리 줄 알림 종(`PushToggle`) | **아직 보임** — 켜도 받을 알림이 없음 (정리 후보 B-6) |
+| 줄 만들기·꺼내기 | 교사(관리자 이상)만. 대기열 규칙은 학교·동호회 공통 |
+| 학생이 직접 점수 넣기 | 로그인 없이 점수입력판 `/input?k=`(교사가 QR로 열어 줌) |
+| 문구 | `league-terms.ts` 용어 사전 |
 
-**즉 school 분기가 필요했던 건 "알림" 버튼 하나뿐이다.** 나머지는 이미 `myPlayerId`
-가드가 막고 있었다. 비슷한 회원 전용 기능을 추가할 때도 이 가드를 그대로 쓰면 된다.
+⚠️ 코드에는 옛 예약 흐름의 **잔재**가 남아 있다(입장 배너, 팀 미정 줄의 참가/나가기, 예약 참가자 안내, 승급 축하 화면 등). 쓰이지 않으니 새 기능의 근거로 삼지 말 것. 목록은 `PLAN-usability-audit.md` "묶음 6 잔재 코드 목록".
 
 ### school에 선수 연동이 없는 이유
 
 학생은 로그인이 없어 연동 자체가 불가능하고, 교사는 선수가 아니다.
-`admin-only` 고정이라 자율 기록도 없고, 도전장·예약 참가도 회원 기능이다.
+`admin-only` 고정이라 자율 기록도 없다. (옛 도전장·예약 참가는 지금 앱에서 없어졌다.)
 남는 실익은 "내 카드"뿐인데 교사는 관리자 화면에서 다 본다.
 
 그래서 school에서는:
@@ -203,8 +204,7 @@ school 라우트에서 그대로 실행되면 학교 사용자가 클럽 로비�
 
 1. **club의 기존 URL `/class/$classId`** — 운영 중인 동호인 링크다. 절대 바꾸지 않는다.
 2. **RP 계산·보너스·패널티·호칭 판정 로직** — school은 club과 **같은 규칙을 쓴다.** 학교용으로 계산을 바꾸자는 요구가 나오면 별도 논의 대상이지, 디테일 수정으로 처리하지 않는다.
-3. **예약·도전장·입장 호출의 club 동작**(`scheduled_matches`) — 동호인 UX의 핵심이다.
-   school 쪽만 분기하고 club 경로는 손대지 않는다. (아래 참고)
+3. **club 대기열 동작** — 동호인이 쓰는 줄(`scheduled_matches` 표, 팀 미정 줄 포함)이다. 예약·도전장·입장 호출 화면은 없어졌지만, 학교 쪽만 분기하고 club 경로는 따로 합의 없이 손대지 않는다.
 4. **`players.group_label`** — club 전용. school에서는 항상 null로 둔다. 학년/반을 여기에 욱여넣지 않는다.
 
 ---
@@ -270,7 +270,7 @@ psql -h /var/tmp -p 5433 -U postgres -c "select 1;"
 ## 7. 배포
 
 - `main`에 푸시하면 **Cloudflare Workers가 자동 배포**한다
-- 작업 브랜치에서 커밋 → 푸시 → `main`에 fast-forward 병합 → `main` 푸시
+- 작업은 `dev` 브랜치 하나에서 커밋·푸시 → 배포 = `/ship`으로 `dev` → `main` 합치기(합치기 버튼은 소유자)
 - **DB 마이그레이션은 자동이 아니다.** Supabase SQL Editor에서 수동 실행해야 하며, 사용자에게 파일과 실행 순서를 명확히 전달할 것
 
 ---
@@ -279,7 +279,7 @@ psql -h /var/tmp -p 5433 -U postgres -c "select 1;"
 
 | | 내용 |
 |---|---|
-| 순위표 학년/반 필터 | 로그인 후 보는 랭킹 탭에는 학년/반 필터가 없다. club의 레벨 필터는 값이 없으면 자동으로 숨겨져 school에선 필터가 아예 안 뜬다. 전교 리그에서 불편하면 추가 |
+| ~~순위표 학년/반 필터~~ | **지금은 있다**(`Leaderboard.tsx`, 학년·반이 여러 종류일 때만 칩이 뜸). 이 줄은 낡은 설명이라 지우지 않고 표시만 해 둠 |
 | 증분 동기화 | `docs/PLAN-incremental-sync.md` 참고. 합의 완료, 미착수 |
 | 공개 순위표 추가 기능 | 개인화·필터 등. 처음부터 범위 밖으로 뒀다 |
 | school-league 레포 아카이브 | 최종 검수 후 별도 진행 |
