@@ -8,7 +8,7 @@ import { useLeagueStore } from "@/lib/league-store";
 import { teamsOf, useQueueRows } from "@/lib/use-queue-rows";
 import { sortStudentsForRoster, type ScheduledMatch, type Student } from "@/lib/league-types";
 import { liveSession } from "@/lib/session-today";
-import type { AssignmentPreset } from "@/domain/assignment-calculator";
+import type { AssignmentPreset, TeamSize } from "@/domain/assignment-calculator";
 import { REGROUP_NEEDS_CONFIRM, roundGamesKeepingOut, separateGamesKeepingOut } from "@/domain/round-size";
 import { countByGender, separateRoundBreakdown, type GenderCounts } from "@/domain/gender-split";
 
@@ -53,7 +53,7 @@ const PRESETS: {
  */
 function roundHint(free: number, perMatch: number, queued: number): string {
   const all = Math.floor(free / perMatch);
-  if (all === 0) return "놀고 있는 사람이 모자라요. [+1]은 이미 줄에 선 사람으로 다음 판을 미리 잡아요.";
+  if (all === 0) return "놀고 있는 사람이 모자라요. [+] 버튼은 이미 줄에 선 사람으로 다음 판을 미리 잡아요.";
   const rounds = roundGamesKeepingOut(all, free, perMatch, queued);
   if (rounds === 0) return "방금 끝난 친구들끼리만 남아 있어요. 다음 경기가 끝나면 섞어서 넣어요.";
   if (rounds < all) return `채우기 = ${rounds}경기 · ${free - rounds * perMatch}명은 남겨 두었다가 다음에 끝난 친구들과 섞어요.`;
@@ -70,7 +70,7 @@ function separateRoundHint(free: GenderCounts, queued: { m: number; f: number },
     const all = separateRoundBreakdown(free, perMatch);
     return all.m + all.f > 0
       ? "남녀 따로 · 방금 끝난 친구들끼리만 남아 있어요. 다음 경기가 끝나면 섞어서 넣어요."
-      : "남녀 따로 · 남자도 여자도 한 경기 인원이 안 돼요. [+1]은 이미 줄에 선 사람으로 잡아요.";
+      : "남녀 따로 · 남자도 여자도 한 경기 인원이 안 돼요. [+] 버튼은 이미 줄에 선 사람으로 잡아요.";
   }
   const u = free.u > 0 ? ` · 미지정 ${free.u}명은 자리 남는 쪽에` : "";
   return `남녀 따로 · 남 ${m}경기 · 여 ${f}경기${u}`;
@@ -89,6 +89,10 @@ const SIMUL_HELP =
 
 const ROUND_HELP =
   "[다음 경기 채우기] = 놀고 있는 사람 전원이 한 번씩 들어가는 만큼 뽑아요. 복식은 4명, 단식은 2명이 한 경기예요. 4명(2명)으로 안 나눠떨어지면 남는 사람은 다음에 먼저 들어가요. 줄에 경기가 남아 있으면 몇 명은 남겨 두었다가 다음에 끝난 친구들과 섞어요 — 같은 친구들끼리만 계속 만나지 않게요.";
+
+// 학교는 [+복식]·[+단식]으로 종류를 섞을 수 있다 — 채우기는 명단에서 고른 종류로.
+const ROUND_HELP_SCHOOL =
+  ROUND_HELP + " [+복식]·[+단식]은 누른 종류로 한 경기만 더 넣어요. 복식 줄 사이에 단식을 섞을 수 있어요.";
 
 /**
  * 대기열 — 순서 목록 하나.
@@ -268,7 +272,8 @@ export function MatchQueue({
     ? (({ m, f }) => m + f)(separateGamesKeepingOut(freeByGender, queuedByGender, perMatch))
     : roundGamesKeepingOut(Math.floor(free / perMatch), free, perMatch, queue.length);
   // [+1경기]가 같은 친구들끼리 재대결이라 멈췄을 때 — 넣을지 한 번 묻는 줄.
-  const [regroupAsk, setRegroupAsk] = useState(false);
+  // 학교의 [+복식]·[+단식]이면 어느 쪽을 눌렀는지도 기억한다([넣기]가 같은 종류로 넣게).
+  const [regroupAsk, setRegroupAsk] = useState<false | { teamSize?: TeamSize }>(false);
   // 줄이 바뀌면(경기가 끝나거나 들어가면) 물음은 낡는다 — 다시 누르면 그때 새로 판단한다.
   useEffect(() => setRegroupAsk(false), [queue.length]);
   // [한 바퀴] 옆 물음표를 누르면 뜨는 말풍선.
@@ -276,7 +281,7 @@ export function MatchQueue({
 
   // 버튼 잠금은 ref로 — filling(상태)은 다음 그림 때야 버튼을 막아서, 빠른 두 번 누름이 둘 다 들어갔다.
   const fillLock = useRef(false);
-  const fill = async (n: number | "round", allowRegroup = false) => {
+  const fill = async (n: number | "round", allowRegroup = false, teamSize?: TeamSize) => {
     if (fillLock.current) return 0;
     fillLock.current = true;
     setFilling(true);
@@ -284,10 +289,11 @@ export function MatchQueue({
     try {
       // 종목·남녀는 세션 설정이다. 여기서는 경기 수만 정한다 — 한 바퀴는 스토어가 센다
       // (남녀 따로일 때 남 바퀴 + 여 바퀴를 여기와 같은 규칙으로 세므로 어긋날 일이 없다).
+      // 예외: 학교의 [+복식]·[+단식]은 그 한 경기만 종류를 바꿔 넣는다(줄마다 종류가 따로 저장된다).
       const made = await fillAssignmentQueue(
-        n === "round" ? { mode: "round", policy: preset } : { count: n, policy: preset, allowRegroup },
+        n === "round" ? { mode: "round", policy: preset } : { count: n, policy: preset, allowRegroup, teamSize },
       );
-      if (made === REGROUP_NEEDS_CONFIRM) setRegroupAsk(true);
+      if (made === REGROUP_NEEDS_CONFIRM) setRegroupAsk({ teamSize });
       return made;
     } finally {
       fillLock.current = false;
@@ -648,7 +654,19 @@ export function MatchQueue({
 
             {/* +1경기 — 한 건. 누르는 횟수가 곧 경기 수라 숫자를 고를 필요가 없다.
                 놀고 있는 사람이 모자라도 뽑힌다(다음 판 미리 잡기). */}
-            {!simul && (
+            {/* 학교는 [+복식]·[+단식] 둘 — 복식 수업 중에도 단식 한 경기를 섞어 넣는다(2026-11-26).
+                오늘 명단의 종류는 [다음 경기 채우기]의 기본값일 뿐, 줄마다 종류가 따로 저장된다. */}
+            {!simul && !isClub && ([2, 1] as const).map((size) => (
+              <Button
+                key={size}
+                onClick={() => fill(1, false, size)}
+                disabled={filling}
+                className={cn("h-10 flex-1 whitespace-nowrap rounded-lg px-2 text-xs font-black", secondaryBtn)}
+              >
+                <Plus className="mr-0.5 size-3.5" />{size === 2 ? "복식" : "단식"}
+              </Button>
+            ))}
+            {!simul && isClub && (
             <Button
               onClick={() => fill(1)}
               disabled={filling}
@@ -676,7 +694,7 @@ export function MatchQueue({
               <span className="min-w-0 flex-1 font-bold text-foreground">방금 같이 뛴 친구들끼리 또 붙어요. 그래도 넣을까요?</span>
               <button
                 type="button"
-                onClick={() => fill(1, true)}
+                onClick={() => fill(1, true, regroupAsk.teamSize)}
                 disabled={filling}
                 className="shrink-0 rounded-md bg-amber-500 px-2.5 py-1 font-black text-black"
               >
@@ -724,7 +742,7 @@ export function MatchQueue({
                 onClick={() => setHelpOpen(false)}
                 className="min-w-0 flex-1 text-left leading-relaxed text-foreground animate-in fade-in duration-150"
               >
-                {simul ? SIMUL_HELP : ROUND_HELP}
+                {simul ? SIMUL_HELP : isClub ? ROUND_HELP : ROUND_HELP_SCHOOL}
               </button>
             ) : (
               <span className="min-w-0 flex-1">
