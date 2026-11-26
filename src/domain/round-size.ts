@@ -37,6 +37,12 @@ export function roundGamesKeepingOut(
 export const REGROUP_NEEDS_CONFIRM = -1;
 
 /**
+ * [+1경기]가 놀고 있는 사람이 모자라 이미 줄에 선 사람을 한 번 더 넣게 될 때 돌려주는 값.
+ * 그대로 넣으면 아이들 눈에는 "같은 이름이 연달아 뜬다"(11-26) — 넣기 전에 한 번 묻는다.
+ */
+export const REUSE_NEEDS_CONFIRM = -2;
+
+/**
  * 남녀 따로일 때의 [다음 경기 채우기] — 남녀를 따로 세어 각자 밖에 남긴다.
  *
  * 합쳐서 세면 "밖에 4명"이 전부 여자일 수 있다. 그러면 남자 경기가 끝났을 때 섞을 남자가

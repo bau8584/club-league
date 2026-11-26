@@ -9,7 +9,7 @@ import { teamsOf, useQueueRows } from "@/lib/use-queue-rows";
 import { sortStudentsForRoster, type ScheduledMatch, type Student } from "@/lib/league-types";
 import { liveSession } from "@/lib/session-today";
 import type { AssignmentPreset, TeamSize } from "@/domain/assignment-calculator";
-import { REGROUP_NEEDS_CONFIRM, roundGamesKeepingOut, separateGamesKeepingOut } from "@/domain/round-size";
+import { REGROUP_NEEDS_CONFIRM, REUSE_NEEDS_CONFIRM, roundGamesKeepingOut, separateGamesKeepingOut } from "@/domain/round-size";
 import { countByGender, separateRoundBreakdown, type GenderCounts } from "@/domain/gender-split";
 
 const dn = (s?: Student | null) => (s ? s.nickname || s.name : "?");
@@ -273,7 +273,7 @@ export function MatchQueue({
     : roundGamesKeepingOut(Math.floor(free / perMatch), free, perMatch, queue.length);
   // [+1경기]가 같은 친구들끼리 재대결이라 멈췄을 때 — 넣을지 한 번 묻는 줄.
   // 학교의 [+복식]·[+단식]이면 어느 쪽을 눌렀는지도 기억한다([넣기]가 같은 종류로 넣게).
-  const [regroupAsk, setRegroupAsk] = useState<false | { teamSize?: TeamSize }>(false);
+  const [regroupAsk, setRegroupAsk] = useState<false | { teamSize?: TeamSize; reuse?: boolean }>(false);
   // 줄이 바뀌면(경기가 끝나거나 들어가면) 물음은 낡는다 — 다시 누르면 그때 새로 판단한다.
   useEffect(() => setRegroupAsk(false), [queue.length]);
   // [한 바퀴] 옆 물음표를 누르면 뜨는 말풍선.
@@ -294,6 +294,7 @@ export function MatchQueue({
         n === "round" ? { mode: "round", policy: preset } : { count: n, policy: preset, allowRegroup, teamSize },
       );
       if (made === REGROUP_NEEDS_CONFIRM) setRegroupAsk({ teamSize });
+      if (made === REUSE_NEEDS_CONFIRM) setRegroupAsk({ teamSize, reuse: true });
       return made;
     } finally {
       fillLock.current = false;
@@ -691,7 +692,11 @@ export function MatchQueue({
 
           {regroupAsk && (
             <div className="mt-2 flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs animate-in fade-in duration-150">
-              <span className="min-w-0 flex-1 font-bold text-foreground">방금 같이 뛴 친구들끼리 또 붙어요. 그래도 넣을까요?</span>
+              <span className="min-w-0 flex-1 font-bold text-foreground">
+                {regroupAsk.reuse
+                  ? "놀고 있는 친구가 모자라요. 이미 줄에 선 친구가 한 번 더 들어가요. 그래도 넣을까요?"
+                  : "방금 같이 뛴 친구들끼리 또 붙어요. 그래도 넣을까요?"}
+              </span>
               <button
                 type="button"
                 onClick={() => fill(1, true, regroupAsk.teamSize)}

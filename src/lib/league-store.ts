@@ -14,7 +14,7 @@ import {
 } from "@/domain/assignment-calculator";
 import { carriedPlayDebt } from "@/domain/play-debt";
 import { countByGender, genderGroupOf, separateRoundCount, type GenderMode } from "@/domain/gender-split";
-import { REGROUP_NEEDS_CONFIRM, roundGamesKeepingOut, separateGamesKeepingOut } from "@/domain/round-size";
+import { REGROUP_NEEDS_CONFIRM, REUSE_NEEDS_CONFIRM, roundGamesKeepingOut, separateGamesKeepingOut } from "@/domain/round-size";
 import { skillRating } from "@/domain/skill-rating";
 import { mapMatchRow, mapPlayerRows } from "@/domain/calc-context";
 import { getTodayPlayerIds } from "./today-players";
@@ -3478,6 +3478,15 @@ function useLeagueStoreInternal() {
       return 0;
     }
 
+    // [+1경기]: 이미 줄에 선 사람을 또 넣게 되면 넣기 전에 묻는다(이름이 두 줄에 뜬다).
+    // 학교만 — 동호회는 다음 판을 일부러 미리 잡아 두는 쓰임이 많아 묻지 않는다.
+    if (
+      leagueTypeRef.current === "school" &&
+      opts?.count === 1 && !opts.allowRegroup &&
+      out.matches.some((m) => m.relaxedPlayerIds.length > 0)
+    ) {
+      return REUSE_NEEDS_CONFIRM;
+    }
     // [+1경기]: 오늘(또는 줄에서) 이미 같이 뛴 넷이 그대로 다시 묶였으면 넣기 전에 묻는다.
     if (opts?.count === 1 && !opts.allowRegroup) {
       const groupKey = (t: AssignmentHistoryMatch) => [...t.teamA, ...t.teamB].sort().join("|");

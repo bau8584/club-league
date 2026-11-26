@@ -578,7 +578,7 @@ export function calculateAssignment(input: AssignmentInput): AssignmentOutput {
     // 남녀 따로일 때는 남자 쪽 인원이 모자라도 여자 쪽은 뽑을 수 있어야 한다 —
     // 어떤 앵커로도 못 뽑아야 비로소 shortfall 이다.
     // 완화(큐에 든 사람 재사용)는 어느 앵커도 깨끗하게 못 뽑았을 때만, 큰 감점과 함께.
-    let best: { teamA: string[]; teamB: string[]; cost: number; relaxed: Set<string> } | null =
+    let best: { teamA: string[]; teamB: string[]; cost: number; key: number[]; relaxed: Set<string> } | null =
       null;
     for (const allowRelax of [false, true]) {
       // 완화 단계에서는 큐에 든 사람도 앵커가 될 수 있다(그 사람이 가장 덜 뛰었을 수 있다).
@@ -641,8 +641,13 @@ export function calculateAssignment(input: AssignmentInput): AssignmentOutput {
           }
         }
         if (found) {
-          best = { teamA: found.teamA, teamB: found.teamB, cost: found.cost, relaxed };
-          break;
+          const cand = { teamA: found.teamA, teamB: found.teamB, cost: found.cost, key: found.key, relaxed };
+          // 깨끗한 단계는 가장 덜 뛴 앵커의 첫 답이 곧 답이다(판 수 공정).
+          if (!allowRelax) { best = cand; break; }
+          // 완화 단계는 모든 앵커를 비교해 줄에 선 사람을 가장 적게 다시 쓰는 대진을 고른다.
+          // 첫 답에서 멈추면 앵커 순서(동점이면 지터)에 따라 넷 다 줄에 선 사람으로 뽑혔다
+          // — 11-26 남녀 따로: 놀던 여학생 셋 + 1명 재사용이 가능한데 줄에 선 남학생 넷을 또 넣음.
+          if (!best || compareKeys(found.key, best.key) < 0) best = cand;
         }
       }
       if (best) break;
@@ -674,10 +679,34 @@ export function calculateAssignment(input: AssignmentInput): AssignmentOutput {
 
   return { matches, shortfall, playCounts };
 
-  /** 덜 뛴 사람 우선, 동점이면 고정 지터로 결정론적으로 가른다. */
+  /**
+   * 덜 뛴 사람 우선, 동점이면 고정 지터로 결정론적으로 가른다.
+   * 남녀 따로면 동점일 때 1인당 덜 뛴 그룹(성별)을 먼저 — 인원이 많은 쪽이 지터로 계속 앞서
+   * "여학생만 계속 나온다"가 됐다(11-26: 줄 포함 1인당 여 1.54판·남 1.0판인데 여자 단식).
+   */
   function playPriority(a: string, b: string): number {
     const diff = (stats.playCount.get(a) ?? 0) - (stats.playCount.get(b) ?? 0);
     if (diff !== 0) return diff;
+    if (groupOf.size > 0) {
+      const ga = groupOf.get(a);
+      const gb = groupOf.get(b);
+      if (ga !== undefined && gb !== undefined && ga !== gb) {
+        const d = groupLoad(ga) - groupLoad(gb);
+        if (d !== 0) return d;
+      }
+    }
     return (jitter.get(a) ?? 0) - (jitter.get(b) ?? 0);
+  }
+
+  /** 그룹의 1인당 판 수(오늘 + 줄 + 지난 빚). 정렬 중 여러 번 불리지만 명단이 작아 그때그때 센다. */
+  function groupLoad(g: string): number {
+    let sum = 0;
+    let n = 0;
+    for (const [id, gg] of groupOf) {
+      if (gg !== g) continue;
+      sum += stats.playCount.get(id) ?? 0;
+      n++;
+    }
+    return n ? sum / n : 0;
   }
 }
