@@ -6,6 +6,7 @@ import {
 } from "@/lib/league-types";
 import { RefreshCw, SlidersHorizontal, Radio } from "lucide-react";
 import { useCourtCallout } from "@/components/league/MatchQueue";
+import { onCourt } from "@/lib/use-queue-rows";
 
 /**
  * 교실 화면 — 로그인 없이 대기열과 등급을 본다.
@@ -326,9 +327,14 @@ const EMPTY: QueueRow[] = [];
  * `pickable`·`onPick` 은 점수입력판(ScoreInputView)만 쓴다 — 넣을 수 있는 줄을 눌러 점수를 넣는다.
  * 교실 화면은 넘기지 않으므로 지금과 똑같다.
  */
-export function Queue({ rows, courts, pickable, onPick }: {
+export function Queue({ rows: rawRows, courts, pickable, onPick }: {
   rows: QueueRow[]; courts: boolean; pickable?: Set<number>; onPick?: (seq: number) => void;
 }) {
+  // 경기 중인 줄이 먼저 — 단식 코트를 쓰면 번호를 건너뛰어 코트에 들어간다(use-queue-rows.ts 와 같은 순서).
+  const rows = useMemo(
+    () => (courts ? [...rawRows].sort((a, b) => (onCourt(a) ? 0 : 1) - (onCourt(b) ? 0 : 1)) : rawRows),
+    [rawRows, courts],
+  );
   // 코트가 방금 빈 줄 — 선생님이 부르지 않아도 아이들이 보고 들어가게 크게.
   const callout = useCourtCallout(courts ? rows : EMPTY);
   const who = (r: QueueRow) =>

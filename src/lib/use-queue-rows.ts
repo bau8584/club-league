@@ -9,6 +9,9 @@ export const teamsOf = (r: ScheduledMatch) => ({
   pool: ((r.player_ids || []).filter(Boolean) as string[]) ?? [],
 });
 
+/** 서버가 코트 번호를 붙인 줄(= 경기 중). 코트를 안 쓰면 번호가 없다. */
+export const onCourt = (r: { court?: string | null }) => !!r.court && /^\d+$/.test(r.court);
+
 /**
  * 대기 중인 줄과 "내가 몇 번째냐".
  *
@@ -32,6 +35,11 @@ export function useQueueRows() {
       scheduledMatches
         .filter((m) => m.status === "waiting" || m.status === "called")
         .sort((a, b) => {
+          // 코트에 든 줄이 먼저. 단식 코트를 쓰면 빈 코트에 그 종류의 줄이 번호를 건너뛰어
+          // 들어간다(#6 단식이 #4 복식보다 먼저). 단식 코트가 없으면 코트에 든 줄이 곧 앞쪽 N줄이라 그대로다.
+          const ca = onCourt(a) ? 0 : 1;
+          const cb = onCourt(b) ? 0 : 1;
+          if (ca !== cb) return ca - cb;
           const sa = a.seq ?? Number.POSITIVE_INFINITY;
           const sb = b.seq ?? Number.POSITIVE_INFINITY;
           if (sa !== sb) return sa - sb;

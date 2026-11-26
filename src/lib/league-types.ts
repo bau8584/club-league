@@ -93,6 +93,7 @@ export type AssignmentSession = {
   gender_mode?: "mixed" | "separate"; // 남녀 섞어서 | 따로. 없으면 mixed (옛 행)
   next_seq?: number;                 // 다음에 내줄 대진 번호
   court_count?: number | null;       // 코트 수. 없으면 코트 안내 없음(지금 동작). 줄의 court 는 서버가 매긴다
+  single_courts?: number | null;     // 그중 단식 코트 수(복식 수업에서만). 없으면 0 = 지금 동작. 칸이 생기기 전 행엔 키 자체가 없다
   queue_mode?: QueueMode | null;     // 운영 방식. 없으면 줄서기(지금 동작)
   auto_round?: boolean | null;       // 한 바퀴 자동. 없으면 꺼짐(지금 동작). 붙일 기기는 서버(claim_auto_round)가 정한다
   input_key?: string | null;         // 점수입력판 열쇠. 없으면 닫힘

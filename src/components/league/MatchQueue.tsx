@@ -11,6 +11,7 @@ import { liveSession } from "@/lib/session-today";
 import type { AssignmentPreset, TeamSize } from "@/domain/assignment-calculator";
 import { REGROUP_NEEDS_CONFIRM, REUSE_NEEDS_CONFIRM, roundGamesKeepingOut, separateGamesKeepingOut } from "@/domain/round-size";
 import { countByGender, separateRoundBreakdown, type GenderCounts } from "@/domain/gender-split";
+import { courtMixOf, kindCounts, mixedRoundSizes, mixedSeparatePlan, sizesLabel, type QueuedKind } from "@/domain/court-mix";
 
 const dn = (s?: Student | null) => (s ? s.nickname || s.name : "?");
 
@@ -92,7 +93,11 @@ const ROUND_HELP =
 
 // 학교는 [+복식]·[+단식]으로 종류를 섞을 수 있다 — 채우기는 명단에서 고른 종류로.
 const ROUND_HELP_SCHOOL =
-  ROUND_HELP + " [+복식]·[+단식]은 누른 종류로 한 경기만 더 넣어요. 복식 줄 사이에 단식을 섞을 수 있어요.";
+  ROUND_HELP + " [+복식]·[+단식]은 누른 종류로 한 경기만 더 넣어요. 복식 줄 사이에 단식을 섞을 수 있어요. [명단 바꾸기]에서 단식 코트를 정해 두면 채우기가 알아서 섞어요.";
+
+// 단식 코트를 정한 수업 — 채우기·자동·[+]가 코트 비율대로 섞는다(court-mix.ts).
+const ROUND_HELP_MIX =
+  ROUND_HELP + " 단식 코트를 정해 두어서, 복식과 단식을 코트 비율대로 섞어 넣어요. 복식으로 나누고 2~3명이 남으면 그 친구들은 단식을 해요. 단식 코트가 비면 단식 줄이 먼저 들어가요. [+]도 모자란 종류로 한 경기를 넣어요.";
 
 /**
  * 대기열 — 순서 목록 하나.
@@ -108,8 +113,11 @@ export function MatchQueue({
   canManage,
   canRecord = false,
   onRecordRow,
+  onOpenRoster,
 }: {
   canManage: boolean;
+  /** 코트 수는 명단 설정에서 정한다 — 대기열의 [코트]를 누르면 그 창을 연다. */
+  onOpenRoster?: () => void;
   /** 회원 줄의 [점수 넣기]. "all" = 모든 줄, "mine" = 내가 낀 줄만(자율 모드), false = 없음(관리자만 입력). */
   canRecord?: "all" | "mine" | false;
   /** 줄의 [결과 입력] — 4명이 확정이므로 선수 선택 없이 바로 점수판으로 간다. */
@@ -268,7 +276,28 @@ export function MatchQueue({
     }
     return c;
   }, [queue, byId]);
-  const roundCount = separate
+  // 단식 코트 섞기 — 채우기가 복식·단식을 섞는다. 스토어(fillAssignmentQueue)와 같은 계산.
+  const mix = courtMixOf(assignmentSession);
+  const mixSizes = useMemo(() => {
+    if (!mix) return null;
+    const rows: QueuedKind[] = queue.map((r) => {
+      const { teamA, teamB, pool } = teamsOf(r);
+      const g = separate
+        ? [...teamA, ...teamB, ...pool].map((id) => byId.get(id)?.gender).find((x) => x === "M" || x === "F")
+        : undefined;
+      return { size: r.match_type === "single" ? 1 : 2, gender: g === "M" || g === "F" ? g : null };
+    });
+    if (separate) {
+      const p = mixedSeparatePlan(freeByGender, rows, mix);
+      return [...p.m, ...p.f];
+    }
+    return mixedRoundSizes(free, kindCounts(rows), mix);
+    // mix 는 매번 새 객체 — 값(코트·단식 코트)으로 본다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mix?.courts, mix?.singles, queue, separate, byId, freeByGender, free]);
+  const roundCount = mixSizes
+    ? mixSizes.length
+    : separate
     ? (({ m, f }) => m + f)(separateGamesKeepingOut(freeByGender, queuedByGender, perMatch))
     : roundGamesKeepingOut(Math.floor(free / perMatch), free, perMatch, queue.length);
   // [+1경기]가 같은 친구들끼리 재대결이라 멈췄을 때 — 넣을지 한 번 묻는 줄.
@@ -657,7 +686,17 @@ export function MatchQueue({
                 놀고 있는 사람이 모자라도 뽑힌다(다음 판 미리 잡기). */}
             {/* 학교는 [+복식]·[+단식] 둘 — 복식 수업 중에도 단식 한 경기를 섞어 넣는다(2026-11-26).
                 오늘 명단의 종류는 [다음 경기 채우기]의 기본값일 뿐, 줄마다 종류가 따로 저장된다. */}
-            {!simul && !isClub && ([2, 1] as const).map((size) => (
+            {/* 단식 코트를 정한 수업은 [+] 하나 — 종류는 줄에 모자란 쪽으로 알아서. */}
+            {!simul && !isClub && mix && (
+              <Button
+                onClick={() => fill(1)}
+                disabled={filling}
+                className={cn("h-10 flex-1 whitespace-nowrap rounded-lg px-2 text-xs font-black", secondaryBtn)}
+              >
+                <Plus className="mr-0.5 size-3.5" />1
+              </Button>
+            )}
+            {!simul && !isClub && !mix && ([2, 1] as const).map((size) => (
               <Button
                 key={size}
                 onClick={() => fill(1, false, size)}
@@ -717,6 +756,8 @@ export function MatchQueue({
 
           {/* 2층 — 방식(설정) · 안내. 물음표를 눌렀으면 안내 자리에 설명이 온다. */}
           <div className="mt-2 flex items-start gap-1.5 text-[11px] text-muted-foreground">
+            {/* 다 같이(라운드제)는 코트를 세지 않는다 — 예전에 정해 둔 수업만 보인다. */}
+            {(!simul || !!courtCount) && (<>
             <button
               type="button"
               onClick={() => setCourtOpen((v) => !v)}
@@ -725,10 +766,11 @@ export function MatchQueue({
                 courtOpen ? "text-neon-blue" : "text-foreground hover:text-neon-blue",
               )}
             >
-              <span className="font-bold text-muted-foreground">코트</span>&nbsp;{courtCount ? `${courtCount}개` : "안 씀"}
+              <span className="font-bold text-muted-foreground">코트</span>&nbsp;{courtCount ? `${courtCount}개${mix ? ` · 단식 ${mix.singles}` : ""}` : "안 셈"}
               <ChevronDown className={cn("size-3.5 transition-transform", courtOpen && "rotate-180")} />
             </button>
             <span className="shrink-0">·</span>
+            </>)}
             <button
               type="button"
               onClick={() => setPresetOpen((v) => !v)}
@@ -747,12 +789,16 @@ export function MatchQueue({
                 onClick={() => setHelpOpen(false)}
                 className="min-w-0 flex-1 text-left leading-relaxed text-foreground animate-in fade-in duration-150"
               >
-                {simul ? SIMUL_HELP : isClub ? ROUND_HELP : ROUND_HELP_SCHOOL}
+                {simul ? SIMUL_HELP : isClub ? ROUND_HELP : mix ? ROUND_HELP_MIX : ROUND_HELP_SCHOOL}
               </button>
             ) : (
               <span className="min-w-0 flex-1">
                 {simul
                   ? simulHint(queue.length, roundCount, free, perMatch)
+                  : mixSizes
+                  ? (mixSizes.length
+                      ? `${separate ? "남녀 따로 · " : ""}채우기 = ${sizesLabel(mixSizes)}`
+                      : "방금 끝난 친구들끼리만 남아 있어요. 다음 경기가 끝나면 섞어서 넣어요.")
                   : separate ? separateRoundHint(freeByGender, queuedByGender, perMatch) : roundHint(free, perMatch, queue.length)}
               </span>
             )}
@@ -760,29 +806,25 @@ export function MatchQueue({
 
           {courtOpen && (
             <div className="mt-2 animate-in fade-in slide-in-from-top-1 duration-150">
-              <div className="flex flex-wrap items-center gap-1.5">
-                {[null, 1, 2, 3, 4, 5, 6].map((n) => (
-                  <button
-                    key={n ?? 0}
-                    type="button"
-                    onClick={async () => {
-                      setCourtOpen(false);
-                      if (n !== courtCount) await updateAssignmentSession({ courtCount: n });
-                    }}
-                    className={cn(
-                      "h-8 min-w-9 rounded-full border px-3 text-xs font-black transition-all",
-                      courtCount === n
-                        ? "border-neon-blue/50 bg-neon-blue/20 text-neon-blue"
-                        : "border-border/40 text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    {n == null ? "안 씀" : n}
-                  </button>
-                ))}
-              </div>
-              <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
-                앞쪽 줄에 "경기 중"이 붙고, 결과가 들어오면 다음 줄이 들어가요. 코트 번호는 안 정해요. 교실 화면에 크게 떠요.
+              {/* 코트 수·단식 코트는 명단 설정에서 정한다(2026-11-26) — 수업 틀이라 한곳에 모은다.
+                  여기는 지금 값과 그 창으로 가는 길, 그리고 수업 중에 켜고 끄는 자동 채우기만. */}
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                {courtCount
+                  ? mix
+                    ? `코트 ${courtCount}개 중 ${mix.singles}개는 단식이에요. 빈 코트에는 그 종류의 줄이 먼저 들어가요. 교실 화면에 크게 떠요.`
+                    : "앞쪽 줄에 \"경기 중\"이 붙고, 결과가 들어오면 다음 줄이 들어가요. 교실 화면에 크게 떠요."
+                  : "코트를 정하면 앞쪽 줄에 \"경기 중\"이 붙고, 교실 화면에 크게 떠요."}
               </p>
+              {onOpenRoster && (
+                <button
+                  type="button"
+                  onClick={() => { setCourtOpen(false); onOpenRoster(); }}
+                  className="mt-1.5 flex items-center gap-0.5 text-xs font-black text-neon-blue hover:underline"
+                >
+                  코트 수 바꾸기 (명단 바꾸기)
+                  <ChevronRight className="size-3.5" />
+                </button>
+              )}
               {/* 스위치는 DB 에 칸이 생긴 뒤에만 보인다(마이그레이션 전에 눌러 저장 실패가 나지 않게). */}
               {!simul && courtCount && assignmentSession && "auto_round" in assignmentSession && (
                 <button

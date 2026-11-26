@@ -137,6 +137,9 @@ export function SessionRoster({
   const [draftGender, setDraftGender] = useState<GenderMode>("mixed");
   // 운영 방식 — 줄 서서 기다려요 | 모두 동시에 해요. 없으면 줄서기(옛 세션 그대로).
   const [draftMode, setDraftMode] = useState<QueueMode>("queue");
+  // 코트 — [차례대로]의 설정. null = 안 셈(코트 안내 없음). 단식 코트는 복식 수업에서 그중 몇 개.
+  const [draftCourts, setDraftCourts] = useState<number | null>(null);
+  const [draftSingles, setDraftSingles] = useState(0);
   // 새 수업은 방식을 꼭 고르게 한다 — 지난번 것은 "지난번" 표시로 한 번에 누르게만.
   const [modePicked, setModePicked] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -167,6 +170,8 @@ export function SessionRoster({
       setDraftType(assignmentSession?.match_type === "single" ? "single" : "double");
       setDraftGender(assignmentSession?.gender_mode === "separate" ? "separate" : "mixed");
       setDraftMode(assignmentSession?.queue_mode === "simultaneous" ? "simultaneous" : "queue");
+      setDraftCourts(assignmentSession?.court_count ?? null);
+      setDraftSingles(assignmentSession?.single_courts ?? 0);
     } else if (singleClass && classKeys.length === 1) {
       setSelected(classKeys);
     }
@@ -338,9 +343,11 @@ export function SessionRoster({
     setSaving(true);
     // 방식은 바뀌었을 때만 보낸다 — 고른 적 없는 옛 세션은 칸을 비워 둔 채(=줄서기) 그대로.
     const queueMode = draftMode !== (assignmentSession?.queue_mode ?? "queue") ? draftMode : undefined;
-    const ok = classesChanged
-      ? await startAssignmentSession({ playerIds: picked, matchType: draftType, genderMode: draftGender, queueMode })
-      : await updateAssignmentSession({ playerIds: picked, matchType: draftType, genderMode: draftGender, queueMode });
+    // 코트도 바뀌었을 때만. 단식 코트는 DB 에 칸이 생긴 뒤에만 보낸다(없는 칸을 쓰면 저장이 실패한다).
+    const courtCount = courtsChanged ? draftCourts : undefined;
+    const singleCourts = singlesSupported && singlesChanged ? (effectiveSingles || null) : undefined;
+    const fields = { playerIds: picked, matchType: draftType, genderMode: draftGender, queueMode, courtCount, singleCourts };
+    const ok = classesChanged ? await startAssignmentSession(fields) : await updateAssignmentSession(fields);
     setSaving(false);
     // 저장이 곧 "정했다"는 뜻이다 → 접고 대기열에 자리를 내준다.
     if (ok) {
@@ -349,6 +356,14 @@ export function SessionRoster({
     }
   };
 
+  // 단식 코트 — 칸이 생긴 뒤의 세션 행에만 키가 있다(auto_round 와 같은 방식).
+  const singlesSupported = !!assignmentSession && "single_courts" in assignmentSession;
+  // 단식 수업이거나 코트가 2개 미만이면 단식 코트를 가를 것이 없다 → 0 으로 본다.
+  const effectiveSingles =
+    draftType === "double" && (draftCourts ?? 0) >= 2 ? Math.min(draftSingles, (draftCourts ?? 0) - 1) : 0;
+  const courtsChanged = draftMode === "queue" && draftCourts !== (assignmentSession?.court_count ?? null);
+  const singlesChanged = draftMode === "queue" && effectiveSingles !== (assignmentSession?.single_courts ?? 0);
+
   const dirty =
     editing &&
     (classesChanged ||
@@ -356,6 +371,8 @@ export function SessionRoster({
       picked.some((id) => !present.includes(id)) ||
       draftType !== (assignmentSession?.match_type ?? "double") ||
       draftMode !== (assignmentSession?.queue_mode ?? "queue") ||
+      courtsChanged ||
+      (singlesSupported && singlesChanged) ||
       (genderEnabled && draftGender !== (assignmentSession?.gender_mode ?? "mixed")));
 
   // 닫는 것은 곧 편집을 그만두는 것이다 → 저장 안 한 손질은 버리고 세션으로 되돌린다.
@@ -653,12 +670,13 @@ export function SessionRoster({
                 </div>
               </div>
 
-              {/* 운영 방식 — 수업의 큰 틀이라 맨 위 카드 둘. 줄서기는 끝난 조부터 다음 경기로,
-                  모두 동시에는 가위바위보처럼 전원이 한 라운드를 같이 뛰고 다 끝나면 새로 짠다. */}
+              {/* 운영 방식 — 수업의 큰 틀이라 맨 위 카드 둘. 차례대로는 끝난 조부터 다음 경기로,
+                  다 같이는 공기놀이처럼 전원이 한 판을 같이 하고 다 끝나면 새로 짠다.
+                  이름만으로는 차이를 몰랐다(2026-11-26) → 맞는 종목을 같이 적는다. */}
               <div className="grid grid-cols-2 gap-2">
                 {([
-                  ["queue", "줄 서서 기다려요", "끝난 조부터 다음 경기"],
-                  ["simultaneous", "모두 동시에 해요", "다 끝나면 다음 라운드"],
+                  ["queue", "차례대로 해요", "배드민턴·탁구처럼 끝난 조부터 다음 경기"],
+                  ["simultaneous", "다 같이 해요", "공기놀이·팔씨름처럼 다 끝나면 다음 판"],
                 ] as const).map(([m, title, sub]) => (
                   <button
                     key={m}
@@ -702,6 +720,44 @@ export function SessionRoster({
                 ))}
               </div>
 
+              {/* 코트 — [차례대로]일 때만. 다 같이는 자리를 셀 일이 없다. */}
+              {draftMode === "queue" && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="mr-1 text-xs font-bold text-muted-foreground">코트</span>
+                  {[null, 1, 2, 3, 4, 5, 6].map((n) => (
+                    <Chip
+                      key={n ?? 0}
+                      on={draftCourts === n}
+                      onClick={() => {
+                        setEditing(true);
+                        setDraftCourts(n);
+                      }}
+                    >
+                      {n == null ? "안 셈" : n}
+                    </Chip>
+                  ))}
+                </div>
+              )}
+
+              {/* 단식 코트 — 복식 수업에서 코트 몇 개를 단식으로. 채우기가 종류를 섞어 넣는다. */}
+              {draftMode === "queue" && singlesSupported && draftType === "double" && (draftCourts ?? 0) >= 2 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="mr-1 text-xs font-bold text-muted-foreground">그중 단식</span>
+                  {Array.from({ length: draftCourts! }, (_, n) => n).map((n) => (
+                    <Chip
+                      key={n}
+                      on={effectiveSingles === n}
+                      onClick={() => {
+                        setEditing(true);
+                        setDraftSingles(n);
+                      }}
+                    >
+                      {n === 0 ? "없음" : `${n}개`}
+                    </Chip>
+                  ))}
+                </div>
+              )}
+
               {/* 남녀 따로 = 남자끼리·여자끼리만 한 경기(남자부/여자부). 미지정은 자리 남는 쪽에. */}
               {genderEnabled && (
                 <div className="flex items-center gap-1.5">
@@ -736,7 +792,7 @@ export function SessionRoster({
             </Button>
             <p className="mt-1.5 text-center text-[11px] text-muted-foreground">
               {mustPickMode
-                ? "위에서 줄 서서 기다릴지, 모두 동시에 할지 골라 주세요."
+                ? "위에서 차례대로 할지, 다 같이 할지 골라 주세요."
                 : classesChanged
                 ? "대기 중인 경기를 지우고 이 명단으로 새로 시작합니다."
                 : "대기 중인 경기는 그대로 두고 명단만 고칩니다. (지각·조퇴)"}

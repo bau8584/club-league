@@ -15,6 +15,7 @@ import {
 import { carriedPlayDebt } from "@/domain/play-debt";
 import { countByGender, genderGroupOf, separateRoundCount, type GenderMode } from "@/domain/gender-split";
 import { REGROUP_NEEDS_CONFIRM, REUSE_NEEDS_CONFIRM, roundGamesKeepingOut, separateGamesKeepingOut } from "@/domain/round-size";
+import { courtMixOf, kindCounts, mixedRoundSizes, mixedSeparatePlan, nextKind, type QueuedKind } from "@/domain/court-mix";
 import { skillRating } from "@/domain/skill-rating";
 import { mapMatchRow, mapPlayerRows } from "@/domain/calc-context";
 import { getTodayPlayerIds } from "./today-players";
@@ -3106,6 +3107,8 @@ function useLeagueStoreInternal() {
     matchType?: "single" | "double";
     genderMode?: GenderMode;
     queueMode?: QueueMode;
+    courtCount?: number | null;
+    singleCourts?: number | null;
   }): Promise<boolean> => {
     if (!isClassManagerRef.current) { toast.error("권한이 없습니다."); return false; }
     const cid = currentClassIdRef.current;
@@ -3117,6 +3120,8 @@ function useLeagueStoreInternal() {
       matchType: payload.matchType ?? "double",
       genderMode: payload.genderMode,
       queueMode: payload.queueMode,
+      courtCount: payload.courtCount,
+      singleCourts: payload.singleCourts,
       startedAt: new Date().toISOString(),
       // 같은 행을 계속 쓰므로 번호는 저절로 1번으로 돌아가지 않는다. 여기서 되돌린다.
       resetSeq: true,
@@ -3188,6 +3193,7 @@ function useLeagueStoreInternal() {
     matchType?: "single" | "double";
     genderMode?: GenderMode;
     courtCount?: number | null;
+    singleCourts?: number | null;
     autoRound?: boolean;
     queueMode?: QueueMode;
   }): Promise<boolean> => {
@@ -3202,6 +3208,7 @@ function useLeagueStoreInternal() {
       matchType: payload.matchType ?? base?.match_type ?? "double",
       genderMode: payload.genderMode,
       courtCount: payload.courtCount,
+      singleCourts: payload.singleCourts,
       autoRound: payload.autoRound,
       queueMode: payload.queueMode,
     });
@@ -3287,7 +3294,8 @@ function useLeagueStoreInternal() {
     const cid = currentClassIdRef.current;
     if (!cid) return 0;
 
-    const teamSize: TeamSize =
+    // 단식 코트 섞기면 [+]는 아래에서 줄의 종류 비율을 보고 다시 정한다.
+    let teamSize: TeamSize =
       opts?.teamSize ?? (assignmentSessionRef.current?.match_type === "single" ? 1 : 2);
     const preset: AssignmentPreset = opts?.policy ?? defaultPreset(leagueTypeRef.current);
 
@@ -3362,7 +3370,26 @@ function useLeagueStoreInternal() {
       }
       return null;
     };
-    const splitPlan = separate && isRound
+    // 단식 코트 섞기(court-mix.ts) — 종류를 고르지 않은 채우기·[+]만. [+복식]·[+단식]은 누른 대로.
+    const mix = opts?.teamSize ? null : courtMixOf(assignmentSessionRef.current);
+    const queueKinds: QueuedKind[] = queue.map((m) => ({
+      size: m.match_type === "single" ? 1 : 2,
+      gender: separate ? rowGender(m) : null,
+    }));
+    const mixPlan = mix && isRound
+      ? (separate
+          ? mixedSeparatePlan(countByGender(freeIds, genderOf), queueKinds, mix)
+          : { all: mixedRoundSizes(freeIds.length, kindCounts(queueKinds), mix) })
+      : null;
+    if (mix && !isRound) teamSize = nextKind(kindCounts(queueKinds), mix);
+    if (mixPlan) {
+      const total = "all" in mixPlan ? mixPlan.all.length : mixPlan.m.length + mixPlan.f.length;
+      if (total === 0) {
+        toast.info("방금 끝난 친구들끼리만 남아 있어요. 다음 경기가 끝나면 섞어서 넣을게요.");
+        return 0;
+      }
+    }
+    const splitPlan = separate && isRound && !mixPlan
       ? separateGamesKeepingOut(
           countByGender(freeIds, genderOf),
           {
@@ -3375,7 +3402,7 @@ function useLeagueStoreInternal() {
     const keptRound = splitPlan
       ? splitPlan.m + splitPlan.f
       : roundGamesKeepingOut(roundCount, freeIds.length, teamSize * 2, queue.length);
-    if (opts?.count == null && opts?.mode !== "one" && roundCount > 0 && keptRound === 0) {
+    if (!mixPlan && opts?.count == null && opts?.mode !== "one" && roundCount > 0 && keptRound === 0) {
       toast.info("방금 끝난 친구들끼리만 남아 있어요. 다음 경기가 끝나면 섞어서 넣을게요.");
       return 0;
     }
@@ -3408,7 +3435,7 @@ function useLeagueStoreInternal() {
     }
 
     const apart = await fetchApartPairs();
-    const calc = (pool: string[], busy: string[], n: number) => calculateAssignment({
+    const calc = (pool: string[], busy: string[], n: number, size: TeamSize = teamSize) => calculateAssignment({
       participants: students
         .filter((s) => pool.includes(s.id))
         .map((s) => ({ id: s.id, rating: ratingOf(s) })),
@@ -3423,7 +3450,7 @@ function useLeagueStoreInternal() {
       ],
       playCountOffset,
       count: n,
-      teamSize,
+      teamSize: size,
       policy: preset,
       // 누를 때마다 섞는 값을 바꾼다. 늘 0이면 같은 상황에서 다시 뽑을 때 똑같은 대진이 나온다.
       seed: opts?.seed ?? Math.floor(Math.random() * 2 ** 31),
@@ -3433,22 +3460,64 @@ function useLeagueStoreInternal() {
       ...(apart.length ? { apart } : {}),
     });
 
+    // 오늘(줄 포함) 1인당 몇 판 뛰었나 — 남녀 따로에서 덜 뛴 성별을 먼저 뽑고 줄에도 먼저 세운다.
+    const pids = participantIds;
+    const perHead = (g: "M" | "F") => {
+      const heads = pids.filter((id) => genderOf(id) === g).length;
+      if (!heads) return Infinity;
+      let plays = 0;
+      for (const t of [...matchesNow.filter(isTodayMatch).map(teamsOfMatch), ...queueHistory, ...queuePlayOnly]) {
+        for (const id of [...t.teamA, ...t.teamB]) if (genderOf(id) === g) plays++;
+      }
+      return plays / heads;
+    };
+    // 섞기: 종류 목록대로 뽑는다. 복식을 먼저 뽑고(넷이 모이기 어렵다) 단식은 남은 사람으로.
+    // 줄에는 목록 순서(복·단·복…)대로 세운다.
+    const drawSizes = (pool: string[], sizes: TeamSize[], busy: Set<string>) => {
+      const got: Record<TeamSize, AssignedMatch[]> = { 1: [], 2: [] };
+      let shortfall = 0;
+      for (const size of [2, 1] as const) {
+        const n = sizes.filter((t) => t === size).length;
+        if (!n) continue;
+        const o = calc(pool, [...busy], n, size);
+        for (const m of o.matches) for (const id of [...m.teamA, ...m.teamB]) busy.add(id);
+        got[size] = o.matches;
+        shortfall += o.shortfall;
+      }
+      const idx: Record<TeamSize, number> = { 1: 0, 2: 0 };
+      const ordered = sizes.map((t) => got[t][idx[t]++]).filter(Boolean) as AssignedMatch[];
+      return { matches: ordered, shortfall };
+    };
+
     let out: { matches: AssignedMatch[]; shortfall: number };
-    if (splitPlan) {
+    if (mixPlan && "all" in mixPlan) {
+      out = drawSizes(participantIds, mixPlan.all, new Set(queuedIds));
+    } else if (mixPlan) {
+      // 남녀 따로 + 섞기: 성별마다 종류 목록대로 뽑고, 덜 뛴 성별부터 번갈아 세운다.
+      const femaleFirst = perHead("F") < perHead("M");
+      const order = femaleFirst
+        ? [{ g: "F" as const, sizes: mixPlan.f }, { g: "M" as const, sizes: mixPlan.m }]
+        : [{ g: "M" as const, sizes: mixPlan.m }, { g: "F" as const, sizes: mixPlan.f }];
+      const busy = new Set(queuedIds);
+      const outs: AssignedMatch[][] = [];
+      let shortfall = 0;
+      for (const { g, sizes } of order) {
+        const pool = pids.filter((id) => genderOf(id) !== (g === "M" ? "F" : "M"));
+        const o = drawSizes(pool, sizes, busy);
+        outs.push(o.matches);
+        shortfall += o.shortfall;
+      }
+      const woven: AssignedMatch[] = [];
+      for (let i = 0; i < Math.max(outs[0].length, outs[1].length); i++) {
+        if (outs[0][i]) woven.push(outs[0][i]);
+        if (outs[1][i]) woven.push(outs[1][i]);
+      }
+      out = { matches: woven, shortfall };
+    } else if (splitPlan) {
       // 남녀 따로 채우기: 남자 몇 경기·여자 몇 경기를 따로 뽑는다. 한 번에 뽑으면 계산기가
       // 한쪽 성별에서 다 뽑아 그쪽 "밖에 남김"이 사라질 수 있다.
       // 오늘(줄 포함) 1인당 덜 뛴 성별을 먼저 뽑고 줄에도 먼저 세운다 — 늘 남자가 앞 번호를 받던 것
       // (10-06 컬링: 남 7경기·여 2경기). 미지정은 먼저 뽑는 쪽이 먼저 쓴다. 그 뒤로는 남녀를 번갈아 세운다.
-      const pids = participantIds;
-      const perHead = (g: "M" | "F") => {
-        const heads = pids.filter((id) => genderOf(id) === g).length;
-        if (!heads) return Infinity;
-        let plays = 0;
-        for (const t of [...matchesNow.filter(isTodayMatch).map(teamsOfMatch), ...queueHistory, ...queuePlayOnly]) {
-          for (const id of [...t.teamA, ...t.teamB]) if (genderOf(id) === g) plays++;
-        }
-        return plays / heads;
-      };
       const femaleFirst = perHead("F") < perHead("M");
       const order: Array<{ g: "M" | "F"; n: number }> = femaleFirst
         ? [{ g: "F", n: splitPlan.f }, { g: "M", n: splitPlan.m }]
@@ -3514,7 +3583,8 @@ function useLeagueStoreInternal() {
     const { error } = await apiBulkCreateAssignedMatches({
       classId: cid,
       matches: out.matches.map((m) => ({ teamA: m.teamA, teamB: m.teamB })),
-      matchType: teamSize === 1 ? "single" : "double",
+      // 섞기면 줄마다 종류가 다르다 — 비워 두면 팀 인원으로 정한다(assignment-rows.ts).
+      matchType: mixPlan ? undefined : teamSize === 1 ? "single" : "double",
       baseTimeMs: Math.max(Date.now(), lastAt + 1),
       sessionId: sid,
       startSeq,

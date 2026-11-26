@@ -141,7 +141,7 @@ export function SessionCard({
         <SessionRoster open={rosterOpen} onOpenChange={setRosterOpen} />
       )}
 
-      <MatchQueue canManage onRecordRow={onRecordRow} />
+      <MatchQueue canManage onRecordRow={onRecordRow} onOpenRoster={() => setRosterOpen(true)} />
     </Card>
   );
 }

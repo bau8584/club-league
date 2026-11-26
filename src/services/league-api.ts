@@ -198,6 +198,8 @@ export async function apiUpsertAssignmentSession(payload: {
   genderMode?: "mixed" | "separate";
   /** 코트 수. undefined = 안 건드림, null = 코트 안내 끄기. */
   courtCount?: number | null;
+  /** 그중 단식 코트 수. undefined = 안 건드림, null = 없음(코트 모두 세션 종목). */
+  singleCourts?: number | null;
   /** 운영 방식. undefined = 안 건드림. */
   queueMode?: "queue" | "simultaneous";
   /** 한 바퀴 자동. undefined = 안 건드림. */
@@ -212,6 +214,7 @@ export async function apiUpsertAssignmentSession(payload: {
     match_type: payload.matchType,
     ...(payload.genderMode ? { gender_mode: payload.genderMode } : {}),
     ...(payload.courtCount !== undefined ? { court_count: payload.courtCount } : {}),
+    ...(payload.singleCourts !== undefined ? { single_courts: payload.singleCourts } : {}),
     ...(payload.startedAt ? { started_at: payload.startedAt } : {}),
     ...(payload.autoRound !== undefined ? { auto_round: payload.autoRound } : {}),
     ...(payload.queueMode !== undefined ? { queue_mode: payload.queueMode } : {}),
